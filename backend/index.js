@@ -49,6 +49,39 @@ app.post('/api/users', async (request, response) => {
   }
 });
 
+app.post('/api/sessions', async (request, response) => {
+  const { email, password } = request.body ?? {};
+
+  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+    return response.status(400).json({ message: 'Ingresa tu correo y contraseña.' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+    });
+    const [salt, storedHash] = user?.passwordHash.split(':') ?? ['', ''];
+    const candidateHash = await scrypt(password, salt || 'vetpro-invalid-user', 64);
+    const expectedHash = Buffer.from(storedHash, 'hex');
+    const passwordMatches =
+      expectedHash.length === candidateHash.length &&
+      crypto.timingSafeEqual(candidateHash, expectedHash);
+
+    if (!user || !passwordMatches) {
+      return response.status(401).json({ message: 'El correo o la contraseña no son correctos.' });
+    }
+
+    return response.status(200).json({
+      id: user.id,
+      nombre: user.nombre,
+      email: user.email,
+    });
+  } catch (error) {
+    console.error('No se pudo iniciar sesión:', error);
+    return response.status(500).json({ message: 'No se pudo iniciar sesión.' });
+  }
+});
+
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, '0.0.0.0', () => {

@@ -11,21 +11,46 @@ import {
 } from 'react-native';
 import { Link, router, Stack } from 'expo-router';
 
-const demoEmail = 'demo@vetpro.com';
-const demoPassword = 'vet';
-
 export default function Index() {
-  const [email, setEmail] = useState(demoEmail);
-  const [password, setPassword] = useState(demoPassword);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = () => {
-    if (email.trim().toLowerCase() !== demoEmail || password !== demoPassword) {
-      Alert.alert('Datos incorrectos', 'Usa el usuario demo que aparece debajo del botón.');
+  const handleLogin = async () => {
+    if (isSubmitting) return;
+    if (!email.trim() || !password) {
+      Alert.alert('Faltan datos', 'Ingresa tu correo y contraseña.');
       return;
     }
 
-    router.replace('/app');
+    const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+    const apiUrl = configuredApiUrl
+      ? configuredApiUrl.replace(/\/$/, '')
+      : Platform.OS === 'android'
+        ? 'http://10.0.2.2:3000'
+        : 'http://localhost:3000';
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        Alert.alert('No se pudo iniciar sesión', result.message ?? 'Revisa tus credenciales.');
+        return;
+      }
+
+      router.replace('/app');
+    } catch {
+      Alert.alert('No hay conexión con la API', 'Comprueba que el backend esté encendido y accesible.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -54,6 +79,7 @@ export default function Index() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          autoComplete="email"
         />
       </View>
 
@@ -66,6 +92,9 @@ export default function Index() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry={!showPassword}
+          autoComplete="current-password"
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
         />
         <TouchableOpacity 
           onPress={() => setShowPassword(!showPassword)} 
@@ -78,13 +107,15 @@ export default function Index() {
       </View>
 
       {/* Botón de Iniciar Sesión */}
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+      <TouchableOpacity
+        style={[styles.loginButton, isSubmitting && styles.loginButtonDisabled]}
+        onPress={handleLogin}
+        disabled={isSubmitting}
+      >
+        <Text style={styles.loginButtonText}>
+          {isSubmitting ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+        </Text>
       </TouchableOpacity>
-
-      <Text style={styles.demoCredentials}>
-        Usuario demo: {demoEmail}{'\n'}Contraseña: {demoPassword}
-      </Text>
 
       {/* Botón de Registro */}
       <Link href="/registro" asChild>
@@ -175,12 +206,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  demoCredentials: {
-    color: '#263b32',
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'center',
-    marginBottom: 16,
+  loginButtonDisabled: {
+    opacity: 0.65,
   },
   registerText: {
     color: '#1B4D3E',
