@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { AppDrawer } from '@/components/app-drawer';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -199,18 +199,30 @@ export function TurnosScreen() {
 }
 
 export function PerfilScreen() {
-  const opciones: { id: string; nombre: string; icon: IconName; color?: string }[] = [
+  const opciones: {
+    id: string;
+    nombre: string;
+    icon: IconName;
+    color?: string;
+    onPress?: () => void;
+  }[] = [
     { id: '1', nombre: 'Editar Perfil', icon: 'person-outline' },
     { id: '2', nombre: 'Métodos de Pago', icon: 'card-outline' },
     { id: '3', nombre: 'Soporte: Ayuda', icon: 'help-buoy-outline' },
-    { id: '4', nombre: 'Cerrar Sesión', icon: 'log-out-outline', color: '#0c2f10' },
+    {
+      id: '4',
+      nombre: 'Cerrar Sesión',
+      icon: 'log-out-outline',
+      color: '#0c2f10',
+      onPress: () => router.replace('/'),
+    },
   ];
 
   return (
     <AppDrawer title="Perfil">
       <View style={styles.listPadding}>
         {opciones.map((opcion) => (
-          <Pressable key={opcion.id} style={styles.profileOption}>
+          <Pressable key={opcion.id} style={styles.profileOption} onPress={opcion.onPress}>
             <View style={styles.profileOptionRow}>
               <Ionicons name={opcion.icon} size={24} color={opcion.color || '#222222'} />
               <Text style={[styles.profileOptionText, opcion.color && { color: opcion.color }]}>
