@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+
+# env
+.env
+.env*.local
+
+# local databases
+*.db
+*.db-journal
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# typescript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI tooling
+.opencode/
+CLAUDE.md
+AGENTS.md
+.claude/
