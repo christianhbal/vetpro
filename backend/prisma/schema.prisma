@@ -12,3 +12,13 @@ model Mascota {
   especie   String
   createdAt DateTime @default(now())
 }
+
+model User {
+  id           Int      @id @default(autoincrement())
+  nombre       String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("usuarios")
+}

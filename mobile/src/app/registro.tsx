@@ -17,8 +17,11 @@ export default function Registro() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    if (isSubmitting) return;
+
     if (!nombre.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert('Faltan datos', 'Completa todos los campos para continuar.');
       return;
@@ -35,7 +38,36 @@ export default function Registro() {
       Alert.alert('Las contraseñas no coinciden', 'Vuelve a comprobar ambas contraseñas.');
       return;
     }
-    Alert.alert('Registro listo', 'El formulario está completo.');
+
+    const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+    const apiUrl = configuredApiUrl
+      ? configuredApiUrl.replace(/\/$/, '')
+      : Platform.OS === 'android'
+        ? 'http://10.0.2.2:3000'
+        : 'http://localhost:3000';
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nombre.trim(), email: email.trim(), password }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        Alert.alert('No se pudo crear la cuenta', result.message ?? 'Inténtalo de nuevo.');
+        return;
+      }
+
+      setPassword('');
+      setConfirmPassword('');
+      Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
+    } catch {
+      Alert.alert('No hay conexión con la API', 'Comprueba que el backend esté encendido y accesible.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -94,8 +126,14 @@ export default function Registro() {
           onSubmitEditing={handleRegister}
         />
 
-        <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
-          <Text style={styles.registerButtonText}>Crear cuenta</Text>
+        <TouchableOpacity
+          style={[styles.registerButton, isSubmitting && styles.registerButtonDisabled]}
+          onPress={handleRegister}
+          disabled={isSubmitting}
+        >
+          <Text style={styles.registerButtonText}>
+            {isSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
+          </Text>
         </TouchableOpacity>
         <View style={styles.loginRow}>
           <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
@@ -166,6 +204,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B4D3E',
     padding: 18,
     borderRadius: 28,
+  },
+  registerButtonDisabled: {
+    opacity: 0.65,
   },
   registerButtonText: {
     color: '#FFFFFF',

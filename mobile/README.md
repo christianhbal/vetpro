@@ -16,6 +16,19 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+## User registration API
+
+The registration form sends an account to the local SQLite database through the backend. Start the backend from `backend/`:
+
+```bash
+npm run db:migrate -- --name add_user
+npm run dev
+```
+
+The app defaults to `http://localhost:3000` on web/iOS simulators and `http://10.0.2.2:3000` on Android emulators. For a physical phone, create `mobile/.env` from `mobile/.env.example` and set `EXPO_PUBLIC_API_URL` to your computer's LAN IP. The phone and computer must be on the same network. Restart Expo after changing the variable.
+
+Only submit the registration form when you are ready to create a real user. Passwords are stored as salted hashes, not plaintext.
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
