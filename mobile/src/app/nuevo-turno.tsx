@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'];
+
+type Fila =
+  | { id: 'tipo'; tipo: 'opciones'; label: string }
+  | { id: 'mascota'; tipo: 'texto'; label: string }
+  | { id: 'fecha'; tipo: 'texto'; label: string }
+  | { id: 'hora'; tipo: 'texto'; label: string };
 
 export default function NuevoTurno() {
   const router = useRouter();
@@ -22,6 +26,9 @@ export default function NuevoTurno() {
   const [tipo, setTipo] = useState('');
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
+  const { top } = useSafeAreaInsets();
+
+  const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
 
   const handleSubmit = () => {
     if (!mascota.trim() || !tipo || !fecha.trim() || !hora.trim()) {
@@ -35,31 +42,31 @@ export default function NuevoTurno() {
     );
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/turnos')}>
-          <Ionicons name="arrow-back" size={20} color="#0f3e17" />
-          <Text style={styles.backText}>Turnos</Text>
-        </TouchableOpacity>
+  const filas: Fila[] = [
+    { id: 'tipo', tipo: 'opciones', label: 'Tipo de turno' },
+    { id: 'mascota', tipo: 'texto', label: 'Mascota' },
+    { id: 'fecha', tipo: 'texto', label: 'Fecha' },
+    { id: 'hora', tipo: 'texto', label: 'Hora' },
+  ];
 
-        <View style={styles.form}>
-          <Text style={styles.title}>Agregar turno</Text>
-          <Text style={styles.subtitle}>Elige el servicio y los datos de la cita.</Text>
-
-          <Text style={styles.label}>Tipo de turno</Text>
+  const renderFila = ({ item }: { item: Fila }) => {
+    if (item.tipo === 'opciones') {
+      return (
+        <View>
+          <Text style={styles.label}>{item.label}</Text>
           <View style={styles.typeOptions}>
             {tiposTurno.map((opcion) => (
               <Pressable
                 key={opcion}
                 onPress={() => setTipo(opcion)}
                 accessibilityRole="radio"
+                accessibilityLabel={opcion}
                 accessibilityState={{ selected: tipo === opcion }}
-                style={[styles.typeOption, tipo === opcion && styles.typeOptionSelected]}
+                style={({ pressed }) => [
+                  styles.typeOption,
+                  tipo === opcion && styles.typeOptionSelected,
+                  pressed && styles.buttonPressed,
+                ]}
               >
                 <Text style={[styles.typeText, tipo === opcion && styles.typeTextSelected]}>
                   {opcion}
@@ -67,47 +74,77 @@ export default function NuevoTurno() {
               </Pressable>
             ))}
           </View>
-
-          <Text style={styles.label}>Mascota</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Nombre de tu mascota"
-            placeholderTextColor="#7a8378"
-            value={mascota}
-            onChangeText={setMascota}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-
-          <Text style={styles.label}>Fecha</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="DD/MM/AAAA"
-            placeholderTextColor="#7a8378"
-            value={fecha}
-            onChangeText={setFecha}
-            keyboardType="numbers-and-punctuation"
-            returnKeyType="next"
-          />
-
-          <Text style={styles.label}>Hora</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. 10:30"
-            placeholderTextColor="#7a8378"
-            value={hora}
-            onChangeText={setHora}
-            keyboardType="numbers-and-punctuation"
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-          />
-
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-            <Text style={styles.submitText}>Continuar</Text>
-          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      );
+    }
+
+    const valores = {
+      mascota: { texto: mascota, setter: setMascota, placeholder: 'Nombre de tu mascota' },
+      fecha: { texto: fecha, setter: setFecha, placeholder: 'DD/MM/AAAA' },
+      hora: { texto: hora, setter: setHora, placeholder: 'Ej. 10:30' },
+    };
+    const campo = valores[item.id as keyof typeof valores];
+
+    return (
+      <View>
+        <Text style={styles.label}>{item.label}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder={campo.placeholder}
+          placeholderTextColor="#7a8378"
+          value={campo.texto}
+          onChangeText={campo.setter}
+          autoCapitalize="words"
+          keyboardType={item.id === 'mascota' ? 'default' : 'numbers-and-punctuation'}
+          returnKeyType={item.id === 'hora' ? 'done' : 'next'}
+          onSubmitEditing={item.id === 'hora' ? handleSubmit : undefined}
+        />
+      </View>
+    );
+  };
+
+  return (
+    <View style={contenedor}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <FlatList
+        data={filas}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        renderItem={renderFila}
+        ListHeaderComponent={
+          <View>
+            <Pressable
+              style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
+              onPress={() => router.replace('/turnos')}
+              accessibilityRole="button"
+              accessibilityLabel="Volver a Turnos"
+            >
+              <Ionicons name="arrow-back" size={20} color="#0f3e17" />
+              <Text style={styles.backText}>Turnos</Text>
+            </Pressable>
+
+            <View style={styles.form}>
+              <Text style={styles.title}>Agregar turno</Text>
+              <Text style={styles.subtitle}>Elige el servicio y los datos de la cita.</Text>
+            </View>
+          </View>
+        }
+        ListFooterComponent={
+          <View style={styles.form}>
+            <Pressable
+              style={({ pressed }) => [styles.submitButton, pressed && styles.buttonPressed]}
+              onPress={handleSubmit}
+              accessibilityRole="button"
+              accessibilityLabel="Continuar"
+            >
+              <Text style={styles.submitText}>Continuar</Text>
+            </Pressable>
+          </View>
+        }
+      />
+    </View>
   );
 }
 
@@ -118,7 +155,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
@@ -136,13 +174,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
-    paddingTop: 22,
-    paddingBottom: 28,
   },
   title: {
     color: '#0f3e17',
     fontSize: 28,
     fontWeight: 'bold',
+    marginTop: 22,
   },
   subtitle: {
     color: '#555d54',
@@ -197,6 +234,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 16,
     marginTop: 6,
+  },
+  buttonPressed: {
+    opacity: 0.75,
   },
   submitText: {
     color: '#fffefc',

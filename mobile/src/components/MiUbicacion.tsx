@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 
 export default function MiUbicacion() {
@@ -9,38 +9,80 @@ export default function MiUbicacion() {
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const { status } = await Location.getForegroundPermissionsAsync();
+
         if (status !== 'granted') {
-          setErrorMsg('Permiso de ubicación denegado por el usuario.');
-          return;
+          const pedido = await Location.requestForegroundPermissionsAsync();
+          if (pedido.status !== 'granted') {
+            setErrorMsg('Permiso de ubicación denegado por el usuario.');
+            return;
+          }
         }
 
-        const p = await Location.getCurrentPositionAsync({
+        const ubicacion = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
         });
-        setPos(p);
+        setPos(ubicacion);
       } catch (error) {
         setErrorMsg(
           error instanceof Error
             ? `No se pudo obtener la ubicación: ${error.message}`
-            : 'No se pudo obtener la ubicación. Activa el GPS e inténtalo de nuevo.',
+            : 'No se pudo obtener la ubicación. Activa el GPS e inténtalo de nuevo.'
         );
       }
     })();
   }, []);
 
   if (errorMsg) {
-    return <Text style={{ color: 'red', fontSize: 16 }}>{errorMsg}</Text>;
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{errorMsg}</Text>
+        <Text
+          style={styles.settingsLink}
+          onPress={() => Linking.openSettings()}
+          accessibilityRole="link"
+        >
+          Abrir ajustes
+        </Text>
+      </View>
+    );
   }
 
   if (!pos) {
-    return <Text style={{ fontSize: 16, color: '#000' }}>Buscando coordenadas...</Text>;
+    return (
+      <View style={styles.container}>
+        <Text style={styles.text}>Buscando coordenadas...</Text>
+      </View>
+    );
   }
 
   return (
-    <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontSize: 18, color: '#000' }}>X: {pos.coords.longitude}</Text>
-      <Text style={{ fontSize: 18, color: '#000' }}>Y: {pos.coords.latitude}</Text>
+    <View style={styles.container}>
+      <Text style={styles.text}>X: {pos.coords.longitude}</Text>
+      <Text style={styles.text}>Y: {pos.coords.latitude}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    padding: 16,
+  },
+  text: {
+    fontSize: 18,
+    color: '#000',
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  settingsLink: {
+    color: '#1B4D3E',
+    fontSize: 15,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+    marginTop: 8,
+  },
+});

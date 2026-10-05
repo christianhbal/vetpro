@@ -1,17 +1,28 @@
 import { useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
+  FlatList,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Link, Stack } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
+
+type Campo = {
+  id: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (texto: string) => void;
+  secureTextEntry?: boolean;
+  autoComplete?: 'name' | 'email' | 'new-password';
+  keyboardType?: 'email-address';
+  returnKeyType?: 'next' | 'done';
+  onSubmitEditing?: () => void;
+  esUltimo?: boolean;
+};
 
 export default function Registro() {
   const [nombre, setNombre] = useState('');
@@ -64,81 +75,115 @@ export default function Registro() {
     }
   };
 
+  const campos: Campo[] = [
+    {
+      id: 'nombre',
+      placeholder: 'Nombre completo',
+      value: nombre,
+      onChangeText: setNombre,
+      autoComplete: 'name',
+      returnKeyType: 'next',
+    },
+    {
+      id: 'email',
+      placeholder: 'Correo electrónico',
+      value: email,
+      onChangeText: setEmail,
+      keyboardType: 'email-address',
+      autoComplete: 'email',
+      returnKeyType: 'next',
+    },
+    {
+      id: 'password',
+      placeholder: 'Contraseña (mínimo 8 caracteres)',
+      value: password,
+      onChangeText: setPassword,
+      secureTextEntry: true,
+      autoComplete: 'new-password',
+      returnKeyType: 'next',
+    },
+    {
+      id: 'confirmPassword',
+      placeholder: 'Confirmar contraseña',
+      value: confirmPassword,
+      onChangeText: setConfirmPassword,
+      secureTextEntry: true,
+      autoComplete: 'new-password',
+      returnKeyType: 'done',
+      onSubmitEditing: handleRegister,
+      esUltimo: true,
+    },
+  ];
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>VP</Text>
-        </View>
-        <Text style={styles.title}>Crear cuenta</Text>
-        <Text style={styles.subtitle}>Únete a VetPro y cuida mejor de tus mascotas.</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Nombre completo"
-          placeholderTextColor="#777"
-          value={nombre}
-          onChangeText={setNombre}
-          autoCapitalize="words"
-          autoComplete="name"
-          returnKeyType="next"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Correo electrónico"
-          placeholderTextColor="#777"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-          returnKeyType="next"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña (mínimo 8 caracteres)"
-          placeholderTextColor="#777"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="new-password"
-          returnKeyType="next"
-        />
-        <TextInput
-          style={[styles.input, styles.lastInput]}
-          placeholder="Confirmar contraseña"
-          placeholderTextColor="#777"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          autoComplete="new-password"
-          returnKeyType="done"
-          onSubmitEditing={handleRegister}
-        />
+      <FlatList
+        data={campos}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logoText}>VP</Text>
+            </View>
+            <Text style={styles.title}>Crear cuenta</Text>
+            <Text style={styles.subtitle}>Únete a VetPro y cuida mejor de tus mascotas.</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={styles.campoFila}>
+            <TextInput
+              style={[styles.input, item.esUltimo && styles.lastInput]}
+              placeholder={item.placeholder}
+              placeholderTextColor="#777"
+              value={item.value}
+              onChangeText={item.onChangeText}
+              secureTextEntry={item.secureTextEntry}
+              keyboardType={item.keyboardType}
+              autoCapitalize={item.id === 'email' ? 'none' : 'words'}
+              autoComplete={item.autoComplete}
+              returnKeyType={item.returnKeyType}
+              onSubmitEditing={item.onSubmitEditing}
+            />
+          </View>
+        )}
+        ListFooterComponent={
+          <View style={styles.footer}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.registerButton,
+                pressed && styles.buttonPressed,
+                isSubmitting && styles.registerButtonDisabled,
+              ]}
+              onPress={handleRegister}
+              disabled={isSubmitting}
+              accessibilityRole="button"
+              accessibilityLabel="Crear cuenta"
+            >
+              <Text style={styles.registerButtonText}>
+                {isSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
+              </Text>
+            </Pressable>
 
-        <TouchableOpacity
-          style={[styles.registerButton, isSubmitting && styles.registerButtonDisabled]}
-          onPress={handleRegister}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.registerButtonText}>
-            {isSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
-          </Text>
-        </TouchableOpacity>
-        <View style={styles.loginRow}>
-          <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
-          <Link href="/" asChild>
-            <TouchableOpacity>
-              <Text style={styles.loginLink}>Inicia sesión</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <View style={styles.loginRow}>
+              <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
+              <Link href="/" asChild>
+                <Pressable
+                  style={styles.loginLinkButton}
+                  accessibilityRole="link"
+                  accessibilityLabel="Inicia sesión"
+                >
+                  <Text style={styles.loginLink}>Inicia sesión</Text>
+                </Pressable>
+              </Link>
+            </View>
+          </View>
+        }
+      />
+    </View>
   );
 }
 
@@ -149,13 +194,16 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
+  header: {
+    width: '100%',
+    alignItems: 'center',
+  },
   logoContainer: {
-    width: 88,
-    height: 88,
+    width: '26%',
+    aspectRatio: 1,
     borderRadius: 22,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
@@ -180,6 +228,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 28,
   },
+  campoFila: {
+    width: '100%',
+  },
+  footer: {
+    width: '100%',
+  },
   input: {
     width: '100%',
     backgroundColor: '#FFFFFF',
@@ -199,6 +253,9 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 28,
   },
+  buttonPressed: {
+    opacity: 0.75,
+  },
   registerButtonDisabled: {
     opacity: 0.65,
   },
@@ -216,6 +273,9 @@ const styles = StyleSheet.create({
   loginPrompt: {
     color: '#263b32',
     fontSize: 15,
+  },
+  loginLinkButton: {
+    padding: 4,
   },
   loginLink: {
     color: '#1B4D3E',

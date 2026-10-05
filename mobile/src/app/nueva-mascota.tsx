@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const especies = ['Perro', 'Gato', 'Otro'];
+
+type Fila =
+  | { id: 'nombre'; tipo: 'texto'; label: string }
+  | { id: 'especie'; tipo: 'opciones'; label: string }
+  | { id: 'raza'; tipo: 'texto'; label: string }
+  | { id: 'edad'; tipo: 'texto'; label: string };
 
 export default function NuevaMascota() {
   const router = useRouter();
@@ -22,6 +26,9 @@ export default function NuevaMascota() {
   const [especie, setEspecie] = useState('');
   const [raza, setRaza] = useState('');
   const [edad, setEdad] = useState('');
+  const { top } = useSafeAreaInsets();
+
+  const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
 
   const handleSubmit = () => {
     if (!nombre.trim() || !especie || !edad.trim()) {
@@ -31,42 +38,31 @@ export default function NuevaMascota() {
     Alert.alert('Formulario completo', 'El guardado se podrá conectar más adelante.');
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/mascotas')}>
-          <Ionicons name="arrow-back" size={20} color="#0f3e17" />
-          <Text style={styles.backText}>Mascotas</Text>
-        </TouchableOpacity>
+  const filas: Fila[] = [
+    { id: 'nombre', tipo: 'texto', label: 'Nombre' },
+    { id: 'especie', tipo: 'opciones', label: 'Especie' },
+    { id: 'raza', tipo: 'texto', label: 'Raza (opcional)' },
+    { id: 'edad', tipo: 'texto', label: 'Edad en años' },
+  ];
 
-        <View style={styles.form}>
-          <Text style={styles.title}>Agregar mascota</Text>
-          <Text style={styles.subtitle}>Completa los datos de tu compañero.</Text>
-
-          <Text style={styles.label}>Nombre</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. Luna"
-            placeholderTextColor="#7a8378"
-            value={nombre}
-            onChangeText={setNombre}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-
-          <Text style={styles.label}>Especie</Text>
+  const renderFila = ({ item }: { item: Fila }) => {
+    if (item.tipo === 'opciones') {
+      return (
+        <View>
+          <Text style={styles.label}>{item.label}</Text>
           <View style={styles.speciesOptions}>
             {especies.map((opcion) => (
               <Pressable
                 key={opcion}
                 onPress={() => setEspecie(opcion)}
                 accessibilityRole="radio"
+                accessibilityLabel={opcion}
                 accessibilityState={{ selected: especie === opcion }}
-                style={[styles.speciesOption, especie === opcion && styles.speciesOptionSelected]}
+                style={({ pressed }) => [
+                  styles.speciesOption,
+                  especie === opcion && styles.speciesOptionSelected,
+                  pressed && styles.buttonPressed,
+                ]}
               >
                 <Text
                   style={[styles.speciesText, especie === opcion && styles.speciesTextSelected]}
@@ -76,36 +72,77 @@ export default function NuevaMascota() {
               </Pressable>
             ))}
           </View>
-
-          <Text style={styles.label}>Raza (opcional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. mestizo"
-            placeholderTextColor="#7a8378"
-            value={raza}
-            onChangeText={setRaza}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-
-          <Text style={styles.label}>Edad en años</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. 2"
-            placeholderTextColor="#7a8378"
-            value={edad}
-            onChangeText={setEdad}
-            keyboardType="decimal-pad"
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-          />
-
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-            <Text style={styles.submitText}>Registrar mascota</Text>
-          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      );
+    }
+
+    const valores = {
+      nombre: { texto: nombre, setter: setNombre, placeholder: 'Ej. Luna', teclado: 'default' as const },
+      raza: { texto: raza, setter: setRaza, placeholder: 'Ej. mestizo', teclado: 'default' as const },
+      edad: { texto: edad, setter: setEdad, placeholder: 'Ej. 2', teclado: 'decimal-pad' as const },
+    };
+    const campo = valores[item.id as keyof typeof valores];
+
+    return (
+      <View>
+        <Text style={styles.label}>{item.label}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder={campo.placeholder}
+          placeholderTextColor="#7a8378"
+          value={campo.texto}
+          onChangeText={campo.setter}
+          autoCapitalize="words"
+          keyboardType={campo.teclado}
+          returnKeyType={item.id === 'edad' ? 'done' : 'next'}
+          onSubmitEditing={item.id === 'edad' ? handleSubmit : undefined}
+        />
+      </View>
+    );
+  };
+
+  return (
+    <View style={contenedor}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <FlatList
+        data={filas}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        renderItem={renderFila}
+        ListHeaderComponent={
+          <View>
+            <Pressable
+              style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
+              onPress={() => router.replace('/mascotas')}
+              accessibilityRole="button"
+              accessibilityLabel="Volver a Mascotas"
+            >
+              <Ionicons name="arrow-back" size={20} color="#0f3e17" />
+              <Text style={styles.backText}>Mascotas</Text>
+            </Pressable>
+
+            <View style={styles.form}>
+              <Text style={styles.title}>Agregar mascota</Text>
+              <Text style={styles.subtitle}>Completa los datos de tu compañero.</Text>
+            </View>
+          </View>
+        }
+        ListFooterComponent={
+          <View style={styles.form}>
+            <Pressable
+              style={({ pressed }) => [styles.submitButton, pressed && styles.buttonPressed]}
+              onPress={handleSubmit}
+              accessibilityRole="button"
+              accessibilityLabel="Registrar mascota"
+            >
+              <Text style={styles.submitText}>Registrar mascota</Text>
+            </Pressable>
+          </View>
+        }
+      />
+    </View>
   );
 }
 
@@ -116,7 +153,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
@@ -134,13 +172,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
-    paddingTop: 22,
-    paddingBottom: 28,
   },
   title: {
     color: '#0f3e17',
     fontSize: 28,
     fontWeight: 'bold',
+    marginTop: 22,
   },
   subtitle: {
     color: '#555d54',
@@ -197,6 +234,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 16,
     marginTop: 6,
+  },
+  buttonPressed: {
+    opacity: 0.75,
   },
   submitText: {
     color: '#fffefc',
