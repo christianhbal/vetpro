@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 
 export default function Registro() {
   const [nombre, setNombre] = useState('');
@@ -39,16 +40,9 @@ export default function Registro() {
       return;
     }
 
-    const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
-    const apiUrl = configuredApiUrl
-      ? configuredApiUrl.replace(/\/$/, '')
-      : Platform.OS === 'android'
-        ? 'http://10.0.2.2:3000'
-        : 'http://localhost:3000';
-
     setIsSubmitting(true);
     try {
-      const response = await fetch(`${apiUrl}/api/users`, {
+      const response = await fetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: nombre.trim(), email: email.trim(), password }),
@@ -63,8 +57,8 @@ export default function Registro() {
       setPassword('');
       setConfirmPassword('');
       Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
-    } catch {
-      Alert.alert('No hay conexión con la API', 'Comprueba que el backend esté encendido y accesible.');
+    } catch (error) {
+      Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
     } finally {
       setIsSubmitting(false);
     }

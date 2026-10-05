@@ -1,5 +1,7 @@
 const crypto = require('node:crypto');
+const path = require('node:path');
 const { promisify } = require('node:util');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const cors = require('cors');
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
