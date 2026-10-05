@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { FlatList, Modal, Pressable, Text, View } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
 import { estilos } from '@/lib/estilos';
-import { citas } from '@/lib/datos';
+import { citas, type Cita } from '@/lib/datos';
 
 export default function TurnosScreen() {
+  const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
   const { bottom } = useSafeAreaInsets();
 
   const pie = useMemo(
@@ -24,12 +25,17 @@ export default function TurnosScreen() {
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={estilos.listPadding}
           renderItem={({ item }) => (
-            <View style={estilos.cardVertical}>
+            <Pressable
+              style={({ pressed }) => [estilos.cardVertical, pressed && estilos.buttonPressed]}
+              onPress={() => setCitaSeleccionada(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`Ver detalle de ${item.mascota}`}
+            >
               <Text style={estilos.cardTitle}>
                 {item.mascota} - {item.motivo}
               </Text>
               <Text style={estilos.cardSubtitle}>{item.fecha}</Text>
-            </View>
+            </Pressable>
           )}
         />
         <View style={pie}>
@@ -45,6 +51,40 @@ export default function TurnosScreen() {
           </Link>
         </View>
       </View>
+
+      <Modal
+        visible={citaSeleccionada !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setCitaSeleccionada(null)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setCitaSeleccionada(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar detalle"
+          />
+          {citaSeleccionada && (
+            <View style={estilos.modalCard}>
+              <Pressable
+                style={({ pressed }) => [estilos.petPhotoClose, pressed && estilos.buttonPressed]}
+                onPress={() => setCitaSeleccionada(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar detalle"
+              >
+                <Ionicons name="close" size={24} color="#263b32" />
+              </Pressable>
+
+              <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
+              <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
+              <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </AppDrawer>
   );
 }

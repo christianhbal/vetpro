@@ -38,7 +38,7 @@ export default function NuevoTurno() {
 
     Alert.alert(
       'Formulario completo',
-      'Los datos están listos. El guardado del turno se podrá conectar más adelante.'
+      'Los datos están listos. El guardado del turno aún no funciona.'
     );
   };
 
@@ -127,7 +127,6 @@ export default function NuevoTurno() {
 
             <View style={styles.form}>
               <Text style={styles.title}>Agregar turno</Text>
-              <Text style={styles.subtitle}>Elige el servicio y los datos de la cita.</Text>
             </View>
           </View>
         }
@@ -137,9 +136,9 @@ export default function NuevoTurno() {
               style={({ pressed }) => [styles.submitButton, pressed && styles.buttonPressed]}
               onPress={handleSubmit}
               accessibilityRole="button"
-              accessibilityLabel="Continuar"
+              accessibilityLabel="Confirmar"
             >
-              <Text style={styles.submitText}>Continuar</Text>
+              <Text style={styles.submitText}>Confirmar</Text>
             </Pressable>
           </View>
         }
@@ -180,12 +179,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     marginTop: 22,
-  },
-  subtitle: {
-    color: '#555d54',
-    fontSize: 15,
-    marginTop: 8,
-    marginBottom: 26,
+    marginBottom: 22,
   },
   label: {
     color: '#263b32',

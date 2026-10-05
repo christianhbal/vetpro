@@ -56,6 +56,8 @@ data={mascotas}
         visible={mascotaSeleccionada !== null}
         transparent
         animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={() => setMascotaSeleccionada(null)}
       >
         <View style={estilos.petModalRoot}>

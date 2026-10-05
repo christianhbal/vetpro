@@ -35,12 +35,12 @@ export default function NuevaMascota() {
       Alert.alert('Faltan datos', 'Completa el nombre, la especie y la edad.');
       return;
     }
-    Alert.alert('Formulario completo', 'El guardado se podrá conectar más adelante.');
+    Alert.alert('Formulario completo', 'El guardado aún no funciona.');
   };
 
   const filas: Fila[] = [
     { id: 'nombre', tipo: 'texto', label: 'Nombre' },
-    { id: 'especie', tipo: 'opciones', label: 'Especie' },
+    { id: 'especie', tipo: 'opciones', label: 'Animal' },
     { id: 'raza', tipo: 'texto', label: 'Raza (opcional)' },
     { id: 'edad', tipo: 'texto', label: 'Edad en años' },
   ];
@@ -125,7 +125,6 @@ export default function NuevaMascota() {
 
             <View style={styles.form}>
               <Text style={styles.title}>Agregar mascota</Text>
-              <Text style={styles.subtitle}>Completa los datos de tu compañero.</Text>
             </View>
           </View>
         }
@@ -178,12 +177,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     marginTop: 22,
-  },
-  subtitle: {
-    color: '#555d54',
-    fontSize: 15,
-    marginTop: 8,
-    marginBottom: 26,
+    marginBottom: 22,
   },
   label: {
     color: '#263b32',

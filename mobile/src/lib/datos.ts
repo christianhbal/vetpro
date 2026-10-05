@@ -12,6 +12,12 @@ export type Cita = {
   fecha: string;
 };
 
+export const usuario = {
+  id: 1,
+  nombre: 'Juan Perez',
+  email: 'juan@gmail.com',
+};
+
 export const fotoMascota =
   'https://images.unsplash.com/photo-1552053831-71594a27632d?w=900&auto=format&fit=crop&q=85';
 
