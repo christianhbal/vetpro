@@ -12,6 +12,50 @@ export type Cita = {
   fecha: string;
 };
 
+export type TurnoGuardado = {
+  id: number;
+  tipo: string;
+  fecha: string;
+  hora: string;
+  mascotaId: number;
+  mascota: {
+    id: number;
+    nombre: string;
+    especie: string;
+    raza: string | null;
+    foto: string | null;
+  };
+};
+
+export function formatearFechaTurno(fecha: string, hora: string): string {
+  const [year, month, day] = fecha.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return `${date.toLocaleDateString('es-AR')} · ${hora}`;
+}
+
+export function turnoSiguePendiente(turno: Pick<TurnoGuardado, 'fecha' | 'hora'>, ahora: Date): boolean {
+  const [year, month, day] = turno.fecha.split('-').map(Number);
+  const [hour, minute] = turno.hora.split(':').map(Number);
+  const fechaHora = new Date(year, month - 1, day, hour, minute);
+
+  return (
+    Number.isFinite(fechaHora.getTime()) &&
+    fechaHora.getFullYear() === year &&
+    fechaHora.getMonth() === month - 1 &&
+    fechaHora.getDate() === day &&
+    fechaHora.getHours() === hour &&
+    fechaHora.getMinutes() === minute &&
+    fechaHora.getTime() >= ahora.getTime()
+  );
+}
+
+export function descripcionEspecieMascota(especie: string, raza?: string | null): string {
+  if (especie.trim().toLocaleLowerCase() === 'otro') {
+    return raza?.trim() ?? '';
+  }
+  return especie.trim();
+}
+
 export const usuario = {
   id: 1,
   nombre: 'Juan Perez',

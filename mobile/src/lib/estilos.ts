@@ -101,12 +101,13 @@ export const estilos = StyleSheet.create({
     backgroundColor: 'rgba(18, 32, 22, 0.55)',
   },
   petPhotoCard: {
-    width: '100%',
-    maxWidth: '90%',
+    width: '90%',
+    maxWidth: 720,
+    maxHeight: '94%',
+    alignItems: 'center',
     backgroundColor: '#fffefc',
     borderRadius: 12,
     padding: 16,
-    margin: 24,
   },
   petPhotoClose: {
     position: 'absolute',
@@ -122,7 +123,6 @@ export const estilos = StyleSheet.create({
   },
   petPhoto: {
     width: '100%',
-    aspectRatio: 1,
     borderRadius: 8,
     marginBottom: 14,
     backgroundColor: '#e1f4df',

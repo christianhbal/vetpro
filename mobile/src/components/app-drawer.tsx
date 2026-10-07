@@ -87,7 +87,6 @@ export function AppDrawer({ title, children }: AppDrawerProps) {
                     <Text style={[styles.menuLabel, selected && styles.menuLabelSelected]}>
                       {item.label}
                     </Text>
-                    {selected && <View style={styles.selectedIndicator} />}
                   </Pressable>
                 </Link>
               );
@@ -208,11 +207,5 @@ const styles = StyleSheet.create({
   menuLabelSelected: {
     color: '#0f3e17',
     fontWeight: 'bold',
-  },
-  selectedIndicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#0f3e17',
   },
 });

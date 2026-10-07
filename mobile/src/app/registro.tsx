@@ -17,8 +17,8 @@ type Campo = {
   value: string;
   onChangeText: (texto: string) => void;
   secureTextEntry?: boolean;
-  autoComplete?: 'name' | 'email' | 'new-password';
-  keyboardType?: 'email-address';
+  autoComplete?: 'name' | 'email' | 'new-password' | 'street-address' | 'tel';
+  keyboardType?: 'email-address' | 'phone-pad';
   returnKeyType?: 'next' | 'done';
   onSubmitEditing?: () => void;
   esUltimo?: boolean;
@@ -27,6 +27,8 @@ type Campo = {
 export default function Registro() {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [direccion, setDireccion] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,7 +36,7 @@ export default function Registro() {
   const handleRegister = async () => {
     if (isSubmitting) return;
 
-    if (!nombre.trim() || !email.trim() || !password || !confirmPassword) {
+    if (!nombre.trim() || !email.trim() || !telefono.trim() || !password || !confirmPassword) {
       Alert.alert('Faltan datos', 'Completa todos los campos para continuar.');
       return;
     }
@@ -56,7 +58,13 @@ export default function Registro() {
       const response = await fetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: nombre.trim(), email: email.trim(), password }),
+        body: JSON.stringify({
+          nombre: nombre.trim(),
+          email: email.trim(),
+          telefono: telefono.trim(),
+          password,
+          direccion: direccion.trim() || null,
+        }),
       });
       const result = await response.json();
 
@@ -67,6 +75,7 @@ export default function Registro() {
 
       setPassword('');
       setConfirmPassword('');
+      setDireccion('');
       Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
     } catch (error) {
       Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
@@ -91,6 +100,23 @@ export default function Registro() {
       onChangeText: setEmail,
       keyboardType: 'email-address',
       autoComplete: 'email',
+      returnKeyType: 'next',
+    },
+    {
+      id: 'telefono',
+      placeholder: 'Teléfono',
+      value: telefono,
+      onChangeText: setTelefono,
+      autoComplete: 'tel',
+      keyboardType: 'phone-pad',
+      returnKeyType: 'next',
+    },
+    {
+      id: 'direccion',
+      placeholder: 'Dirección (opcional)',
+      value: direccion,
+      onChangeText: setDireccion,
+      autoComplete: 'street-address',
       returnKeyType: 'next',
     },
     {
@@ -143,7 +169,7 @@ export default function Registro() {
               onChangeText={item.onChangeText}
               secureTextEntry={item.secureTextEntry}
               keyboardType={item.keyboardType}
-              autoCapitalize={item.id === 'email' ? 'none' : 'words'}
+              autoCapitalize={item.id === 'email' || item.id === 'telefono' ? 'none' : 'words'}
               autoComplete={item.autoComplete}
               returnKeyType={item.returnKeyType}
               onSubmitEditing={item.onSubmitEditing}

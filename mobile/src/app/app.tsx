@@ -1,14 +1,139 @@
-import { useState } from 'react';
-import { FlatList, Image, Modal, Pressable, Text, View } from 'react-native';
-import { Link } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import { citas, fotoMascota, mascotas, type Cita, type Mascota } from '@/lib/datos';
+import {
+  descripcionEspecieMascota,
+  formatearFechaTurno,
+  turnoSiguePendiente,
+  type TurnoGuardado,
+} from '@/lib/datos';
+import { obtenerUsuarioActual } from '@/lib/session';
+
+type Mascota = {
+  id: number;
+  nombre: string;
+  especie: string;
+  raza: string | null;
+  edad: number | null;
+  foto: string | null;
+};
+
+type CitaLista = {
+  id: number;
+  key: string;
+  mascota: string;
+  motivo: string;
+  fecha: string;
+  guardado: TurnoGuardado;
+};
 
 export default function InicioScreen() {
+  const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [mascotaSeleccionada, setMascotaSeleccionada] = useState<Mascota | null>(null);
-  const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
+  const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
+  const [cargandoMascotas, setCargandoMascotas] = useState(true);
+  const [errorMascotas, setErrorMascotas] = useState('');
+  const [turnosGuardados, setTurnosGuardados] = useState<TurnoGuardado[]>([]);
+  const [cargandoTurnos, setCargandoTurnos] = useState(true);
+  const [errorTurnos, setErrorTurnos] = useState('');
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const fotoModalSize = Math.max(
+    0,
+    Math.min(windowWidth * 0.82, windowHeight - 200, 640)
+  );
+
+  const cargarMascotas = useCallback(async () => {
+    setCargandoMascotas(true);
+    setMascotas([]);
+    setErrorMascotas('');
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+      );
+      const resultado = await response.json();
+      if (!response.ok) {
+        setErrorMascotas(resultado.message ?? 'No se pudieron cargar tus mascotas.');
+        return;
+      }
+      setMascotas(resultado);
+    } catch (error) {
+      setErrorMascotas(apiUnreachableMessage(error));
+    } finally {
+      setCargandoMascotas(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarMascotas();
+    }, [cargarMascotas])
+  );
+
+  const cargarTurnos = useCallback(async () => {
+    setCargandoTurnos(true);
+    setErrorTurnos('');
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+      const response = await fetch(
+        `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`
+      );
+      const resultado = await response.json();
+      if (!response.ok) {
+        setErrorTurnos(resultado.message ?? 'No se pudieron cargar tus turnos.');
+        setTurnosGuardados([]);
+        return;
+      }
+      setTurnosGuardados(resultado);
+    } catch (error) {
+      setErrorTurnos(apiUnreachableMessage(error));
+      setTurnosGuardados([]);
+    } finally {
+      setCargandoTurnos(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarTurnos();
+    }, [cargarTurnos])
+  );
+
+  const ahora = new Date();
+  const citasVisibles: CitaLista[] = [
+    ...turnosGuardados
+      .filter((turno) => turnoSiguePendiente(turno, ahora))
+      .map((turno) => ({
+      id: -turno.id,
+      key: `guardado-${turno.id}`,
+      mascota: turno.mascota.nombre,
+      motivo: turno.tipo,
+      fecha: formatearFechaTurno(turno.fecha, turno.hora),
+      guardado: turno,
+      })),
+  ];
 
   const renderMascota = ({ item }: { item: Mascota }) => (
     <Pressable
@@ -17,22 +142,68 @@ export default function InicioScreen() {
       accessibilityRole="button"
       accessibilityLabel={`Ver foto de ${item.nombre}`}
     >
+      {item.foto ? (
+        <Image
+          source={{ uri: item.foto }}
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 10,
+            marginBottom: 8,
+            backgroundColor: '#cfe7d3',
+          }}
+          resizeMode="cover"
+          accessibilityLabel={`Vista previa de ${item.nombre}`}
+        />
+      ) : (
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 10,
+            marginBottom: 8,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#cfe7d3',
+          }}
+        >
+          <Ionicons name="paw-outline" size={28} color="#0f3e17" />
+        </View>
+      )}
       <Text style={estilos.cardTitle}>{item.nombre}</Text>
-      <Text style={estilos.cardSubtitle}>{item.especie}</Text>
+      <Text style={estilos.cardSubtitle}>
+        {descripcionEspecieMascota(item.especie, item.raza)}
+      </Text>
     </Pressable>
   );
 
-  const renderCita = ({ item }: { item: Cita }) => (
+  const renderCita = ({ item }: { item: CitaLista }) => (
     <Pressable
       style={({ pressed }) => [estilos.cardVertical, pressed && estilos.buttonPressed]}
       onPress={() => setCitaSeleccionada(item)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${item.mascota}`}
     >
-      <Text style={estilos.cardTitle}>
-        {item.mascota} - {item.motivo}
-      </Text>
-      <Text style={estilos.cardSubtitle}>{item.fecha}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {item.guardado.mascota.foto ? (
+          <Image
+            source={{ uri: item.guardado.mascota.foto }}
+            style={{ width: 56, height: 56, borderRadius: 10, backgroundColor: '#cfe7d3' }}
+            resizeMode="cover"
+            accessibilityLabel={`Foto de ${item.mascota}`}
+          />
+        ) : (
+          <View style={styles.turnPhotoPlaceholder}>
+            <Ionicons name="paw-outline" size={26} color="#0f3e17" />
+          </View>
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={estilos.cardTitle}>
+            {item.mascota} - {item.motivo}
+          </Text>
+          <Text style={estilos.cardSubtitle}>{item.fecha}</Text>
+        </View>
+      </View>
     </Pressable>
   );
 
@@ -40,10 +211,17 @@ export default function InicioScreen() {
     <AppDrawer title="VetPro">
       <FlatList
         style={estilos.container}
-        data={citas}
-        keyExtractor={(item) => String(item.id)}
+        data={citasVisibles}
+        keyExtractor={(item) => item.key}
         renderItem={renderCita}
         contentContainerStyle={estilos.listPadding}
+        ListEmptyComponent={
+          !cargandoTurnos && !errorTurnos ? (
+            <Text style={[estilos.cardSubtitle, { paddingHorizontal: 8, paddingBottom: 16 }]}>
+              No tienes próximas citas.
+            </Text>
+          ) : null
+        }
         ListHeaderComponent={
           <View>
             <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
@@ -55,6 +233,17 @@ export default function InicioScreen() {
               showsHorizontalScrollIndicator={false}
               style={estilos.horizontalList}
               contentContainerStyle={estilos.horizontalListContent}
+              ListEmptyComponent={
+                <View style={{ paddingVertical: 16, paddingHorizontal: 8 }}>
+                  {cargandoMascotas ? (
+                    <ActivityIndicator color="#0f3e17" />
+                  ) : (
+                    <Text style={estilos.cardSubtitle}>
+                      {errorMascotas || 'Todavía no tienes mascotas registradas.'}
+                    </Text>
+                  )}
+                </View>
+              }
             />
             <Link href="/escanear-qr" asChild>
               <Pressable
@@ -70,6 +259,11 @@ export default function InicioScreen() {
             </Link>
 
             <Text style={estilos.sectionTitle}>Próximas Citas</Text>
+            {cargandoTurnos ? (
+              <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
+            ) : errorTurnos ? (
+              <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
+            ) : null}
           </View>
         }
         ListFooterComponent={
@@ -112,15 +306,29 @@ export default function InicioScreen() {
               >
                 <Ionicons name="close" size={24} color="#263b32" />
               </Pressable>
-              <Image
-                source={{ uri: fotoMascota }}
-                style={estilos.petPhoto}
-                resizeMode="contain"
-                accessibilityLabel={`Foto de ${mascotaSeleccionada.nombre}`}
-              />
+              {mascotaSeleccionada.foto ? (
+                <Image
+                  source={{ uri: mascotaSeleccionada.foto }}
+                  style={[estilos.petPhoto, { width: fotoModalSize, height: fotoModalSize }]}
+                  resizeMode="contain"
+                  accessibilityLabel={`Foto de ${mascotaSeleccionada.nombre}`}
+                />
+              ) : (
+                <Ionicons name="paw-outline" size={88} color="#69806a" />
+              )}
               <Text style={estilos.cardTitle}>{mascotaSeleccionada.nombre}</Text>
               <Text style={estilos.cardSubtitle}>
-                {mascotaSeleccionada.especie} - {mascotaSeleccionada.edad}
+                {[
+                  descripcionEspecieMascota(
+                    mascotaSeleccionada.especie,
+                    mascotaSeleccionada.raza
+                  ),
+                  mascotaSeleccionada.edad !== null
+                    ? `${mascotaSeleccionada.edad} años`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             </View>
           )}
@@ -156,6 +364,9 @@ export default function InicioScreen() {
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
               <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
+              {citaSeleccionada.guardado && (
+                <Text style={estilos.modalText}>Turno registrado en tu cuenta.</Text>
+              )}
             </View>
           )}
         </View>
@@ -163,3 +374,14 @@ export default function InicioScreen() {
     </AppDrawer>
   );
 }
+
+const styles = {
+  turnPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 10,
+    backgroundColor: '#cfe7d3',
+  },
+};

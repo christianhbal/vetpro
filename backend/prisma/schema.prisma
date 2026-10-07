@@ -6,19 +6,47 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
+
 model Mascota {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   nombre    String
   especie   String
-  createdAt DateTime @default(now())
+  raza      String?
+  edad      Int?
+  foto      String?
+  userId    Int?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turnos    Turno[]
+  createdAt String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  @@index([userId])
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  nombre       String
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id        Int       @id @default(autoincrement())
+  nombre    String
+  email     String    @unique
+  password  String
+  telefono  String?
+  direccion String?
+  createdAt String    @default(dbgenerated("CURRENT_TIMESTAMP"))
+  mascotas  Mascota[]
+  turnos    Turno[]
 
   @@map("usuarios")
+}
+
+model Turno {
+  id        Int     @id @default(autoincrement())
+  tipo      String
+  fecha     String
+  hora      String
+  userId    Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mascotaId Int
+  mascota   Mascota @relation(fields: [mascotaId], references: [id], onDelete: Cascade)
+  createdAt String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  @@index([userId])
+  @@index([mascotaId])
 }

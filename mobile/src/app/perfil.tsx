@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { estilos } from '@/lib/estilos';
-import { usuario } from '@/lib/datos';
+import { cerrarSesion, obtenerUsuarioActual, type UsuarioActual } from '@/lib/session';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -25,6 +25,28 @@ const opciones: Opcion[] = [
 export default function PerfilScreen() {
   const [modalCerrarSesion, setModalCerrarSesion] = useState(false);
   const [modalAyuda, setModalAyuda] = useState(false);
+  const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let activo = true;
+      obtenerUsuarioActual()
+        .then((usuarioActual) => {
+          if (!activo) return;
+          if (!usuarioActual) {
+            router.replace('/');
+            return;
+          }
+          setUsuario(usuarioActual);
+        })
+        .catch((error: unknown) => {
+          console.error('No se pudo cargar el usuario actual:', error);
+        });
+      return () => {
+        activo = false;
+      };
+    }, [])
+  );
 
   const handleOpcion = (id: string) => {
     if (id === '1') {
@@ -46,8 +68,23 @@ export default function PerfilScreen() {
     <AppDrawer title="Perfil">
       <View style={estilos.listPadding}>
         <View style={estilos.profileHeader}>
-          <Text style={estilos.profileHeaderNombre}>{usuario.nombre}</Text>
-          <Text style={estilos.profileHeaderEmail}>{usuario.email}</Text>
+          <Text style={estilos.profileHeaderNombre}>{usuario?.nombre ?? 'Cargando perfil...'}</Text>
+          {usuario ? <Text style={estilos.profileHeaderEmail}>{usuario.email}</Text> : null}
+          {usuario?.telefono ? (
+            <Text style={estilos.profileHeaderEmail}>{usuario.telefono}</Text>
+          ) : null}
+        </View>
+
+        <View style={estilos.profileOption}>
+          <View style={estilos.profileOptionRow}>
+            <Ionicons name="location-outline" size={24} color="#0f3e17" />
+            <View style={{ marginLeft: 15, flex: 1 }}>
+              <Text style={estilos.profileOptionText}>Dirección</Text>
+              <Text style={[estilos.cardSubtitle, { marginTop: 4 }]}>
+                {usuario?.direccion || 'Todavía no agregaste una dirección.'}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {opciones.map((opcion) => (
@@ -115,9 +152,14 @@ export default function PerfilScreen() {
                   estilos.modalButtonPrimary,
                   pressed && estilos.buttonPressed,
                 ]}
-                onPress={() => {
+                onPress={async () => {
                   setModalCerrarSesion(false);
-                  router.replace('/');
+                  try {
+                    await cerrarSesion();
+                    router.replace('/');
+                  } catch (error) {
+                    console.error('No se pudo cerrar la sesion:', error);
+                  }
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Confirmar salida"

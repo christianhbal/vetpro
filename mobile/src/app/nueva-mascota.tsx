@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -10,7 +10,10 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { obtenerUsuarioActual } from '@/lib/session';
 
 const especies = ['Perro', 'Gato', 'Otro'];
 
@@ -26,16 +29,87 @@ export default function NuevaMascota() {
   const [especie, setEspecie] = useState('');
   const [raza, setRaza] = useState('');
   const [edad, setEdad] = useState('');
+  const [foto, setFoto] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { top } = useSafeAreaInsets();
 
   const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
 
-  const handleSubmit = () => {
-    if (!nombre.trim() || !especie || !edad.trim()) {
-      Alert.alert('Faltan datos', 'Completa el nombre, la especie y la edad.');
+  const elegirFoto = async () => {
+    try {
+      const resultado = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.65,
+        base64: true,
+      });
+      if (resultado.canceled) return;
+
+      const imagen = resultado.assets[0];
+      if (!imagen.base64) {
+        setMensaje('No se pudo leer la foto. Elige otra imagen.');
+        return;
+      }
+
+      setFoto(`data:${imagen.mimeType || 'image/jpeg'};base64,${imagen.base64}`);
+      setMensaje('');
+    } catch (error) {
+      setMensaje(error instanceof Error ? error.message : 'No se pudo abrir la galería.');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    setMensaje('');
+
+    const edadNumero = edad.trim() ? Number(edad) : null;
+    if (!nombre.trim() || !especie) {
+      setMensaje('Completa el nombre y la especie.');
       return;
     }
-    Alert.alert('Formulario completo', 'El guardado aún no funciona.');
+    if (
+      edadNumero !== null &&
+      (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
+    ) {
+      setMensaje('La edad debe ser un número entero entre 0 y 200.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/mascotas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nombre.trim(),
+          especie,
+          raza: raza.trim() || null,
+          edad: edadNumero,
+          foto,
+          userId: usuario.id,
+        }),
+      });
+      const resultado = await response.json();
+
+      if (!response.ok) {
+        setMensaje(resultado.message ?? 'No se pudo registrar la mascota.');
+        return;
+      }
+
+      router.replace('/mascotas');
+    } catch (error) {
+      setMensaje(apiUnreachableMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filas: Fila[] = [
@@ -130,13 +204,46 @@ export default function NuevaMascota() {
         }
         ListFooterComponent={
           <View style={styles.form}>
+            <Text style={styles.label}>Foto (opcional)</Text>
+            {foto ? (
+              <View style={styles.photoPreviewContainer}>
+                <Image source={{ uri: foto }} style={styles.photoPreview} />
+                <Pressable
+                  style={styles.removePhotoButton}
+                  onPress={() => setFoto(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quitar foto"
+                >
+                  <Ionicons name="close-circle" size={28} color="#a12d2d" />
+                </Pressable>
+              </View>
+            ) : null}
             <Pressable
-              style={({ pressed }) => [styles.submitButton, pressed && styles.buttonPressed]}
+              style={({ pressed }) => [styles.photoButton, pressed && styles.buttonPressed]}
+              onPress={elegirFoto}
+              accessibilityRole="button"
+              accessibilityLabel={foto ? 'Cambiar foto de mascota' : 'Elegir foto de mascota'}
+            >
+              <Ionicons name="image-outline" size={20} color="#0f3e17" />
+              <Text style={styles.photoButtonText}>
+                {foto ? 'Cambiar foto' : 'Elegir foto'}
+              </Text>
+            </Pressable>
+            {mensaje ? <Text style={styles.errorMessage}>{mensaje}</Text> : null}
+            <Pressable
+              style={({ pressed }) => [
+                styles.submitButton,
+                pressed && styles.buttonPressed,
+                isSubmitting && styles.submitButtonDisabled,
+              ]}
               onPress={handleSubmit}
+              disabled={isSubmitting}
               accessibilityRole="button"
               accessibilityLabel="Registrar mascota"
             >
-              <Text style={styles.submitText}>Registrar mascota</Text>
+              <Text style={styles.submitText}>
+                {isSubmitting ? 'Guardando...' : 'Registrar mascota'}
+              </Text>
             </Pressable>
           </View>
         }
@@ -222,6 +329,43 @@ const styles = StyleSheet.create({
     color: '#0f3e17',
     fontWeight: 'bold',
   },
+  photoPreviewContainer: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  photoPreview: {
+    width: 150,
+    height: 150,
+    borderRadius: 12,
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#fffefc',
+    borderRadius: 20,
+  },
+  photoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#b9cbb6',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+  },
+  photoButtonText: {
+    color: '#0f3e17',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  errorMessage: {
+    color: '#a12d2d',
+    fontSize: 14,
+    marginBottom: 14,
+  },
   submitButton: {
     alignItems: 'center',
     backgroundColor: '#0f3e17',
@@ -231,6 +375,9 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.75,
+  },
+  submitButtonDisabled: {
+    opacity: 0.65,
   },
   submitText: {
     color: '#fffefc',

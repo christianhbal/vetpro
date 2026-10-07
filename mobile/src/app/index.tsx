@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Link, router, Stack } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
+import { guardarUsuarioActual } from '../lib/session';
 
 type Campo = {
   id: string;
@@ -42,6 +43,22 @@ export default function Index() {
         return;
       }
 
+      if (
+        !Number.isInteger(result.id) ||
+        typeof result.nombre !== 'string' ||
+        typeof result.email !== 'string'
+      ) {
+        Alert.alert('No se pudo iniciar sesión', 'La API devolvió datos de usuario inválidos.');
+        return;
+      }
+
+      await guardarUsuarioActual({
+        id: result.id,
+        nombre: result.nombre,
+        email: result.email,
+        telefono: typeof result.telefono === 'string' ? result.telefono : null,
+        direccion: typeof result.direccion === 'string' ? result.direccion : null,
+      });
       router.replace('/app');
     } catch (error) {
       Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
