@@ -106,7 +106,7 @@ export default function Registro() {
       setDireccion('');
       setCrearAdmin(false);
       Alert.alert(
-        'Cuenta creada',
+        sesionAdmin ? 'Usuario creado exitosamente' : 'Cuenta creada',
         sesionAdmin
           ? `La cuenta quedó registrada como ${crearAdmin ? 'administrador' : 'usuario normal'}.`
           : 'Tu usuario quedó registrado en la base de datos.'
