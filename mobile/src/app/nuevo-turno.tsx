@@ -13,7 +13,12 @@ import { Picker } from '@react-native-picker/picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TurnoDateTimeField from '../components/turno-date-time-field';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { descripcionEspecieMascota } from '@/lib/datos';
+import {
+  descripcionEspecieMascota,
+  esSedeVeterinaria,
+  sedesVeterinaria,
+  type SedeVeterinaria,
+} from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'];
@@ -57,6 +62,7 @@ type MascotaPropia = {
 
 type Fila =
   | { id: 'tipo'; tipo: 'opciones'; label: string }
+  | { id: 'sede'; tipo: 'sede'; label: string }
   | { id: 'mascota'; tipo: 'mascotas'; label: string }
   | { id: 'fecha'; tipo: 'texto'; label: string }
   | { id: 'hora'; tipo: 'texto'; label: string };
@@ -66,6 +72,7 @@ export default function NuevoTurno() {
   const [mascotas, setMascotas] = useState<MascotaPropia[]>([]);
   const [mascotaId, setMascotaId] = useState<number | null>(null);
   const [tipo, setTipo] = useState('');
+  const [sede, setSede] = useState<SedeVeterinaria | ''>('');
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
   const [cargandoMascotas, setCargandoMascotas] = useState(true);
@@ -124,8 +131,8 @@ export default function NuevoTurno() {
 
   const handleSubmit = async () => {
     setMensajeFormulario('');
-    if (mascotaId === null || !tipo || !fecha.trim() || !hora.trim()) {
-      setMensajeFormulario('Completa todos los campos y elige una mascota y un tipo de turno.');
+    if (mascotaId === null || !tipo || !sede || !fecha.trim() || !hora.trim()) {
+      setMensajeFormulario('Completa todos los campos y elige una mascota, un tipo y una sede.');
       setEsError(true);
       return;
     }
@@ -157,6 +164,7 @@ export default function NuevoTurno() {
           userId: usuario.id,
           mascotaId,
           tipo,
+          sede,
           fecha: fechaApi,
           hora: horaNormalizada,
         }),
@@ -184,12 +192,37 @@ export default function NuevoTurno() {
 
   const filas: Fila[] = [
     { id: 'tipo', tipo: 'opciones', label: 'Tipo de turno' },
+    { id: 'sede', tipo: 'sede', label: 'Sede de la veterinaria' },
     { id: 'mascota', tipo: 'mascotas', label: 'Mascota' },
     { id: 'fecha', tipo: 'texto', label: 'Fecha' },
     { id: 'hora', tipo: 'texto', label: 'Hora' },
   ];
 
   const renderFila = ({ item }: { item: Fila }) => {
+    if (item.tipo === 'sede') {
+      return (
+        <View>
+          <Text style={styles.label}>{item.label}</Text>
+          <View style={styles.petPicker}>
+            <Picker
+              selectedValue={sede}
+              onValueChange={(value) => {
+                if (value === '' || esSedeVeterinaria(value)) setSede(value);
+              }}
+              mode="dropdown"
+              accessibilityLabel="Seleccionar sede"
+              style={styles.petPickerControl}
+            >
+              <Picker.Item label="Seleccionar sede" value="" enabled={false} />
+              {sedesVeterinaria.map((opcion) => (
+                <Picker.Item key={opcion} label={opcion} value={opcion} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+      );
+    }
+
     if (item.tipo === 'opciones') {
       return (
         <View>

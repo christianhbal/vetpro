@@ -3,13 +3,14 @@ import {
   Alert,
   FlatList,
   Image,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Link, Stack } from 'expo-router';
+import { Link, Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { obtenerUsuarioActual } from '../lib/session';
@@ -37,7 +38,9 @@ export default function Registro() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
+  const [sesionVerificada, setSesionVerificada] = useState(false);
   const [crearAdmin, setCrearAdmin] = useState(false);
+  const [mostrarConfirmacionAdmin, setMostrarConfirmacionAdmin] = useState(false);
   const { top } = useSafeAreaInsets();
 
   const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
@@ -48,6 +51,7 @@ export default function Registro() {
       if (activo && usuario?.esAdmin) {
         setSesionAdmin({ accessToken: usuario.accessToken });
       }
+      if (activo) setSesionVerificada(true);
     });
     return () => {
       activo = false;
@@ -55,7 +59,7 @@ export default function Registro() {
   }, []);
 
   const handleRegister = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || !sesionVerificada) return;
 
     if (!nombre.trim() || !email.trim() || !telefono.trim() || !password || !confirmPassword) {
       Alert.alert('Faltan datos', 'Completa todos los campos para continuar.');
@@ -105,12 +109,11 @@ export default function Registro() {
       setConfirmPassword('');
       setDireccion('');
       setCrearAdmin(false);
-      Alert.alert(
-        sesionAdmin ? 'Usuario creado exitosamente' : 'Cuenta creada',
-        sesionAdmin
-          ? `La cuenta quedó registrada como ${crearAdmin ? 'administrador' : 'usuario normal'}.`
-          : 'Tu usuario quedó registrado en la base de datos.'
-      );
+      if (sesionAdmin) {
+        setMostrarConfirmacionAdmin(true);
+      } else {
+        Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
+      }
     } catch (error) {
       Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
     } finally {
@@ -261,15 +264,19 @@ export default function Registro() {
               style={({ pressed }) => [
                 styles.registerButton,
                 pressed && styles.buttonPressed,
-                isSubmitting && styles.registerButtonDisabled,
+                (isSubmitting || !sesionVerificada) && styles.registerButtonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !sesionVerificada}
               accessibilityRole="button"
               accessibilityLabel="Crear cuenta"
             >
               <Text style={styles.registerButtonText}>
-                {isSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
+                {!sesionVerificada
+                  ? 'Verificando sesión...'
+                  : isSubmitting
+                    ? 'Creando cuenta...'
+                    : 'Crear cuenta'}
               </Text>
             </Pressable>
 
@@ -290,6 +297,30 @@ export default function Registro() {
           </View>
         }
       />
+
+      <Modal
+        visible={mostrarConfirmacionAdmin}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMostrarConfirmacionAdmin(false)}
+      >
+        <View style={styles.confirmationRoot}>
+          <View style={styles.confirmationCard} accessibilityRole="alert">
+            <Text style={styles.confirmationTitle}>La cuenta se registró exitosamente</Text>
+            <Pressable
+              style={styles.confirmationButton}
+              onPress={() => {
+                setMostrarConfirmacionAdmin(false);
+                router.replace('/admin-usuarios');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Aceptar y volver a administrar usuarios"
+            >
+              <Text style={styles.confirmationButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -440,5 +471,37 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     textDecorationLine: 'underline',
+  },
+  confirmationRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  confirmationCard: {
+    width: '100%',
+    maxWidth: 380,
+    padding: 24,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+  },
+  confirmationTitle: {
+    color: '#0f3e17',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+  confirmationButton: {
+    alignItems: 'center',
+    backgroundColor: '#1B4D3E',
+    padding: 14,
+    borderRadius: 24,
+  },
+  confirmationButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

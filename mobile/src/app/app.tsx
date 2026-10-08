@@ -202,6 +202,7 @@ export default function InicioScreen() {
             {item.mascota} - {item.motivo}
           </Text>
           <Text style={estilos.cardSubtitle}>{item.fecha}</Text>
+          <Text style={estilos.cardSubtitle}>Sede: {item.guardado.sede}</Text>
         </View>
       </View>
     </Pressable>
@@ -363,6 +364,7 @@ export default function InicioScreen() {
 
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
+              <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
               <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
               {citaSeleccionada.guardado && (
                 <Text style={estilos.modalText}>Turno registrado en tu cuenta.</Text>

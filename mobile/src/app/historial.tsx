@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import { formatearFechaTurno, type TurnoGuardado } from '@/lib/datos';
+import { esSedeVeterinaria, formatearFechaTurno, type TurnoGuardado } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 function esTurnoGuardado(value: unknown): value is TurnoGuardado {
@@ -18,6 +18,7 @@ function esTurnoGuardado(value: unknown): value is TurnoGuardado {
   return (
     typeof turno.id === 'number' &&
     typeof turno.tipo === 'string' &&
+    esSedeVeterinaria(turno.sede) &&
     typeof turno.fecha === 'string' &&
     typeof turno.hora === 'string' &&
     typeof turno.mascotaId === 'number' &&
@@ -111,6 +112,7 @@ export default function Historial() {
         </Text>
       </View>
       <Text style={estilos.cardSubtitle}>{item.tipo}</Text>
+      <Text style={estilos.cardSubtitle}>Sede: {item.sede}</Text>
     </View>
   );
 

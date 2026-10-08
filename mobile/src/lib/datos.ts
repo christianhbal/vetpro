@@ -15,6 +15,7 @@ export type Cita = {
 export type TurnoGuardado = {
   id: number;
   tipo: string;
+  sede: SedeVeterinaria;
   fecha: string;
   hora: string;
   mascotaId: number;
@@ -26,6 +27,14 @@ export type TurnoGuardado = {
     foto: string | null;
   };
 };
+
+export const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
+
+export type SedeVeterinaria = (typeof sedesVeterinaria)[number];
+
+export function esSedeVeterinaria(value: unknown): value is SedeVeterinaria {
+  return typeof value === 'string' && sedesVeterinaria.some((sede) => sede === value);
+}
 
 export function formatearFechaTurno(fecha: string, hora: string): string {
   const [year, month, day] = fecha.split('-').map(Number);

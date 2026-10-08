@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
@@ -41,6 +41,7 @@ export default function EditarPerfil() {
   const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   const contenedor = useMemo(() => [estilos.formContent, { paddingTop: top }], [top]);
 
@@ -168,9 +169,7 @@ export default function EditarPerfil() {
         esAdmin: usuario.esAdmin,
         accessToken: usuario.accessToken,
       });
-      Alert.alert('Perfil actualizado', 'Tus datos se guardaron correctamente.', [
-        { text: 'Aceptar', onPress: () => router.replace('/perfil') },
-      ]);
+      setMostrarConfirmacion(true);
     } catch (error) {
       Alert.alert(
         'No se pudo actualizar el perfil',
@@ -290,6 +289,42 @@ export default function EditarPerfil() {
           </View>
         }
       />
+
+      <Modal
+        visible={mostrarConfirmacion}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMostrarConfirmacion(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setMostrarConfirmacion(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar mensaje"
+          />
+          <View
+            style={[estilos.modalCard, { width: '85%', maxWidth: 340, alignSelf: 'center' }]}
+            accessibilityRole="alert"
+          >
+            <Text style={estilos.modalTitle}>Modificación exitosa</Text>
+            <View style={estilos.modalActions}>
+              <Pressable
+                style={[estilos.modalButton, estilos.modalButtonPrimary]}
+                onPress={() => {
+                  setMostrarConfirmacion(false);
+                  router.replace('/perfil');
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  Aceptar
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

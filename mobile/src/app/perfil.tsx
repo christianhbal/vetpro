@@ -79,7 +79,7 @@ export default function PerfilScreen() {
           <View style={estilos.profileOptionRow}>
             <Ionicons name="location-outline" size={24} color="#0f3e17" />
             <View style={{ marginLeft: 15, flex: 1 }}>
-              <Text style={estilos.profileOptionText}>Dirección</Text>
+              <Text style={[estilos.profileOptionText, { marginLeft: 0 }]}>Dirección</Text>
               <Text style={[estilos.cardSubtitle, { marginTop: 4 }]}>
                 {usuario?.direccion || 'Todavía no agregaste una dirección.'}
               </Text>

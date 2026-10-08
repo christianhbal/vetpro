@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -16,16 +15,24 @@ import { Picker } from '@react-native-picker/picker';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import { formatearFechaTurno } from '@/lib/datos';
+import {
+  descripcionEspecieMascota,
+  esSedeVeterinaria,
+  formatearFechaTurno,
+  sedesVeterinaria,
+  turnoSiguePendiente,
+  type SedeVeterinaria,
+} from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 type TurnoAdministrado = {
   id: number;
   tipo: string;
+  sede: SedeVeterinaria;
   fecha: string;
   hora: string;
   user: { nombre: string; email: string };
-  mascota: { nombre: string };
+  mascota: { nombre: string; especie: string; raza: string | null };
 };
 
 function mensajeApi(resultado: unknown): string | null {
@@ -38,15 +45,20 @@ function mensajeApi(resultado: unknown): string | null {
 function esTurnoAdministrado(value: unknown): value is TurnoAdministrado {
   if (typeof value !== 'object' || value === null) return false;
   const turno = value as Record<string, unknown>;
+  const mascota = turno.mascota;
+  if (typeof mascota !== 'object' || mascota === null) return false;
+  const datosMascota = mascota as Record<string, unknown>;
   return (
     typeof turno.id === 'number' &&
     typeof turno.tipo === 'string' &&
+    esSedeVeterinaria(turno.sede) &&
     typeof turno.fecha === 'string' &&
     typeof turno.hora === 'string' &&
     typeof turno.user === 'object' &&
     turno.user !== null &&
-    typeof turno.mascota === 'object' &&
-    turno.mascota !== null
+    typeof datosMascota.nombre === 'string' &&
+    typeof datosMascota.especie === 'string' &&
+    (typeof datosMascota.raza === 'string' || datosMascota.raza === null)
   );
 }
 
@@ -55,12 +67,15 @@ export default function AdminTurnosScreen() {
   const [turnos, setTurnos] = useState<TurnoAdministrado[]>([]);
   const [seleccionado, setSeleccionado] = useState<TurnoAdministrado | null>(null);
   const [tipo, setTipo] = useState('Control');
+  const [sede, setSede] = useState<SedeVeterinaria>('Recoleta');
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
   const [token, setToken] = useState('');
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  const [errorGuardado, setErrorGuardado] = useState('');
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   const cargarTurnos = useCallback(async () => {
     setCargando(true);
@@ -103,13 +118,18 @@ export default function AdminTurnosScreen() {
 
   const abrirEdicion = (turno: TurnoAdministrado) => {
     setSeleccionado(turno);
+    setErrorGuardado('');
     setTipo(turno.tipo);
+    setSede(turno.sede);
     setFecha(turno.fecha);
     setHora(turno.hora);
   };
 
+  const turnosProximos = turnos.filter((turno) => turnoSiguePendiente(turno, new Date()));
+
   const guardarCambios = async () => {
     if (!seleccionado || guardando) return;
+    setErrorGuardado('');
     setGuardando(true);
     try {
       const response = await fetch(
@@ -120,24 +140,55 @@ export default function AdminTurnosScreen() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ tipo, fecha: fecha.trim(), hora: hora.trim() }),
+          body: JSON.stringify({ tipo, sede, fecha: fecha.trim(), hora: hora.trim() }),
         }
       );
       const result: unknown = await response.json();
       if (!response.ok) {
-        Alert.alert('No se pudo modificar el turno', mensajeApi(result) ?? 'Inténtalo nuevamente.');
+        setErrorGuardado(mensajeApi(result) ?? 'No se pudo modificar el turno.');
         return;
       }
       if (!esTurnoAdministrado(result) || result.id !== seleccionado.id) {
         throw new Error('La API no confirmó los cambios del turno.');
       }
-      setTurnos((actuales) =>
-        actuales.map((turno) => (turno.id === result.id ? result : turno))
+      if (result.sede !== sede || result.fecha !== fecha.trim() || result.hora !== hora.trim()) {
+        throw new Error('La API no guardó la sede, fecha y hora solicitadas.');
+      }
+
+      const listaResponse = await fetch(`${API_BASE_URL}/api/admin/turnos`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const listaActualizada: unknown = await listaResponse.json();
+      if (
+        !listaResponse.ok ||
+        !Array.isArray(listaActualizada) ||
+        !listaActualizada.every(esTurnoAdministrado)
+      ) {
+        throw new Error(mensajeApi(listaActualizada) ?? 'No se pudo confirmar el turno actualizado.');
+      }
+      const turnoActualizado = listaActualizada.find(
+        (turno) => turno.id === seleccionado.id
       );
+      if (
+        !turnoActualizado ||
+        turnoActualizado.sede !== sede ||
+        turnoActualizado.fecha !== fecha.trim() ||
+        turnoActualizado.hora !== hora.trim()
+      ) {
+        throw new Error('El turno no aparece actualizado al volver a consultar la lista.');
+      }
+
+      setTurnos(listaActualizada);
       setSeleccionado(null);
-      Alert.alert('Turno actualizado', 'Los cambios se guardaron correctamente en la base de datos.');
+      setMostrarConfirmacion(true);
     } catch (requestError) {
-      Alert.alert('No se pudo modificar el turno', apiUnreachableMessage(requestError));
+      setErrorGuardado(
+        requestError instanceof TypeError
+          ? apiUnreachableMessage(requestError)
+          : requestError instanceof Error
+            ? requestError.message
+            : apiUnreachableMessage(requestError)
+      );
     } finally {
       setGuardando(false);
     }
@@ -147,7 +198,7 @@ export default function AdminTurnosScreen() {
     <AppDrawer title="Modificar turnos">
       <FlatList
         style={estilos.container}
-        data={turnos}
+        data={turnosProximos}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={estilos.listPadding}
         ListEmptyComponent={
@@ -155,7 +206,12 @@ export default function AdminTurnosScreen() {
             {cargando ? (
               <ActivityIndicator color="#0f3e17" />
             ) : (
-              <Text style={estilos.cardSubtitle}>{error || 'No hay turnos registrados.'}</Text>
+              <Text style={estilos.cardSubtitle}>
+                {error ||
+                  (turnos.length > 0
+                    ? 'No hay turnos próximos para modificar.'
+                    : 'No hay turnos registrados.')}
+              </Text>
             )}
           </View>
         }
@@ -168,9 +224,9 @@ export default function AdminTurnosScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <Text style={estilos.cardTitle}>{item.mascota.nombre} · {item.tipo}</Text>
+                <Text style={estilos.cardTitle}>{item.mascota.nombre}</Text>
                 <Text style={estilos.cardSubtitle}>{formatearFechaTurno(item.fecha, item.hora)}</Text>
-                <Text style={estilos.cardSubtitle}>{item.user.nombre} · {item.user.email}</Text>
+                <Text style={styles.ownerName}>{item.user.nombre}</Text>
               </View>
               <Ionicons name="create-outline" size={22} color="#0f3e17" />
             </View>
@@ -194,14 +250,33 @@ export default function AdminTurnosScreen() {
           {seleccionado ? (
             <View style={estilos.modalCard}>
               <Text style={estilos.modalTitle}>Modificar turno</Text>
+              <Text style={estilos.modalTitle}>{seleccionado.mascota.nombre}</Text>
               <Text style={estilos.modalText}>
-                {seleccionado.mascota.nombre} · {seleccionado.user.nombre}
+                Tipo de mascota:{' '}
+                {descripcionEspecieMascota(
+                  seleccionado.mascota.especie,
+                  seleccionado.mascota.raza
+                )}
               </Text>
+              <Text style={styles.ownerName}>{seleccionado.user.nombre}</Text>
+              <Text style={estilos.modalText}>{seleccionado.user.email}</Text>
               <Text style={styles.label}>Tipo de turno</Text>
               <Picker selectedValue={tipo} onValueChange={(value) => setTipo(value)}>
                 <Picker.Item label="Control" value="Control" />
                 <Picker.Item label="Vacunas" value="Vacunas" />
                 <Picker.Item label="Estética" value="Estética" />
+              </Picker>
+              <Text style={styles.label}>Sede</Text>
+              <Picker
+                selectedValue={sede}
+                onValueChange={(value) => {
+                  if (esSedeVeterinaria(value)) setSede(value);
+                }}
+                accessibilityLabel="Sede del turno"
+              >
+                {sedesVeterinaria.map((opcion) => (
+                  <Picker.Item key={opcion} label={opcion} value={opcion} />
+                ))}
               </Picker>
               <Text style={styles.label}>Fecha (AAAA-MM-DD)</Text>
               <TextInput
@@ -219,6 +294,11 @@ export default function AdminTurnosScreen() {
                 style={styles.input}
                 accessibilityLabel="Hora del turno"
               />
+              {errorGuardado ? (
+                <Text style={styles.saveError} accessibilityRole="alert">
+                  {errorGuardado}
+                </Text>
+              ) : null}
               <Pressable
                 style={[estilos.addTurnButton, { marginTop: 14 }]}
                 onPress={() => void guardarCambios()}
@@ -233,11 +313,53 @@ export default function AdminTurnosScreen() {
           ) : null}
         </View>
       </Modal>
+
+      <Modal
+        visible={mostrarConfirmacion}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMostrarConfirmacion(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setMostrarConfirmacion(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar mensaje"
+          />
+          <View style={estilos.modalCard} accessibilityRole="alert">
+            <Text style={estilos.modalTitle}>Turno modificado con éxito</Text>
+            <View style={estilos.modalActions}>
+              <Pressable
+                style={[estilos.modalButton, estilos.modalButtonPrimary]}
+                onPress={() => setMostrarConfirmacion(false)}
+                accessibilityRole="button"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  Aceptar
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AppDrawer>
   );
 }
 
 const styles = StyleSheet.create({
+  ownerName: {
+    color: '#0f3e17',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  saveError: {
+    color: '#a32828',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
   label: {
     color: '#263b32',
     fontSize: 14,

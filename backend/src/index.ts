@@ -192,7 +192,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
             userId: turno.userId,
             turnoId: turno.id,
             title: 'Tu turno se acerca',
-            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre}.`,
+            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${turno.sede}.`,
           },
         });
       });
@@ -422,7 +422,7 @@ app.get('/api/turnos', async (request, response) => {
 // POST /api/turnos
 // Guarda un turno asociado al dueño y a una de sus mascotas.
 app.post('/api/turnos', async (request, response) => {
-  const { userId, mascotaId, tipo, fecha, hora } = request.body ?? {};
+  const { userId, mascotaId, tipo, sede, fecha, hora } = request.body ?? {};
 
   if (
     !Number.isInteger(userId) ||
@@ -434,6 +434,12 @@ app.post('/api/turnos', async (request, response) => {
   }
   if (typeof tipo !== 'string' || !['Control', 'Vacunas', 'Estética'].includes(tipo)) {
     return response.status(400).json({ message: 'El tipo de turno no es valido.' });
+  }
+  if (
+    typeof sede !== 'string' ||
+    !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+  ) {
+    return response.status(400).json({ message: 'Selecciona una sede válida.' });
   }
   if (!isValidDateOnly(fecha)) {
     return response.status(400).json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
@@ -454,6 +460,7 @@ app.post('/api/turnos', async (request, response) => {
     const turno = await prisma.turno.create({
       data: {
         tipo,
+        sede,
         fecha,
         hora,
         user: { connect: { id: userId } },
@@ -492,7 +499,7 @@ app.get('/api/admin/turnos', async (request, response) => {
 });
 
 // PATCH /api/admin/turnos/:id
-// Permite a un administrador cambiar el tipo, la fecha o la hora del turno.
+// Permite a un administrador cambiar el tipo, la sede, la fecha o la hora del turno.
 app.patch('/api/admin/turnos/:id', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -501,9 +508,10 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
   if (id === null) {
     return response.status(400).json({ message: 'El id del turno no es válido.' });
   }
-  const { tipo, fecha, hora } = request.body ?? {};
+  const { tipo, sede, fecha, hora } = request.body ?? {};
   const data: {
     tipo?: string;
+    sede?: string;
     fecha?: string;
     hora?: string;
     recordatorioEnviadoEn?: string | null;
@@ -514,6 +522,15 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       return response.status(400).json({ message: 'El tipo de turno no es válido.' });
     }
     data.tipo = tipo;
+  }
+  if (sede !== undefined) {
+    if (
+      typeof sede !== 'string' ||
+      !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+    ) {
+      return response.status(400).json({ message: 'La sede no es válida.' });
+    }
+    data.sede = sede;
   }
   if (fecha !== undefined) {
     if (!isValidDateOnly(fecha)) {
@@ -528,7 +545,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
     data.hora = hora;
   }
   if (Object.keys(data).length === 0) {
-    return response.status(400).json({ message: 'Indica el tipo, la fecha o la hora para actualizar.' });
+    return response.status(400).json({ message: 'Indica el tipo, la sede, la fecha o la hora para actualizar.' });
   }
 
   try {
@@ -554,6 +571,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       });
       const cambios = [
         anterior.tipo !== turno.tipo ? `tipo: ${anterior.tipo} → ${turno.tipo}` : null,
+        anterior.sede !== turno.sede ? `sede: ${anterior.sede} → ${turno.sede}` : null,
         anterior.fecha !== turno.fecha ? `fecha: ${anterior.fecha} → ${turno.fecha}` : null,
         anterior.hora !== turno.hora ? `hora: ${anterior.hora} → ${turno.hora}` : null,
       ].filter((cambio): cambio is string => cambio !== null);
