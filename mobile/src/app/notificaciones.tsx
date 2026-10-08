@@ -40,9 +40,11 @@ export default function NotificacionesScreen() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
 
-  const cargarAvisos = useCallback(async () => {
-    setCargando(true);
-    setError('');
+  const cargarAvisos = useCallback(async (mostrarCarga = true) => {
+    if (mostrarCarga) {
+      setCargando(true);
+      setError('');
+    }
     try {
       const usuario = await obtenerUsuarioActual();
       if (!usuario) {
@@ -75,13 +77,17 @@ export default function NotificacionesScreen() {
       setError(apiUnreachableMessage(requestError));
       setAvisos([]);
     } finally {
-      setCargando(false);
+      if (mostrarCarga) setCargando(false);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       void cargarAvisos();
+      const intervalo = setInterval(() => {
+        void cargarAvisos(false);
+      }, 60 * 1000);
+      return () => clearInterval(intervalo);
     }, [cargarAvisos])
   );
 
@@ -156,7 +162,7 @@ export default function NotificacionesScreen() {
                 <Text style={estilos.cardTitle}>{item.title}</Text>
                 <Text style={estilos.cardSubtitle}>{item.message}</Text>
                 <Text style={styles.date}>
-                  {new Date(item.createdAt).toLocaleString('es-AR')}
+                  {new Date(item.createdAt).toLocaleDateString('es-AR')}
                 </Text>
               </View>
               {!item.readAt ? <View style={styles.unreadDot} /> : null}
