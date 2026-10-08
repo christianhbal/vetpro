@@ -1,4 +1,4 @@
-1) npm init tanto en el backend como mobile
+1)npm init tanto en el backend como mobile
 
 2)entrar a la carpeta de Backend:
 paso 1)npm install prisma --save-dev
