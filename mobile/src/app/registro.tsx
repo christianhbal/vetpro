@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -13,6 +13,7 @@ import { Link, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { obtenerUsuarioActual } from '../lib/session';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Campo = {
   id: string;
@@ -37,6 +38,9 @@ export default function Registro() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
   const [crearAdmin, setCrearAdmin] = useState(false);
+  const { top } = useSafeAreaInsets();
+
+  const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
 
   useEffect(() => {
     let activo = true;
@@ -172,7 +176,7 @@ export default function Registro() {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={contenedor}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <FlatList

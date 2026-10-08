@@ -1,24 +1,32 @@
 import { useEffect } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
 
 export default function RootLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/notificaciones');
-    });
-    return () => subscription.remove();
+    let subscription: { remove: () => void } | undefined;
+
+    try {
+      const Notifications = require('expo-notifications');
+
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+
+      subscription = Notifications.addNotificationResponseReceivedListener(() => {
+        router.push('/notificaciones');
+      });
+    } catch (error) {
+      console.warn('Las notificaciones no están disponibles en este entorno:', error);
+    }
+
+    return () => subscription?.remove();
   }, [router]);
 
   return (

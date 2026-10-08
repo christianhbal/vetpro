@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { API_BASE_URL } from '@/lib/api';
 import type { UsuarioActual } from '@/lib/session';
@@ -13,6 +12,13 @@ export async function registrarNotificacionesPush(usuario: UsuarioActual): Promi
     Constants.expoConfig?.extra?.eas?.projectId;
   if (typeof projectId !== 'string' || !projectId) {
     return 'Falta configurar el ID del proyecto EAS para activar las notificaciones push.';
+  }
+
+  let Notifications;
+  try {
+    Notifications = require('expo-notifications');
+  } catch {
+    return 'Las notificaciones push no están disponibles en este entorno (requiere una build propia).';
   }
 
   if (Platform.OS === 'android') {

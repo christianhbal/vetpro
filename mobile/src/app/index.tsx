@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Link, router, Stack } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { guardarUsuarioActual } from '../lib/session';
@@ -125,9 +125,12 @@ export default function Index() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>VP</Text>
-            </View>
+            <Image
+              source={require('../../assets/images/vetpro-logo-horizontal.jpg')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="VetPro, cuidado y bienestar"
+            />
             <Text style={styles.title}>¡Bienvenido a VetPro!</Text>
           </View>
         }
@@ -209,24 +212,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
   },
-  logoContainer: {
-    width: '30%',
-    aspectRatio: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  logoText: {
-    fontSize: 45,
-    fontWeight: '900',
-    color: '#488c70',
+  logo: {
+    width: 160,
+    height: 63,
+    marginBottom: 8,
   },
   title: {
     fontSize: 26,
