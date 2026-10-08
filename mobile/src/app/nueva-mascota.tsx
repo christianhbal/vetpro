@@ -40,8 +40,7 @@ export default function NuevaMascota() {
     try {
       const resultado = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.65,
         base64: true,
       });
@@ -207,7 +206,11 @@ export default function NuevaMascota() {
             <Text style={styles.label}>Foto (opcional)</Text>
             {foto ? (
               <View style={styles.photoPreviewContainer}>
-                <Image source={{ uri: foto }} style={styles.photoPreview} />
+                <Image
+                  source={{ uri: foto }}
+                  style={styles.photoPreview}
+                  resizeMode="contain"
+                />
                 <Pressable
                   style={styles.removePhotoButton}
                   onPress={() => setFoto(null)}
@@ -334,9 +337,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   photoPreview: {
-    width: 150,
-    height: 150,
+    width: 180,
+    height: 240,
     borderRadius: 12,
+    backgroundColor: '#e1f4df',
   },
   removePhotoButton: {
     position: 'absolute',

@@ -3,6 +3,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'r
 import { Link, router, Stack } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { guardarUsuarioActual } from '../lib/session';
+import { registrarNotificacionesPush } from '../lib/push';
 
 type Campo = {
   id: string;
@@ -46,7 +47,9 @@ export default function Index() {
       if (
         !Number.isInteger(result.id) ||
         typeof result.nombre !== 'string' ||
-        typeof result.email !== 'string'
+        typeof result.email !== 'string' ||
+        typeof result.esAdmin !== 'boolean' ||
+        typeof result.accessToken !== 'string'
       ) {
         Alert.alert('No se pudo iniciar sesión', 'La API devolvió datos de usuario inválidos.');
         return;
@@ -58,8 +61,30 @@ export default function Index() {
         email: result.email,
         telefono: typeof result.telefono === 'string' ? result.telefono : null,
         direccion: typeof result.direccion === 'string' ? result.direccion : null,
+        esAdmin: result.esAdmin,
+        accessToken: result.accessToken,
       });
       router.replace('/app');
+      try {
+        const avisoPush = await registrarNotificacionesPush({
+          id: result.id,
+          nombre: result.nombre,
+          email: result.email,
+          telefono: typeof result.telefono === 'string' ? result.telefono : null,
+          direccion: typeof result.direccion === 'string' ? result.direccion : null,
+          esAdmin: result.esAdmin,
+          accessToken: result.accessToken,
+        });
+        if (avisoPush) {
+          Alert.alert('Notificaciones push no activadas', avisoPush);
+        }
+      } catch (pushError) {
+        console.error('No se pudo registrar el dispositivo para notificaciones push:', pushError);
+        Alert.alert(
+          'No se pudieron activar las notificaciones push',
+          pushError instanceof Error ? pushError.message : 'Inténtalo nuevamente más tarde.'
+        );
+      }
     } catch (error) {
       Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
     } finally {

@@ -8,6 +8,8 @@ export type UsuarioActual = {
   email: string;
   telefono?: string | null;
   direccion?: string | null;
+  esAdmin: boolean;
+  accessToken: string;
 };
 
 function esUsuarioActual(value: unknown): value is UsuarioActual {
@@ -18,6 +20,8 @@ function esUsuarioActual(value: unknown): value is UsuarioActual {
     Number.isInteger(usuario.id) &&
     typeof usuario.nombre === 'string' &&
     typeof usuario.email === 'string' &&
+    typeof usuario.esAdmin === 'boolean' &&
+    typeof usuario.accessToken === 'string' &&
     (usuario.telefono === undefined ||
       usuario.telefono === null ||
       typeof usuario.telefono === 'string') &&

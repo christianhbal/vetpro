@@ -29,11 +29,31 @@ The backend loads its configuration from `backend/.env`. After it starts, verify
 
 The SQLite database is `backend/prisma/dev.db`; `backend/prisma/dev.db.backup` is a copy of the current database. The backend initializes the schema with `prisma db push`, so avoid `prisma migrate` for this class project; migrations create the `_prisma_migrations` metadata table. `createdAt` is stored as readable SQLite text with `CURRENT_TIMESTAMP`.
 
+The user records are stored in the SQLite table `Usuario`; push notification device tokens are stored in `notificacionpush`.
+
 After login, the app keeps the current user locally and uses its ID to create and list that user's pets. Pets created before the owner relationship have no user and do not appear in the list. A selected pet photo is stored as a Base64 data URL in SQLite.
 
 The account phone number is required. An address is optional: it can be entered while registering or added later in Edit Profile. The profile screen displays the saved address, and profile updates are stored in the user's database record. The home screen shows a thumbnail of each pet's photo.
 
 Appointments are stored in the `Turno` table and linked to both the signed-in user and one of that user's pets. The Turnos screen and home page show only saved upcoming appointments; past appointments appear in History. After changing the Prisma schema, run `npm run db:init` from `backend/`, then restart the API with `npm run dev`.
+
+Users have a `USER` or `ADMIN` role in SQLite. Public registration always creates a normal user; an administrator can create accounts with either role from **Administrar usuarios**. To set up the first administrator, first register that account normally, then run this from `backend/`:
+
+```bash
+npm run admin:promote -- correo@ejemplo.com
+```
+
+Sign in after promotion so the app receives an administrator token. The token is verified against the current account password and role; it is not stored in a sessions table and does not expire after 30 days. Changing the account password invalidates existing tokens. Admin-only user deletion and appointment editing are checked by the backend. Deleting an account also deletes its pets and appointments, and the last administrator cannot be deleted.
+
+When an administrator changes a turn, VetPro saves a notification for its owner in SQLite and sends a push through Expo to that user's registered devices. To enable remote push delivery, run these commands from `mobile/`:
+
+```bash
+npx eas-cli@latest init
+npx eas-cli@latest credentials
+npx eas-cli@latest build --profile development --platform android
+```
+
+`eas init` links the app to an EAS project and adds its project ID to the app config. Configure Android FCM credentials in the EAS credentials flow; iOS builds also need Apple push credentials. Install the resulting development build on the phone. Push permissions and device tokens are registered after sign-in on a physical Android/iOS device. Sign in again after updating the app so the new token is registered. The **Notificaciones** screen keeps the in-app history available on mobile and web; remote push delivery requires EAS credentials and a compatible device build.
 
 The app defaults to `http://localhost:3000` on web/iOS simulators and `http://10.0.2.2:3000` on Android emulators. For a physical phone, create `mobile/.env` from `mobile/.env.example` and set `EXPO_PUBLIC_API_URL` to your computer's LAN IP. The phone and computer must be on the same network. Restart Expo after changing the variable.
 

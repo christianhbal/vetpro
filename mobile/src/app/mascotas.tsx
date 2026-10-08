@@ -121,7 +121,7 @@ export default function MascotasScreen() {
                   <Image
                     source={{ uri: item.foto }}
                     style={{ width: 64, height: 64, borderRadius: 12 }}
-                    resizeMode="cover"
+                    resizeMode="contain"
                   />
                 ) : (
                   <Ionicons name="paw-outline" size={40} color="#69806a" />

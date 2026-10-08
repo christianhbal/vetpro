@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -9,7 +10,9 @@ import {
   View,
 } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
+import { obtenerUsuarioActual } from '../lib/session';
 
 type Campo = {
   id: string;
@@ -32,6 +35,20 @@ export default function Registro() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
+  const [crearAdmin, setCrearAdmin] = useState(false);
+
+  useEffect(() => {
+    let activo = true;
+    void obtenerUsuarioActual().then((usuario) => {
+      if (activo && usuario?.esAdmin) {
+        setSesionAdmin({ accessToken: usuario.accessToken });
+      }
+    });
+    return () => {
+      activo = false;
+    };
+  }, []);
 
   const handleRegister = async () => {
     if (isSubmitting) return;
@@ -55,17 +72,24 @@ export default function Registro() {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nombre: nombre.trim(),
-          email: email.trim(),
-          telefono: telefono.trim(),
-          password,
-          direccion: direccion.trim() || null,
-        }),
-      });
+      const response = await fetch(
+        `${API_BASE_URL}${sesionAdmin ? '/api/admin/users' : '/api/users'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(sesionAdmin ? { Authorization: `Bearer ${sesionAdmin.accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            nombre: nombre.trim(),
+            email: email.trim(),
+            telefono: telefono.trim(),
+            password,
+            direccion: direccion.trim() || null,
+            ...(sesionAdmin ? { esAdmin: crearAdmin } : {}),
+          }),
+        }
+      );
       const result = await response.json();
 
       if (!response.ok) {
@@ -76,7 +100,13 @@ export default function Registro() {
       setPassword('');
       setConfirmPassword('');
       setDireccion('');
-      Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
+      setCrearAdmin(false);
+      Alert.alert(
+        'Cuenta creada',
+        sesionAdmin
+          ? `La cuenta quedó registrada como ${crearAdmin ? 'administrador' : 'usuario normal'}.`
+          : 'Tu usuario quedó registrado en la base de datos.'
+      );
     } catch (error) {
       Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
     } finally {
@@ -152,11 +182,56 @@ export default function Registro() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>VP</Text>
+            {sesionAdmin ? (
+              <Link href="/admin-usuarios" asChild>
+                <Pressable
+                  style={styles.backButton}
+                  accessibilityRole="link"
+                  accessibilityLabel="Volver a administrar usuarios"
+                >
+                  <Ionicons name="arrow-back" size={22} color="#0f3e17" />
+                </Pressable>
+              </Link>
+            ) : null}
+            <Image
+              source={require('../../assets/images/vetpro-logo-horizontal.jpg')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="VetPro, cuidado y bienestar"
+            />
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Crear cuenta</Text>
             </View>
-            <Text style={styles.title}>Crear cuenta</Text>
             <Text style={styles.subtitle}>Únete a VetPro y cuida mejor de tus mascotas.</Text>
+            {sesionAdmin ? (
+              <View style={styles.roleSelector}>
+                <Text style={styles.roleLabel}>Tipo de usuario</Text>
+                {[
+                  { label: 'Usuario normal', value: false },
+                  { label: 'Administrador', value: true },
+                ].map((option) => (
+                  <Pressable
+                    key={option.label}
+                    style={[
+                      styles.roleOption,
+                      crearAdmin === option.value && styles.roleOptionSelected,
+                    ]}
+                    onPress={() => setCrearAdmin(option.value)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: crearAdmin === option.value }}
+                  >
+                    <Text
+                      style={[
+                        styles.roleOptionText,
+                        crearAdmin === option.value && styles.roleOptionTextSelected,
+                      ]}
+                    >
+                      {crearAdmin === option.value ? '●' : '○'} {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
         }
         renderItem={({ item }) => (
@@ -194,18 +269,20 @@ export default function Registro() {
               </Text>
             </Pressable>
 
-            <View style={styles.loginRow}>
-              <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
-              <Link href="/" asChild>
-                <Pressable
-                  style={styles.loginLinkButton}
-                  accessibilityRole="link"
-                  accessibilityLabel="Inicia sesión"
-                >
-                  <Text style={styles.loginLink}>Inicia sesión</Text>
-                </Pressable>
-              </Link>
-            </View>
+            {!sesionAdmin ? (
+              <View style={styles.loginRow}>
+                <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
+                <Link href="/" asChild>
+                  <Pressable
+                    style={styles.loginLinkButton}
+                    accessibilityRole="link"
+                    accessibilityLabel="Inicia sesión"
+                  >
+                    <Text style={styles.loginLink}>Inicia sesión</Text>
+                  </Pressable>
+                </Link>
+              </View>
+            ) : null}
           </View>
         }
       />
@@ -219,40 +296,89 @@ const styles = StyleSheet.create({
     backgroundColor: '#C8E6C9',
   },
   content: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+    flexGrow: 0,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   header: {
     width: '100%',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    position: 'relative',
   },
-  logoContainer: {
-    width: '26%',
-    aspectRatio: 1,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+  logo: {
+    width: 160,
+    height: 63,
+    marginBottom: 4,
+  },
+  titleRow: {
+    width: '100%',
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 22,
-    elevation: 3,
   },
-  logoText: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#488c70',
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: '#eaf4e9',
   },
   title: {
     color: '#000000',
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
     color: '#365247',
     fontSize: 15,
     textAlign: 'center',
-    marginBottom: 28,
+    marginBottom: 14,
+  },
+  roleSelector: {
+    alignSelf: 'stretch',
+    marginBottom: 22,
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d8e3d5',
+    backgroundColor: '#f7fbf6',
+  },
+  roleLabel: {
+    color: '#263b32',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  roleOption: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#d8e3d5',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  roleOptionSelected: {
+    borderColor: '#1B4D3E',
+    backgroundColor: '#eaf4e9',
+  },
+  roleOptionText: {
+    color: '#365247',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  roleOptionTextSelected: {
+    color: '#0f3e17',
+    fontWeight: 'bold',
   },
   campoFila: {
     width: '100%',
@@ -263,14 +389,16 @@ const styles = StyleSheet.create({
   input: {
     width: '100%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d8e3d5',
     paddingHorizontal: 18,
     paddingVertical: 16,
     fontSize: 16,
-    marginBottom: 14,
+    marginBottom: 20,
   },
   lastInput: {
-    marginBottom: 24,
+    marginBottom: 28,
   },
   registerButton: {
     width: '100%',

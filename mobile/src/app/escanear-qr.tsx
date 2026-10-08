@@ -8,11 +8,24 @@ import { estilos } from '@/lib/estilos';
 
 export default function EscanearQr() {
   const router = useRouter();
-  const { top } = useSafeAreaInsets();
+  const { top, bottom } = useSafeAreaInsets();
   const [permiso, pedirPermiso] = useCameraPermissions();
   const [escaniado, setEscaneado] = useState<string | null>(null);
+  const [vistaCamara, setVistaCamara] = useState({ width: 0, height: 0 });
+  const [altoPie, setAltoPie] = useState(0);
 
-  const contenedor = useMemo(() => [estilos.escanerContenedor, { paddingTop: top }], [top]);
+  const contenedor = useMemo(
+    () => [estilos.escanerContenedor, { paddingTop: top, paddingBottom: bottom }],
+    [bottom, top]
+  );
+  const altoEscaneo = Math.max(0, vistaCamara.height - altoPie);
+  const tamanoMarco = Math.min(vistaCamara.width * 0.76, altoEscaneo * 0.72, 320);
+  const posicionMarco = {
+    top: Math.max(0, (altoEscaneo - tamanoMarco) / 2),
+    left: (vistaCamara.width - tamanoMarco) / 2,
+    width: tamanoMarco,
+    height: tamanoMarco,
+  };
 
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (escaniado !== null) return;
@@ -87,7 +100,7 @@ export default function EscanearQr() {
     <View style={estilos.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[estilos.escanerContenedor, { paddingTop: top }]}>
+      <View style={contenedor}>
         <View style={estilos.escanerBarraSuperior}>
           <Pressable
             style={({ pressed }) => [estilos.escanerVolver, pressed && estilos.buttonPressed]}
@@ -109,7 +122,13 @@ export default function EscanearQr() {
           </Pressable>
         </View>
 
-        <View style={estilos.escanerCamara}>
+        <View
+          style={estilos.escanerCamara}
+          onLayout={({ nativeEvent }) => {
+            const { width, height } = nativeEvent.layout;
+            setVistaCamara({ width, height });
+          }}
+        >
           <CameraView
             style={StyleSheet.absoluteFill}
             facing="back"
@@ -117,34 +136,37 @@ export default function EscanearQr() {
             onBarcodeScanned={escaniado ? undefined : handleBarcodeScanned}
           />
 
-          <View style={estilos.escanerMarco} />
+          <View style={[estilos.escanerMarco, posicionMarco]} />
 
-          <View style={estilos.escanerPie}>
-          {escaniado ? (
-            <View style={estilos.escanerResultado}>
-              <Text style={estilos.escanerResultadoLabel}>Código leído</Text>
-              <Text style={estilos.escanerResultadoTexto}>{escaniado}</Text>
+          <View
+            style={estilos.escanerPie}
+            onLayout={({ nativeEvent }) => setAltoPie(nativeEvent.layout.height)}
+          >
+            {escaniado ? (
+              <View style={estilos.escanerResultado}>
+                <Text style={estilos.escanerResultadoLabel}>Código leído</Text>
+                <Text style={estilos.escanerResultadoTexto}>{escaniado}</Text>
 
-              <Pressable
-                style={({ pressed }) => [
-                  estilos.modalButton,
-                  estilos.modalButtonPrimary,
-                  pressed && estilos.buttonPressed,
-                ]}
-                onPress={() => setEscaneado(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Escanear otro código"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  Escanear otro
-                </Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Text style={estilos.escanerInstruccion}>
-              Apuntá la cámara al código QR de la veterinaria.
-            </Text>
-          )}
+                <Pressable
+                  style={({ pressed }) => [
+                    estilos.modalButton,
+                    estilos.modalButtonPrimary,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                  onPress={() => setEscaneado(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Escanear otro código"
+                >
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                    Escanear otro
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Text style={estilos.escanerInstruccion}>
+                Apuntá la cámara al código QR de la veterinaria.
+              </Text>
+            )}
           </View>
         </View>
       </View>

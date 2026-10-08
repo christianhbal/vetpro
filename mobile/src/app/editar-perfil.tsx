@@ -86,6 +86,8 @@ export default function EditarPerfil() {
               'direccion' in result && typeof result.direccion === 'string'
                 ? result.direccion
                 : null,
+            esAdmin: sesion.esAdmin,
+            accessToken: sesion.accessToken,
           };
           setUsuario(perfil);
           setNombre(perfil.nombre);
@@ -163,6 +165,8 @@ export default function EditarPerfil() {
           'telefono' in result && typeof result.telefono === 'string' ? result.telefono : null,
         direccion:
           'direccion' in result && typeof result.direccion === 'string' ? result.direccion : null,
+        esAdmin: usuario.esAdmin,
+        accessToken: usuario.accessToken,
       });
       Alert.alert('Perfil actualizado', 'Tus datos se guardaron correctamente.', [
         { text: 'Aceptar', onPress: () => router.replace('/perfil') },

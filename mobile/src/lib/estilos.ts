@@ -356,10 +356,6 @@ export const estilos = StyleSheet.create({
   },
   escanerMarco: {
     position: 'absolute',
-    top: '18%',
-    left: '16%',
-    width: '68%',
-    aspectRatio: 1,
     borderWidth: 3,
     borderColor: '#fffefc',
     borderRadius: 16,

@@ -1,6 +1,26 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function RootLayout() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/notificaciones');
+    });
+    return () => subscription.remove();
+  }, [router]);
+
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
       <Stack.Screen name="index" />
@@ -15,6 +35,9 @@ export default function RootLayout() {
       <Stack.Screen name="escanear-qr" />
       <Stack.Screen name="nueva-mascota" />
       <Stack.Screen name="nuevo-turno" />
+      <Stack.Screen name="admin-usuarios" />
+      <Stack.Screen name="admin-turnos" />
+      <Stack.Screen name="notificaciones" />
     </Stack>
   );
 }

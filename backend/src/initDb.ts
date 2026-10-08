@@ -11,7 +11,13 @@ export async function initDatabase(): Promise<void> {
   try {
     await prisma.$connect();
     await prisma.$queryRaw`SELECT 1`;
-    await Promise.all([prisma.user.count(), prisma.mascota.count(), prisma.turno.count()]);
+    await Promise.all([
+      prisma.usuario.count(),
+      prisma.mascota.count(),
+      prisma.turno.count(),
+      prisma.notification.count(),
+      prisma.notificacionPush.count(),
+    ]);
   } finally {
     await prisma.$disconnect();
   }

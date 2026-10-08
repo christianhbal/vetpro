@@ -1,19 +1,28 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Link, usePathname } from 'expo-router';
+import { Link, useFocusEffect, usePathname } from 'expo-router';
 import {
+  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { API_BASE_URL } from '@/lib/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { obtenerUsuarioActual } from '@/lib/session';
 
 const menuItems = [
   { label: 'VetPro', href: '/app', icon: 'home-outline' },
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
   { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
+  { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
   { label: 'Perfil', href: '/perfil', icon: 'person-outline' },
+] as const;
+
+const adminMenuItems = [
+  { label: 'Administrar usuarios', href: '/admin-usuarios', icon: 'people-outline' },
+  { label: 'Modificar turnos', href: '/admin-turnos', icon: 'calendar-number-outline' },
 ] as const;
 
 type AppDrawerProps = {
@@ -25,13 +34,59 @@ export function AppDrawer({ title, children }: AppDrawerProps) {
   const [visible, setVisible] = useState(false);
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const [esAdmin, setEsAdmin] = useState(false);
+  const [notificacionesSinLeer, setNotificacionesSinLeer] = useState(0);
+
+  const cargarContadorNotificaciones = useCallback(async () => {
+    try {
+      const usuario = await obtenerUsuarioActual();
+      setEsAdmin(usuario?.esAdmin === true);
+      if (!usuario || usuario.esAdmin) {
+        setNotificacionesSinLeer(0);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
+        headers: { Authorization: `Bearer ${usuario.accessToken}` },
+      });
+      if (!response.ok) {
+        throw new Error(`No se pudo consultar el contador (HTTP ${response.status}).`);
+      }
+
+      const result: unknown = await response.json();
+      if (
+        typeof result !== 'object' ||
+        result === null ||
+        !('unreadCount' in result) ||
+        typeof result.unreadCount !== 'number' ||
+        !Number.isInteger(result.unreadCount) ||
+        result.unreadCount < 0
+      ) {
+        throw new Error('La API devolvió un contador de notificaciones inválido.');
+      }
+      setNotificacionesSinLeer(result.unreadCount);
+    } catch (error: unknown) {
+      console.error('No se pudo actualizar el contador de notificaciones:', error);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarContadorNotificaciones();
+    }, [cargarContadorNotificaciones])
+  );
+  const items = esAdmin ? [...menuItems, ...adminMenuItems] : menuItems;
+  const abrirMenu = () => {
+    setVisible(true);
+    void cargarContadorNotificaciones();
+  };
 
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <Pressable
           style={styles.menuButton}
-          onPress={() => setVisible(true)}
+          onPress={abrirMenu}
           accessibilityRole="button"
           accessibilityLabel="Abrir menú de navegación"
         >
@@ -53,10 +108,12 @@ export function AppDrawer({ title, children }: AppDrawerProps) {
           />
           <View style={[styles.drawer, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
             <View style={styles.drawerHeader}>
-              <View style={styles.brandMark}>
-                <Ionicons name="paw" size={21} color="#0f3e17" />
-              </View>
-              <Text style={styles.brandName}>VetPro</Text>
+              <Image
+                source={require('../../assets/images/vetpro-logo-horizontal.jpg')}
+                style={styles.brandLogo}
+                resizeMode="contain"
+                accessibilityLabel="VetPro, cuidado y bienestar"
+              />
               <Pressable
                 style={styles.closeButton}
                 onPress={() => setVisible(false)}
@@ -69,24 +126,47 @@ export function AppDrawer({ title, children }: AppDrawerProps) {
 
             <View style={styles.divider} />
 
-            {menuItems.map((item) => {
+            {items.map((item) => {
               const selected = pathname === item.href;
+              const isAdminItem = adminMenuItems.some((adminItem) => adminItem.href === item.href);
               return (
                 <Link key={item.href} href={item.href} asChild>
                   <Pressable
                     onPress={() => setVisible(false)}
-                    style={StyleSheet.flatten([styles.menuItem, selected && styles.menuItemSelected])}
+                    style={StyleSheet.flatten([
+                      styles.menuItem,
+                      selected && styles.menuItemSelected,
+                      isAdminItem && styles.adminMenuItem,
+                    ])}
                     accessibilityRole="link"
                     accessibilityState={{ selected }}
+                    accessibilityLabel={
+                      item.href === '/notificaciones' && notificacionesSinLeer > 0
+                        ? `${item.label}, ${notificacionesSinLeer} sin leer`
+                        : item.label
+                    }
                   >
                     <Ionicons
                       name={item.icon}
                       size={22}
-                      color={selected ? '#0f3e17' : '#555d54'}
+                      color={isAdminItem ? '#fffefc' : selected ? '#0f3e17' : '#555d54'}
                     />
-                    <Text style={[styles.menuLabel, selected && styles.menuLabelSelected]}>
+                    <Text
+                      style={[
+                        styles.menuLabel,
+                        isAdminItem && styles.adminMenuLabel,
+                        selected && !isAdminItem && styles.menuLabelSelected,
+                      ]}
+                    >
                       {item.label}
                     </Text>
+                    {item.href === '/notificaciones' && notificacionesSinLeer > 0 ? (
+                      <View style={styles.notificationBadge}>
+                        <Text style={styles.notificationBadgeText}>
+                          {notificacionesSinLeer > 99 ? '99+' : notificacionesSinLeer}
+                        </Text>
+                      </View>
+                    ) : null}
                   </Pressable>
                 </Link>
               );
@@ -155,24 +235,14 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   drawerHeader: {
-    minHeight: 54,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  brandMark: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    backgroundColor: '#e1f4df',
-  },
-  brandName: {
+  brandLogo: {
     flex: 1,
-    color: '#0f3e17',
-    fontSize: 18,
-    fontWeight: 'bold',
+    height: 62,
   },
   closeButton: {
     width: 40,
@@ -198,14 +268,35 @@ const styles = StyleSheet.create({
   menuItemSelected: {
     backgroundColor: '#e1f4df',
   },
+  adminMenuItem: {
+    backgroundColor: '#0a3513',
+  },
   menuLabel: {
     flex: 1,
     color: '#263b32',
     fontSize: 16,
     fontWeight: '500',
   },
+  adminMenuLabel: {
+    color: '#fffefc',
+    fontWeight: '700',
+  },
   menuLabelSelected: {
     color: '#0f3e17',
+    fontWeight: 'bold',
+  },
+  notificationBadge: {
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: '#c62828',
+  },
+  notificationBadgeText: {
+    color: '#fffefc',
+    fontSize: 12,
     fontWeight: 'bold',
   },
 });

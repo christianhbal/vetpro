@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from 'dotenv';
 
 config({ path: path.resolve(__dirname, '..', '.env') });
@@ -45,6 +46,112 @@ function isMissingRecord(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
 }
 
+function createAccessToken(userId: number, password: string): string {
+  const signature = createHmac('sha256', password).update(`vetpro-admin:${userId}`).digest('hex');
+  return `${userId}.${signature}`;
+}
+
+async function requireAuthenticatedUser(
+  request: express.Request,
+  response: express.Response
+): Promise<{ id: number; role: string } | null> {
+  const token = /^Bearer (\d+)\.([a-f0-9]{64})$/i.exec(
+    request.header('authorization') ?? ''
+  );
+  const userId = token ? parseId(token[1]) : null;
+  if (userId === null || !token) {
+    response.status(401).json({ message: 'Inicia sesión para continuar.' });
+    return null;
+  }
+
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true, role: true },
+    });
+    if (!user) {
+      response.status(401).json({ message: 'Inicia sesión para continuar.' });
+      return null;
+    }
+    const expectedSignature = createAccessToken(user.id, user.password).split('.')[1];
+    const receivedSignature = Buffer.from(token[2], 'hex');
+    const expectedSignatureBytes = Buffer.from(expectedSignature, 'hex');
+    if (
+      receivedSignature.length !== expectedSignatureBytes.length ||
+      !timingSafeEqual(receivedSignature, expectedSignatureBytes)
+    ) {
+      response.status(401).json({ message: 'Inicia sesión para continuar.' });
+      return null;
+    }
+    return { id: user.id, role: user.role };
+  } catch (error) {
+    console.error('No se pudo verificar la autenticación:', error);
+    response.status(500).json({ message: 'No se pudo verificar la autenticación.' });
+    return null;
+  }
+}
+
+async function requireAdmin(
+  request: express.Request,
+  response: express.Response
+): Promise<number | null> {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return null;
+  if (user.role !== 'ADMIN') {
+    response.status(403).json({ message: 'Esta acción requiere una cuenta administradora.' });
+    return null;
+  }
+  return user.id;
+}
+
+async function sendPushNotification(
+  tokens: string[],
+  title: string,
+  body: string,
+  notificationId: number
+): Promise<void> {
+  if (tokens.length === 0) return;
+  for (let start = 0; start < tokens.length; start += 100) {
+    const messages = tokens.slice(start, start + 100).map((to) => ({
+      to,
+      sound: 'default',
+      title,
+      body,
+      data: { notificationId },
+      channelId: 'default',
+    }));
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messages),
+    });
+    const result: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(`Expo Push API respondió HTTP ${response.status}.`);
+    }
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      'data' in result &&
+      Array.isArray(result.data)
+    ) {
+      const failures = result.data.filter(
+        (ticket: unknown) =>
+          typeof ticket === 'object' &&
+          ticket !== null &&
+          'status' in ticket &&
+          ticket.status === 'error'
+      );
+      if (failures.length > 0) {
+        console.error('Expo rechazó algunas notificaciones push:', failures);
+      }
+    }
+  }
+}
 // -----------------------------------------------------------------------------
 // 1. Rutas de salud y mascotas
 // -----------------------------------------------------------------------------
@@ -121,7 +228,7 @@ app.post('/api/mascotas', async (request, response) => {
   }
 
   try {
-    const usuarioExiste = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    const usuarioExiste = await prisma.usuario.findUnique({ where: { id: userId }, select: { id: true } });
     if (!usuarioExiste) {
       return response.status(404).json({ message: 'No se encontro el usuario dueño de la mascota.' });
     }
@@ -295,6 +402,217 @@ app.post('/api/turnos', async (request, response) => {
   }
 });
 
+// GET /api/admin/turnos
+// Lista todos los turnos para su administración.
+app.get('/api/admin/turnos', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  try {
+    const turnos = await prisma.turno.findMany({
+      include: {
+        user: { select: { id: true, nombre: true, email: true } },
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+      orderBy: [{ fecha: 'asc' }, { hora: 'asc' }],
+    });
+    return response.json(turnos);
+  } catch (error) {
+    console.error('No se pudieron consultar los turnos para administración:', error);
+    return response.status(500).json({ message: 'No se pudieron consultar los turnos.' });
+  }
+});
+
+// PATCH /api/admin/turnos/:id
+// Permite a un administrador cambiar el tipo, la fecha o la hora del turno.
+app.patch('/api/admin/turnos/:id', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id del turno no es válido.' });
+  }
+  const { tipo, fecha, hora } = request.body ?? {};
+  const data: { tipo?: string; fecha?: string; hora?: string } = {};
+
+  if (tipo !== undefined) {
+    if (typeof tipo !== 'string' || !['Control', 'Vacunas', 'Estética'].includes(tipo)) {
+      return response.status(400).json({ message: 'El tipo de turno no es válido.' });
+    }
+    data.tipo = tipo;
+  }
+  if (fecha !== undefined) {
+    if (!isValidDateOnly(fecha)) {
+      return response.status(400).json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
+    }
+    data.fecha = fecha;
+  }
+  if (hora !== undefined) {
+    if (typeof hora !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
+      return response.status(400).json({ message: 'La hora debe tener formato HH:mm.' });
+    }
+    data.hora = hora;
+  }
+  if (Object.keys(data).length === 0) {
+    return response.status(400).json({ message: 'Indica el tipo, la fecha o la hora para actualizar.' });
+  }
+
+  try {
+    const resultado = await prisma.$transaction(async (transaction) => {
+      const anterior = await transaction.turno.findUnique({
+        where: { id },
+        include: { mascota: { select: { nombre: true } } },
+      });
+      if (!anterior) return null;
+
+      const turno = await transaction.turno.update({
+        where: { id },
+        data,
+        include: {
+          user: { select: { id: true, nombre: true, email: true } },
+          mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+        },
+      });
+      const cambios = [
+        anterior.tipo !== turno.tipo ? `tipo: ${anterior.tipo} → ${turno.tipo}` : null,
+        anterior.fecha !== turno.fecha ? `fecha: ${anterior.fecha} → ${turno.fecha}` : null,
+        anterior.hora !== turno.hora ? `hora: ${anterior.hora} → ${turno.hora}` : null,
+      ].filter((cambio): cambio is string => cambio !== null);
+
+      const notification = cambios.length
+        ? await transaction.notification.create({
+            data: {
+              userId: turno.userId,
+              turnoId: turno.id,
+              title: 'Tu turno fue modificado',
+              message: `El turno de ${anterior.mascota.nombre} cambió: ${cambios.join(', ')}.`,
+            },
+          })
+        : null;
+
+      return { turno, notification };
+    });
+    if (!resultado) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+
+    let pushSent = false;
+    if (resultado.notification) {
+      try {
+        const devices = await prisma.notificacionPush.findMany({
+          where: { userId: resultado.turno.userId },
+          select: { token: true },
+        });
+        if (devices.length > 0) {
+          await sendPushNotification(
+            devices.map((device) => device.token),
+            resultado.notification.title,
+            resultado.notification.message,
+            resultado.notification.id
+          );
+          pushSent = true;
+        }
+      } catch (pushError) {
+        console.error('El turno se guardó, pero no se pudo enviar el push:', pushError);
+      }
+    }
+
+    return response.json({
+      ...resultado.turno,
+      notificationCreated: resultado.notification !== null,
+      pushSent,
+    });
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    console.error('No se pudo modificar el turno:', error);
+    return response.status(500).json({ message: 'No se pudo modificar el turno.' });
+  }
+});
+
+// GET /api/notifications
+// Devuelve los avisos del usuario autenticado, con el total de avisos sin leer.
+app.get('/api/notifications', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  try {
+    const [items, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      prisma.notification.count({ where: { userId: user.id, readAt: null } }),
+    ]);
+    return response.json({ items, unreadCount });
+  } catch (error) {
+    console.error('No se pudieron consultar las notificaciones:', error);
+    return response.status(500).json({ message: 'No se pudieron consultar las notificaciones.' });
+  }
+});
+
+// PATCH /api/notifications/:id/read
+// Marca como leído un aviso perteneciente al usuario autenticado.
+app.patch('/api/notifications/:id/read', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id de la notificación no es válido.' });
+  }
+
+  try {
+    const result = await prisma.notification.updateMany({
+      where: { id, userId: user.id, readAt: null },
+      data: { readAt: new Date().toISOString() },
+    });
+    if (result.count === 0) {
+      const notification = await prisma.notification.findFirst({
+        where: { id, userId: user.id },
+      });
+      if (!notification) {
+        return response.status(404).json({ message: 'No se encontró la notificación.' });
+      }
+      return response.json(notification);
+    }
+    const notification = await prisma.notification.findUnique({ where: { id } });
+    return response.json(notification);
+  } catch (error) {
+    console.error('No se pudo marcar la notificación como leída:', error);
+    return response.status(500).json({ message: 'No se pudo actualizar la notificación.' });
+  }
+});
+
+// POST /api/push-tokens
+// Guarda o actualiza el token push de un dispositivo autenticado.
+app.post('/api/push-tokens', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  const token = request.body?.token;
+  if (
+    typeof token !== 'string' ||
+    token.length > 512 ||
+    !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(token)
+  ) {
+    return response.status(400).json({ message: 'El token de notificaciones push no es válido.' });
+  }
+
+  try {
+    await prisma.notificacionPush.upsert({
+      where: { token },
+      create: { token, userId: user.id },
+      update: { userId: user.id },
+    });
+    return response.status(204).send();
+  } catch (error) {
+    console.error('No se pudo registrar el token push:', error);
+    return response.status(500).json({ message: 'No se pudo registrar este dispositivo.' });
+  }
+});
+
 // -----------------------------------------------------------------------------
 // 3. Rutas de registro e inicio de sesion
 // -----------------------------------------------------------------------------
@@ -319,7 +637,7 @@ app.post('/api/users', async (request, response) => {
   }
 
   try {
-    const user = await prisma.user.create({
+    const user = await prisma.usuario.create({
       data: {
         nombre: nombre.trim(),
         email: email.trim().toLowerCase(),
@@ -339,6 +657,112 @@ app.post('/api/users', async (request, response) => {
   }
 });
 
+// GET /api/admin/users
+// Devuelve las cuentas sin incluir sus contraseñas.
+app.get('/api/admin/users', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  try {
+    const users = await prisma.usuario.findMany({
+      select: {
+        id: true,
+        nombre: true,
+        email: true,
+        role: true,
+        telefono: true,
+        direccion: true,
+        createdAt: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    return response.json(users);
+  } catch (error) {
+    console.error('No se pudieron consultar los usuarios para administración:', error);
+    return response.status(500).json({ message: 'No se pudieron consultar los usuarios.' });
+  }
+});
+
+// POST /api/admin/users
+// Solo un administrador autenticado puede crear cuentas y asignarles un rol.
+app.post('/api/admin/users', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const { nombre, email, password, telefono, direccion, esAdmin } = request.body ?? {};
+  if (
+    typeof nombre !== 'string' ||
+    typeof email !== 'string' ||
+    typeof password !== 'string' ||
+    typeof telefono !== 'string' ||
+    typeof esAdmin !== 'boolean' ||
+    !nombre.trim() ||
+    !/^\S+@\S+\.\S+$/.test(email.trim()) ||
+    password.length < MIN_PASSWORD_LENGTH ||
+    !telefono.trim() ||
+    (direccion !== undefined && direccion !== null && typeof direccion !== 'string')
+  ) {
+    return response.status(400).json({ message: 'Revisa los datos y el rol del usuario.' });
+  }
+
+  try {
+    const user = await prisma.usuario.create({
+      data: {
+        nombre: nombre.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        telefono: telefono.trim(),
+        direccion: typeof direccion === 'string' && direccion.trim() ? direccion.trim() : null,
+        role: esAdmin ? 'ADMIN' : 'USER',
+      },
+      select: { id: true, nombre: true, email: true, role: true, telefono: true, direccion: true },
+    });
+    return response.status(201).json(user);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return response.status(409).json({ message: 'Ese correo ya está registrado.' });
+    }
+    console.error('No se pudo crear el usuario desde administración:', error);
+    return response.status(500).json({ message: 'No se pudo crear el usuario.' });
+  }
+});
+
+// DELETE /api/admin/users/:id
+// Evita que un administrador se elimine a sí mismo o quite al último administrador.
+app.delete('/api/admin/users/:id', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id de usuario no es válido.' });
+  }
+  if (id === adminId) {
+    return response.status(400).json({ message: 'No puedes eliminar tu propia cuenta.' });
+  }
+
+  try {
+    const target = await prisma.usuario.findUnique({ where: { id }, select: { role: true } });
+    if (!target) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+    if (
+      target.role === 'ADMIN' &&
+      (await prisma.usuario.count({ where: { role: 'ADMIN' } })) <= 1
+    ) {
+      return response.status(400).json({ message: 'No se puede eliminar al último administrador.' });
+    }
+    await prisma.usuario.delete({ where: { id } });
+    return response.status(204).send();
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+    console.error('No se pudo eliminar el usuario:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar el usuario.' });
+  }
+});
+
 // GET /api/users/:id
 // Devuelve los datos de perfil, sin contraseña.
 app.get('/api/users/:id', async (request, response) => {
@@ -348,7 +772,7 @@ app.get('/api/users/:id', async (request, response) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.usuario.findUnique({
       where: { id },
       select: { id: true, nombre: true, email: true, telefono: true, direccion: true },
     });
@@ -409,7 +833,7 @@ app.patch('/api/users/:id', async (request, response) => {
   }
 
   try {
-    const user = await prisma.user.update({
+    const user = await prisma.usuario.update({
       where: { id },
       data,
       select: { id: true, nombre: true, email: true, telefono: true, direccion: true },
@@ -439,7 +863,7 @@ app.post('/api/sessions', async (request, response) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.usuario.findUnique({
       where: { email: email.trim().toLowerCase() },
     });
 
@@ -447,12 +871,16 @@ app.post('/api/sessions', async (request, response) => {
       return response.status(401).json({ message: 'El correo o la contraseña no son correctos.' });
     }
 
+    const accessToken = createAccessToken(user.id, user.password);
+
     return response.status(200).json({
       id: user.id,
       nombre: user.nombre,
       email: user.email,
       telefono: user.telefono,
       direccion: user.direccion,
+      esAdmin: user.role === 'ADMIN',
+      accessToken,
     });
   } catch (error) {
     console.error('No se pudo iniciar sesion:', error);

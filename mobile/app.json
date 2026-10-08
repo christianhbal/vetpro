@@ -45,7 +45,8 @@
           "cameraPermission": "Permitir que VetPro use la cámara para escanear el código QR del veterinario.",
           "barcodeScannerEnabled": true
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

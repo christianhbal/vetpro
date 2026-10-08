@@ -152,7 +152,7 @@ export default function InicioScreen() {
             marginBottom: 8,
             backgroundColor: '#cfe7d3',
           }}
-          resizeMode="cover"
+          resizeMode="contain"
           accessibilityLabel={`Vista previa de ${item.nombre}`}
         />
       ) : (
@@ -189,7 +189,7 @@ export default function InicioScreen() {
           <Image
             source={{ uri: item.guardado.mascota.foto }}
             style={{ width: 56, height: 56, borderRadius: 10, backgroundColor: '#cfe7d3' }}
-            resizeMode="cover"
+            resizeMode="contain"
             accessibilityLabel={`Foto de ${item.mascota}`}
           />
         ) : (
