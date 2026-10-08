@@ -35,7 +35,7 @@ After login, the app keeps the current user locally and uses its ID to create an
 
 The account phone number is required. An address is optional: it can be entered while registering or added later in Edit Profile. The profile screen displays the saved address, and profile updates are stored in the user's database record. The home screen shows a thumbnail of each pet's photo.
 
-Appointments are stored in the `Turno` table and linked to both the signed-in user and one of that user's pets. The Turnos screen and home page show only saved upcoming appointments; past appointments appear in History. After changing the Prisma schema, run `npm run db:init` from `backend/`, then restart the API with `npm run dev`.
+Appointments are stored in the `Turno` table and linked to both the signed-in user and one of that user's pets. The Turnos screen and home page show only saved upcoming appointments; past appointments appear in History. The backend creates an in-app reminder and sends a push, when the user has a registered device, within the hour before each appointment. After changing the Prisma schema, run `npm run db:init` from `backend/`, then restart the API with `npm run dev`.
 
 Users have a `USER` or `ADMIN` role in SQLite. Public registration always creates a normal user; an administrator can create accounts with either role from **Administrar usuarios**. To set up the first administrator, first register that account normally, then run this from `backend/`:
 

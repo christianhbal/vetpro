@@ -13,6 +13,7 @@ const app = express();
 const prisma = new PrismaClient();
 const port = Number(process.env.PORT || 3000);
 const MIN_PASSWORD_LENGTH = 8;
+const APPOINTMENT_REMINDER_WINDOW_MS = 60 * 60 * 1000;
 
 // No arrancamos el servidor si PORT no es un puerto valido.
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -149,6 +150,73 @@ async function sendPushNotification(
       if (failures.length > 0) {
         console.error('Expo rechazó algunas notificaciones push:', failures);
       }
+    }
+  }
+}
+
+async function createUpcomingAppointmentReminders(): Promise<void> {
+  const hoy = new Date();
+  const fechaActual = [
+    hoy.getFullYear(),
+    String(hoy.getMonth() + 1).padStart(2, '0'),
+    String(hoy.getDate()).padStart(2, '0'),
+  ].join('-');
+  const turnos = await prisma.turno.findMany({
+    where: { fecha: { gte: fechaActual }, recordatorioEnviadoEn: null },
+    include: {
+      mascota: { select: { nombre: true } },
+    },
+  });
+  const ahora = Date.now();
+
+  for (const turno of turnos) {
+    const inicioTurno = new Date(`${turno.fecha}T${turno.hora}:00`).getTime();
+    const tiempoRestante = inicioTurno - ahora;
+    if (tiempoRestante <= 0 || tiempoRestante > APPOINTMENT_REMINDER_WINDOW_MS) continue;
+
+    try {
+      const notificacion = await prisma.$transaction(async (transaction) => {
+        const actualizado = await transaction.turno.updateMany({
+          where: {
+            id: turno.id,
+            fecha: turno.fecha,
+            hora: turno.hora,
+            recordatorioEnviadoEn: null,
+          },
+          data: { recordatorioEnviadoEn: new Date().toISOString() },
+        });
+        if (actualizado.count === 0) return null;
+
+        return transaction.notification.create({
+          data: {
+            userId: turno.userId,
+            turnoId: turno.id,
+            title: 'Tu turno se acerca',
+            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre}.`,
+          },
+        });
+      });
+      if (!notificacion) continue;
+
+      try {
+        const dispositivos = await prisma.notificacionPush.findMany({
+          where: { userId: turno.userId },
+          select: { token: true },
+        });
+        await sendPushNotification(
+          dispositivos.map((dispositivo) => dispositivo.token),
+          notificacion.title,
+          notificacion.message,
+          notificacion.id
+        );
+      } catch (pushError) {
+        console.error(
+          `El recordatorio del turno ${turno.id} se guardó, pero no se pudo enviar el push:`,
+          pushError
+        );
+      }
+    } catch (error) {
+      console.error(`No se pudo crear el recordatorio del turno ${turno.id}:`, error);
     }
   }
 }
@@ -434,7 +502,12 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
     return response.status(400).json({ message: 'El id del turno no es válido.' });
   }
   const { tipo, fecha, hora } = request.body ?? {};
-  const data: { tipo?: string; fecha?: string; hora?: string } = {};
+  const data: {
+    tipo?: string;
+    fecha?: string;
+    hora?: string;
+    recordatorioEnviadoEn?: string | null;
+  } = {};
 
   if (tipo !== undefined) {
     if (typeof tipo !== 'string' || !['Control', 'Vacunas', 'Estética'].includes(tipo)) {
@@ -465,6 +538,11 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
         include: { mascota: { select: { nombre: true } } },
       });
       if (!anterior) return null;
+
+      const cambiaHorario =
+        (fecha !== undefined && fecha !== anterior.fecha) ||
+        (hora !== undefined && hora !== anterior.hora);
+      if (cambiaHorario) data.recordatorioEnviadoEn = null;
 
       const turno = await transaction.turno.update({
         where: { id },
@@ -895,9 +973,18 @@ app.post('/api/sessions', async (request, response) => {
 export async function start(): Promise<void> {
   await initDatabase();
   await prisma.$connect();
+  const reminderTimer = setInterval(() => {
+    void createUpcomingAppointmentReminders().catch((error: unknown) => {
+      console.error('No se pudieron revisar los recordatorios de turnos:', error);
+    });
+  }, 60 * 1000);
+  reminderTimer.unref();
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`API escuchando en http://0.0.0.0:${port}`);
+      void createUpcomingAppointmentReminders().catch((error: unknown) => {
+        console.error('No se pudieron revisar los recordatorios de turnos:', error);
+      });
       resolve();
     });
     server.once('error', reject);
