@@ -116,19 +116,26 @@ export default function MascotasScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Ver foto de ${item.nombre}`}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <View style={styles.fila}>
                 {item.foto ? (
                   <Image
                     source={{ uri: item.foto }}
-                    style={{ width: 64, height: 64, borderRadius: 12 }}
-                    resizeMode="contain"
+                    style={styles.foto}
+                    resizeMode="cover"
+                    accessibilityLabel={`Foto de ${item.nombre}`}
                   />
                 ) : (
-                  <Ionicons name="paw-outline" size={40} color="#69806a" />
+                  <View style={[styles.foto, styles.fotoVacio]}>
+                    <Ionicons name="paw-outline" size={28} color="#69806a" />
+                  </View>
                 )}
-                <View style={{ flex: 1 }}>
-                  <Text style={estilos.cardTitle}>{item.nombre}</Text>
-                  <Text style={estilos.cardSubtitle}>{descripcionMascota(item)}</Text>
+                <View style={styles.texto}>
+                  <Text style={estilos.cardTitle} numberOfLines={1} ellipsizeMode="tail">
+                    {item.nombre}
+                  </Text>
+                  <Text style={estilos.cardSubtitle} numberOfLines={1} ellipsizeMode="tail">
+                    {descripcionMascota(item)}
+                  </Text>
                 </View>
               </View>
             </Pressable>
@@ -192,3 +199,15 @@ export default function MascotasScreen() {
     </AppDrawer>
   );
 }
+
+const styles = {
+  fila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 14,
+    minHeight: 64,
+  },
+  foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
+  fotoVacio: { alignItems: 'center' as const, justifyContent: 'center' as const },
+  texto: { flex: 1 },
+};

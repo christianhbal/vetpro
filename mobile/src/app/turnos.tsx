@@ -12,14 +12,26 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { estilos } from '@/lib/estilos';
 import {
   formatearFechaTurno,
+  sedesVeterinaria,
   turnoSiguePendiente,
+  type SedeVeterinaria,
   type TurnoGuardado,
 } from '@/lib/datos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
+
+// La respuesta del admin trae turno ajeno y estado de atención; el usuario
+// normal solo ve los suyos.
+type TurnoLista = TurnoGuardado & {
+  atendidoEn?: string | null;
+  descripcion?: string | null;
+  esDemo?: boolean;
+  user?: { nombre: string } | null;
+};
 
 type CitaLista = {
   id: number;
@@ -27,7 +39,11 @@ type CitaLista = {
   mascota: string;
   motivo: string;
   fecha: string;
-  guardado: TurnoGuardado;
+  hora: string;
+  dueno: string | null;
+  atendido: boolean;
+  descripcion: string | null;
+  guardado: TurnoLista;
 };
 
 function fechaComoValor(fecha: Date): string {
@@ -39,10 +55,12 @@ function fechaComoValor(fecha: Date): string {
 }
 
 export default function TurnosScreen() {
-  const [turnosGuardados, setTurnosGuardados] = useState<TurnoGuardado[]>([]);
+  const [turnos, setTurnos] = useState<TurnoLista[]>([]);
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+  const [esAdmin, setEsAdmin] = useState(false);
+  const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
   const { height: windowHeight } = useWindowDimensions();
 
   const cargarTurnos = useCallback(async () => {
@@ -54,19 +72,25 @@ export default function TurnosScreen() {
         router.replace('/');
         return;
       }
+      setEsAdmin(usuario.esAdmin);
+
+      // El admin ve la agenda completa; el usuario, solo sus turnos.
       const response = await fetch(
-        `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`
+        usuario.esAdmin
+          ? `${API_BASE_URL}/api/admin/turnos`
+          : `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
+        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
       const resultado = await response.json();
       if (!response.ok) {
-        setError(resultado.message ?? 'No se pudieron cargar los turnos guardados.');
-        setTurnosGuardados([]);
+        setError(resultado.message ?? 'No se pudieron cargar los turnos.');
+        setTurnos([]);
         return;
       }
-      setTurnosGuardados(resultado);
+      setTurnos(resultado);
     } catch (fetchError) {
       setError(apiUnreachableMessage(fetchError));
-      setTurnosGuardados([]);
+      setTurnos([]);
     } finally {
       setCargando(false);
     }
@@ -81,24 +105,46 @@ export default function TurnosScreen() {
   const ahora = new Date();
   const valorHoy = fechaComoValor(ahora);
 
-  const aCita = (turno: TurnoGuardado): CitaLista => ({
-    id: -turno.id,
-    key: `guardado-${turno.id}`,
+  const aCita = (turno: TurnoLista): CitaLista => ({
+    id: turno.id,
+    key: `turno-${turno.id}`,
     mascota: turno.mascota.nombre,
     motivo: turno.tipo,
     fecha: formatearFechaTurno(turno.fecha, turno.hora),
+    hora: turno.hora,
+    dueno: turno.user?.nombre ?? null,
+    atendido: turno.atendidoEn !== null && turno.atendidoEn !== undefined,
+    descripcion: turno.descripcion ?? null,
     guardado: turno,
   });
 
-  // Los turnos de hoy se listan aunque su horario ya haya pasado, para que
-  // el dia no quede vacio despues de la consulta.
-  const turnosHoy = turnosGuardados
-    .filter((turno) => turno.fecha === valorHoy)
-    .map(aCita);
+  // Los turnos de ejemplo flotan: se ven siempre, mas alla de la fecha de hoy,
+  // para poder mostrar la app en cualquier momento.
+  const esDeHoy = (turno: TurnoLista) => turno.esDemo === true || turno.fecha === valorHoy;
 
-  const turnosProximos = turnosGuardados
-    .filter((turno) => turno.fecha > valorHoy && turnoSiguePendiente(turno, ahora))
-    .map(aCita);
+  const deHoyEnSede = turnos.filter(
+    (turno) => esDeHoy(turno) && turno.sede === sedeSeleccionada
+  );
+
+  const turnosHoy = (
+    esAdmin ? deHoyEnSede.filter((t) => !t.atendidoEn) : turnos.filter(esDeHoy)
+  ).map(aCita);
+
+  const segundoListado = esAdmin
+    ? deHoyEnSede.filter((t) => t.atendidoEn).map(aCita)
+    : turnos
+        .filter((turno) => turno.fecha > valorHoy && turnoSiguePendiente(turno, ahora))
+        .map(aCita);
+
+  const tituloSegundo = esAdmin ? 'Turnos completados' : 'Turnos próximos';
+
+  const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
+    valor: nombre,
+    titulo: nombre,
+  }));
+
+  const sedeSeleccionadaOpcion =
+    opcionesSede.find((opcion) => opcion.valor === sedeSeleccionada) ?? null;
 
   // La fila de agendar ocupa ~10% de la pantalla; el resto se reparte en
   // mitades iguales entre las dos listas.
@@ -106,8 +152,11 @@ export default function TurnosScreen() {
 
   const renderTurno = (cita: CitaLista) => (
     <Pressable
-      key={cita.key}
-      style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
+      style={({ pressed }) => [
+        estilos.cardTurno,
+        cita.atendido && styles.tarjetaAtendida,
+        pressed && estilos.buttonPressed,
+      ]}
       onPress={() => setCitaSeleccionada(cita)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${cita.mascota}`}
@@ -117,7 +166,7 @@ export default function TurnosScreen() {
           <Image
             source={{ uri: cita.guardado.mascota.foto }}
             style={styles.turnoFoto}
-            resizeMode="contain"
+            resizeMode="cover"
             accessibilityLabel={`Foto de ${cita.mascota}`}
           />
         ) : (
@@ -126,19 +175,24 @@ export default function TurnosScreen() {
           </View>
         )}
         <View style={styles.turnoTexto}>
-          <Text style={estilos.cardTituloTurno}>
-            {cita.mascota} - {cita.motivo}
+          <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
+            {cita.atendido ? cita.mascota : `${cita.mascota} - ${cita.motivo}`}
           </Text>
-          <Text style={estilos.cardSubtituloTurno}>{cita.fecha}</Text>
-          <Text style={estilos.cardSubtituloTurno}>Sede: {cita.guardado.sede}</Text>
+          {cita.dueno ? (
+            <Text style={styles.dueno} numberOfLines={1} ellipsizeMode="tail">
+              {cita.dueno}
+            </Text>
+          ) : null}
+          <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
+            {cita.hora} hs
+          </Text>
         </View>
+
         <Ionicons name="chevron-forward" size={18} color="#8aa38c" />
       </View>
     </Pressable>
   );
 
-  // El encabezado va fuera del ScrollView para que quede fijo; solo las
-  // tarjetas scrollean.
   const encabezadoSeccion = (titulo: string, citas: CitaLista[]) => (
     <View style={styles.listaEncabezado}>
       <Text style={[estilos.sectionTitleTurno, styles.tituloSeccion]}>{titulo}</Text>
@@ -148,17 +202,12 @@ export default function TurnosScreen() {
     </View>
   );
 
-  const cuerpoLista = (
-    citas: CitaLista[],
-    vacio: string,
-    cargandoLista: boolean,
-    errorLista: string
-  ) => {
-    if (cargandoLista) {
+  const cuerpoLista = (citas: CitaLista[], vacio: string) => {
+    if (cargando) {
       return <ActivityIndicator color="#2f7a3f" style={styles.cargandoLista} />;
     }
-    if (errorLista) {
-      return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{errorLista}</Text>;
+    if (error) {
+      return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{error}</Text>;
     }
     if (citas.length === 0) {
       return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{vacio}</Text>;
@@ -179,7 +228,7 @@ export default function TurnosScreen() {
         showsVerticalScrollIndicator
         contentContainerStyle={styles.listaContenido}
       >
-        {cuerpoLista(citas, vacio, cargando, error)}
+        {cuerpoLista(citas, vacio)}
       </ScrollView>
     </View>
   );
@@ -187,12 +236,35 @@ export default function TurnosScreen() {
   return (
     <AppDrawer title="Turnos">
       <View style={styles.pantalla}>
+        {esAdmin ? (
+          <View style={styles.bloqueSede}>
+            <SelectorCampo
+              label="Sede"
+              icono="location-outline"
+              placeholder="Elegí una sede"
+              opciones={opcionesSede}
+              seleccion={sedeSeleccionadaOpcion}
+              onSelect={(opcion) => setSedeSeleccionada(opcion.valor as SedeVeterinaria)}
+              compacto
+              accessibilityLabel="Elegir sede de la veterinaria"
+            />
+          </View>
+        ) : null}
+
         <View style={styles.listas}>
-          {seccionLista('Turnos de hoy', turnosHoy, 'No tenés turnos para hoy.')}
           {seccionLista(
-            'Turnos próximos',
-            turnosProximos,
-            'No tenés turnos próximos agendados.',
+            'Turnos de hoy',
+            turnosHoy,
+            esAdmin
+              ? `No hay turnos para hoy en ${sedeSeleccionada}.`
+              : 'No tenés turnos para hoy.'
+          )}
+          {seccionLista(
+            tituloSegundo,
+            segundoListado,
+            esAdmin
+              ? `Todavía no hay turnos completados en ${sedeSeleccionada}.`
+              : 'No tenés turnos próximos agendados.',
             styles.listaInferior
           )}
         </View>
@@ -244,8 +316,15 @@ export default function TurnosScreen() {
 
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
-              <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
-              <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
+              <Text style={estilos.modalText}>Hora: {citaSeleccionada.hora}</Text>
+              {citaSeleccionada.dueno ? (
+                <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>
+              ) : null}
+              {citaSeleccionada.descripcion ? (
+                <Text style={estilos.modalText}>
+                  Descripción: {citaSeleccionada.descripcion}
+                </Text>
+              ) : null}
             </View>
           )}
         </View>
@@ -256,6 +335,42 @@ export default function TurnosScreen() {
 
 const styles = {
   pantalla: { flex: 1, backgroundColor: '#fffefc' },
+  bloqueSede: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
+  listas: { flex: 1, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 6 },
+  lista: {
+    flex: 1,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#dcecdc',
+    borderRadius: 16,
+    backgroundColor: '#f2f9f1',
+    overflow: 'hidden' as const,
+  },
+  listaInferior: { marginBottom: 0 },
+  listaEncabezado: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 9 },
+  tituloSeccion: { marginTop: 0, marginBottom: 0 },
+  subtituloSeccion: { marginBottom: 0 },
+  listaContenido: { paddingHorizontal: 12, paddingBottom: 12 },
+  cargandoLista: { paddingVertical: 20 },
+  notaVacia: { paddingBottom: 8 },
+  turnoFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    minHeight: 64,
+  },
+  turnoFoto: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
+  turnoTexto: { flex: 1 },
+  dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  turnPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 12,
+    backgroundColor: '#e2f2e4',
+  },
+  tarjetaAtendida: { borderColor: '#0f3e17', borderWidth: 2 },
   agendar: {
     paddingHorizontal: 15,
     paddingTop: 6,
@@ -281,42 +396,6 @@ const styles = {
     backgroundColor: '#2f7a3f',
   },
   agendarTexto: { flex: 1 },
-  agendarTitulo: {
-    color: '#0f3e17',
-    fontSize: 17,
-    fontWeight: 'bold' as const,
-  },
+  agendarTitulo: { color: '#0f3e17', fontSize: 17, fontWeight: 'bold' as const },
   agendarSubtitulo: { marginTop: 2, color: '#6b7d6d', fontSize: 13 },
-  listas: { flex: 1, paddingHorizontal: 15, paddingTop: 12, paddingBottom: 6 },
-  lista: {
-    flex: 1,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#dcecdc',
-    borderRadius: 16,
-    backgroundColor: '#f2f9f1',
-    overflow: 'hidden' as const,
-  },
-  listaInferior: { marginBottom: 0 },
-  listaEncabezado: {
-    paddingHorizontal: 14,
-    paddingTop: 13,
-    paddingBottom: 9,
-  },
-  tituloSeccion: { marginTop: 0, marginBottom: 0 },
-  subtituloSeccion: { marginBottom: 0 },
-  listaContenido: { paddingHorizontal: 12, paddingBottom: 12 },
-  cargandoLista: { paddingVertical: 20 },
-  notaVacia: { paddingBottom: 8 },
-  turnoFila: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 12 },
-  turnoFoto: { width: 56, height: 56, borderRadius: 10, backgroundColor: '#e2f2e4' },
-  turnoTexto: { flex: 1 },
-  turnPhotoPlaceholder: {
-    width: 56,
-    height: 56,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: 10,
-    backgroundColor: '#e2f2e4',
-  },
 };

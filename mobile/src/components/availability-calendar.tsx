@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -18,6 +17,7 @@ import {
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { estilos } from '@/lib/estilos';
+import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
@@ -62,13 +62,6 @@ type Props = {
    * el formulario entre entero y la vista no tenga que scrollear.
    */
   escala?: number;
-};
-
-type OpcionSelector = {
-  valor: string;
-  titulo: string;
-  detalle?: string;
-  foto?: string | null;
 };
 
 function fechaComoValor(fecha: Date): string {
@@ -129,189 +122,6 @@ function esMascotaPropia(value: unknown): value is MascotaPropia {
     typeof mascota.especie === 'string' &&
     (mascota.raza === null || typeof mascota.raza === 'string') &&
     (mascota.foto === null || typeof mascota.foto === 'string')
-  );
-}
-
-type SelectorCampoProps = {
-  label: string;
-  icono: keyof typeof Ionicons.glyphMap;
-  placeholder: string;
-  opciones: OpcionSelector[];
-  seleccion: OpcionSelector | null;
-  onSelect: (opcion: OpcionSelector) => void;
-  cargando?: boolean;
-  vacio?: string;
-  accessibilityLabel: string;
-  /** Oculta el subtitulo y achica el campo, para las columnas angostas. */
-  compacto?: boolean;
-};
-
-/**
- * Campo de selección con hoja inferior propia. Se usa para sede y mascota
- * porque el Picker nativo no deja controlar la tipografía ni el avatar.
- */
-function SelectorCampo({
-  label,
-  icono,
-  placeholder,
-  opciones,
-  seleccion,
-  onSelect,
-  cargando = false,
-  vacio,
-  accessibilityLabel,
-  compacto = false,
-}: SelectorCampoProps) {
-  const [abierto, setAbierto] = useState(false);
-
-  const activo = seleccion !== null;
-
-  return (
-    <View style={styles.campoBloque}>
-      <Text style={styles.label}>{label}</Text>
-
-      <Pressable
-        style={({ pressed }) => [
-          styles.campo,
-          compacto && styles.campoCompacto,
-          activo && styles.campoConValor,
-          pressed && estilos.buttonPressed,
-        ]}
-        onPress={() => setAbierto(true)}
-        disabled={cargando || (vacio !== undefined && opciones.length === 0)}
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityState={{ disabled: cargando, expanded: abierto }}
-      >
-        {seleccion?.foto !== undefined ? (
-          seleccion.foto ? (
-            <Image
-              source={{ uri: seleccion.foto }}
-              style={[styles.campoAvatar, compacto && styles.avatarCompacto]}
-              resizeMode="cover"
-              accessibilityLabel={`Foto de ${seleccion.titulo}`}
-            />
-          ) : (
-            <View style={[styles.campoAvatar, compacto && styles.avatarCompacto, styles.campoAvatarVacio]}>
-              <Ionicons name="paw" size={compacto ? 13 : 16} color="#5f7d63" />
-            </View>
-          )
-        ) : (
-          <View style={[styles.campoIcono, compacto && styles.campoIconoCompacto]}>
-            <Ionicons name={icono} size={compacto ? 15 : 18} color="#0f3e17" />
-          </View>
-        )}
-
-        <View style={styles.campoTextoBloque}>
-          <Text
-            style={[styles.campoTexto, compacto && styles.campoTextoCompacto, !activo && styles.campoTextoVacio]}
-            numberOfLines={1}
-          >
-            {seleccion?.titulo ?? placeholder}
-          </Text>
-          {seleccion?.detalle && !compacto ? (
-            <Text style={styles.campoDetalle} numberOfLines={1}>
-              {seleccion.detalle}
-            </Text>
-          ) : null}
-        </View>
-
-        <Ionicons name="chevron-down" size={compacto ? 15 : 18} color="#7b8c7d" />
-      </Pressable>
-
-      {vacio !== undefined && !cargando && opciones.length === 0 ? (
-        <Text style={styles.mensajeBloque}>{vacio}</Text>
-      ) : null}
-
-      <Modal
-        visible={abierto}
-        transparent
-        animationType="slide"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setAbierto(false)}
-      >
-        <View style={styles.hojaRaiz}>
-          <Pressable
-            style={styles.hojaFondo}
-            onPress={() => setAbierto(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar selección"
-          />
-          <View style={styles.hoja}>
-            <View style={styles.hojaPestana} />
-            <View style={styles.hojaEncabezado}>
-              <Text style={styles.hojaTitulo}>{label}</Text>
-              <Pressable
-                onPress={() => setAbierto(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar"
-                style={({ pressed }) => [styles.hojaCerrar, pressed && estilos.buttonPressed]}
-              >
-                <Ionicons name="close" size={22} color="#263b32" />
-              </Pressable>
-            </View>
-
-            <View style={styles.hojaOpciones}>
-              {opciones.map((opcion) => {
-                const elegida = seleccion?.valor === opcion.valor;
-                return (
-                  <Pressable
-                    key={opcion.valor}
-                    style={({ pressed }) => [
-                      styles.opcion,
-                      elegida && styles.opcionElegida,
-                      pressed && estilos.buttonPressed,
-                    ]}
-                    onPress={() => {
-                      onSelect(opcion);
-                      setAbierto(false);
-                    }}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: elegida }}
-                    accessibilityLabel={opcion.detalle ? `${opcion.titulo}, ${opcion.detalle}` : opcion.titulo}
-                  >
-                    {opcion.foto !== undefined ? (
-                      opcion.foto ? (
-                        <Image
-                          source={{ uri: opcion.foto }}
-                          style={styles.opcionAvatar}
-                          resizeMode="cover"
-                          accessibilityLabel={`Foto de ${opcion.titulo}`}
-                        />
-                      ) : (
-                        <View style={[styles.opcionAvatar, styles.campoAvatarVacio]}>
-                          <Ionicons name="paw" size={20} color="#5f7d63" />
-                        </View>
-                      )
-                    ) : (
-                      <View style={[styles.opcionAvatar, styles.opcionAvatarIcono]}>
-                        <Ionicons name={icono} size={19} color="#0f3e17" />
-                      </View>
-                    )}
-
-                    <View style={styles.opcionTextoBloque}>
-                      <Text style={[styles.opcionTitulo, elegida && styles.opcionTituloElegido]}>
-                        {opcion.titulo}
-                      </Text>
-                      {opcion.detalle ? (
-                        <Text style={styles.opcionDetalle}>{opcion.detalle}</Text>
-                      ) : null}
-                    </View>
-
-                    {elegida ? (
-                      <View style={styles.opcionCheck}>
-                        <Ionicons name="checkmark" size={15} color="#fffefc" />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
   );
 }
 

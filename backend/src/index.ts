@@ -438,7 +438,8 @@ app.get('/api/turnos/disponibilidad', async (request, response) => {
 
   try {
     const turnos = await prisma.turno.findMany({
-      where: { fecha: { startsWith: mes }, sede },
+      // Los turnos de ejemplo no ocupan agenda real.
+      where: { fecha: { startsWith: mes }, sede, esDemo: false },
       select: { fecha: true, hora: true },
     });
     return response.json(turnos);
@@ -630,7 +631,8 @@ app.get('/api/admin/turnos', async (request, response) => {
 });
 
 // GET /api/admin/turnos-activos
-// Lista los turnos de hoy cuya llegada ya fue registrada por QR.
+// Lista los turnos de hoy que ya registraron su llegada por QR y que todavia
+// no fueron atendidos.
 app.get('/api/admin/turnos-activos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -644,7 +646,14 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
 
   try {
     const turnos = await prisma.turno.findMany({
-      where: { fecha: fechaActual, llegadaEn: { not: null } },
+      // Turno activo = ya llego (QR) y todavia no fue atendido. Al completarlo
+      // sale de esta lista y pasa a "Turnos completados". Los de ejemplo
+      // flotan: aparecen mas alla de la fecha de hoy.
+      where: {
+        llegadaEn: { not: null },
+        atendidoEn: null,
+        OR: [{ fecha: fechaActual }, { esDemo: true }],
+      },
       include: {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
@@ -655,6 +664,66 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
   } catch (error) {
     console.error('No se pudieron consultar los turnos activos:', error);
     return response.status(500).json({ message: 'No se pudieron consultar los turnos activos.' });
+  }
+});
+
+// Los turnos de ejemplo (esDemo) se borran por consola con
+// "npm run db:demo:borrar", no desde la app.
+
+// PATCH /api/admin/turnos/:id/atendido
+// Marca el turno como atendido guardando la descripcion de lo que paso.
+// Volver a llamarlo actualiza la descripcion. Para desmarcar se envia
+// { desmarcar: true }.
+app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id del turno no es válido.' });
+  }
+
+  const { descripcion, desmarcar } = request.body ?? {};
+
+  if (desmarcar !== undefined && typeof desmarcar !== 'boolean') {
+    return response.status(400).json({ message: 'El campo desmarcar debe ser booleano.' });
+  }
+  // Salir de un turno exige una descripcion de lo que ocurrio.
+  if (desmarcar !== true) {
+    if (typeof descripcion !== 'string' || !descripcion.trim()) {
+      return response
+        .status(400)
+        .json({ message: 'Escribí una descripción de lo que pasó en el turno.' });
+    }
+    if (descripcion.trim().length > 500) {
+      return response
+        .status(400)
+        .json({ message: 'La descripción no puede superar los 500 caracteres.' });
+    }
+  }
+
+  try {
+    const turno = await prisma.turno.findUnique({ where: { id }, select: { id: true } });
+    if (!turno) {
+      return response.status(404).json({ message: 'El turno no existe.' });
+    }
+
+    const marca = new Date().toISOString();
+    const actualizado = await prisma.turno.update({
+      where: { id },
+      data:
+        desmarcar === true
+          ? { atendidoEn: null, descripcion: null }
+          : { atendidoEn: marca, descripcion: descripcion.trim() },
+      include: {
+        user: { select: { id: true, nombre: true, email: true } },
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+    });
+    return response.json(actualizado);
+  } catch (error) {
+    console.error('No se pudo actualizar el estado de atención del turno:', error);
+    return response.status(500).json({ message: 'No se pudo marcar el turno como atendido.' });
   }
 });
 

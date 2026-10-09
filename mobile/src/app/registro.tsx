@@ -295,11 +295,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#C8E6C9',
   },
   content: {
-    flexGrow: 0,
-    justifyContent: 'flex-start',
+    flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingVertical: 20,
   },
   adminContent: {
     paddingTop: 72,

@@ -9,6 +9,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:init": "prisma db push && ts-node src/initDb.ts",
+    "db:demo": "ts-node src/crearDatosDemo.ts",
+    "db:demo:borrar": "ts-node src/borrarDatosDemo.ts",
     "admin:promote": "ts-node src/promoteAdmin.ts"
   },
   "keywords": [],
