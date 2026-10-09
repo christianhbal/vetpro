@@ -18,6 +18,7 @@ export type TurnoGuardado = {
   sede: SedeVeterinaria;
   fecha: string;
   hora: string;
+  llegadaEn: string | null;
   mascotaId: number;
   mascota: {
     id: number;

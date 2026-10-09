@@ -13,7 +13,17 @@ type Props = {
   tipo: 'fecha' | 'hora';
   valor: string;
   onChange: (value: string) => void;
+  fechaSeleccionadaValor?: string;
+  horariosOcupados?: { fecha: string; hora: string }[];
+  cargandoDisponibilidad?: boolean;
+  errorDisponibilidad?: string;
+  onMonthChange?: (year: number, month: number) => void;
 };
+
+const horariosDisponibles = Array.from({ length: 18 }, (_value, index) => {
+  const minutos = 10 * 60 + index * 30;
+  return `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
+});
 
 function fechaDesdeValor(valor: string): Date {
   const [year, month, day] = valor.split('-').map(Number);
@@ -39,28 +49,46 @@ function diasDelMes(fecha: Date): (number | null)[] {
   ];
 }
 
-export default function TurnoDateTimeField({ tipo, valor, onChange }: Props) {
+export default function TurnoDateTimeField({
+  tipo,
+  valor,
+  onChange,
+  fechaSeleccionadaValor = '',
+  horariosOcupados = [],
+  cargandoDisponibilidad = false,
+  errorDisponibilidad = '',
+  onMonthChange,
+}: Props) {
   const [abierto, setAbierto] = useState(false);
   const [mesVisible, setMesVisible] = useState(() => fechaDesdeValor(valor));
-  const [horaSeleccionada, setHoraSeleccionada] = useState(() => Number(valor.split(':')[0]) || 10);
-  const [minutoSeleccionado, setMinutoSeleccionado] = useState(() => Number(valor.split(':')[1]) || 0);
   const esFecha = tipo === 'fecha';
-  const fechaSeleccionada = useMemo(() => fechaDesdeValor(valor), [valor]);
+  const fechaSeleccionada = useMemo(
+    () => fechaDesdeValor(esFecha ? valor : fechaSeleccionadaValor),
+    [esFecha, fechaSeleccionadaValor, valor]
+  );
   const dias = useMemo(() => diasDelMes(mesVisible), [mesVisible]);
+  const horariosOcupadosDia = useMemo(
+    () =>
+      new Set(
+        horariosOcupados
+          .filter((slot) => slot.fecha === fechaSeleccionadaValor)
+          .map((slot) => slot.hora)
+      ),
+    [fechaSeleccionadaValor, horariosOcupados]
+  );
 
   const abrir = () => {
     if (esFecha) {
       setMesVisible(fechaSeleccionada);
-    } else {
-      const [hora, minuto] = valor.split(':').map(Number);
-      setHoraSeleccionada(Number.isInteger(hora) ? hora : 10);
-      setMinutoSeleccionado(Number.isInteger(minuto) ? minuto : 0);
+      onMonthChange?.(fechaSeleccionada.getFullYear(), fechaSeleccionada.getMonth() + 1);
     }
     setAbierto(true);
   };
 
   const moverMes = (cantidad: number) => {
-    setMesVisible((actual) => new Date(actual.getFullYear(), actual.getMonth() + cantidad, 1));
+    const siguiente = new Date(mesVisible.getFullYear(), mesVisible.getMonth() + cantidad, 1);
+    setMesVisible(siguiente);
+    onMonthChange?.(siguiente.getFullYear(), siguiente.getMonth() + 1);
   };
 
   return (
@@ -142,6 +170,29 @@ export default function TurnoDateTimeField({ tipo, valor, onChange }: Props) {
                   ))}
                   {dias.map((dia, index) => {
                     if (dia === null) return <View key={`espacio-${index}`} style={styles.day} />;
+                    const fechaDia = new Date(mesVisible.getFullYear(), mesVisible.getMonth(), dia);
+                    const fechaValor = fechaComoValor(fechaDia);
+                    const esPasado = fechaDia < new Date(
+                      new Date().getFullYear(),
+                      new Date().getMonth(),
+                      new Date().getDate()
+                    );
+                    const esDomingo = fechaDia.getDay() === 0;
+                    const horariosDelDia = new Set(
+                      horariosOcupados
+                        .filter(
+                          (slot) =>
+                            slot.fecha === fechaValor && horariosDisponibles.includes(slot.hora)
+                        )
+                        .map((slot) => slot.hora)
+                    );
+                    const completo = horariosDelDia.size >= horariosDisponibles.length;
+                    const deshabilitado =
+                      esPasado ||
+                      esDomingo ||
+                      completo ||
+                      cargandoDisponibilidad ||
+                      Boolean(errorDisponibilidad);
                     const seleccionado =
                       fechaSeleccionada.getFullYear() === mesVisible.getFullYear() &&
                       fechaSeleccionada.getMonth() === mesVisible.getMonth() &&
@@ -149,78 +200,107 @@ export default function TurnoDateTimeField({ tipo, valor, onChange }: Props) {
                     return (
                       <Pressable
                         key={`dia-${dia}`}
-                        style={[styles.day, seleccionado && styles.selectedDay]}
+                        style={[
+                          styles.day,
+                          seleccionado && styles.selectedDay,
+                          deshabilitado && styles.disabledDay,
+                        ]}
+                        disabled={deshabilitado}
                         onPress={() => {
-                          onChange(fechaComoValor(
-                            new Date(mesVisible.getFullYear(), mesVisible.getMonth(), dia)
-                          ));
+                          onChange(fechaValor);
                           setAbierto(false);
                         }}
                         accessibilityRole="button"
                         accessibilityState={{ selected: seleccionado }}
-                        accessibilityLabel={`${dia} de ${mesVisible.toLocaleDateString('es-AR', { month: 'long' })}`}
+                        accessibilityLabel={`${dia} de ${mesVisible.toLocaleDateString('es-AR', { month: 'long' })}${horariosDelDia.size > 0 ? `, ${horariosDelDia.size} horarios ocupados` : ''}${deshabilitado ? ', no disponible' : ''}`}
                       >
-                        <Text style={[styles.dayText, seleccionado && styles.selectedText]}>
+                        <Text
+                          style={[
+                            styles.dayText,
+                            seleccionado && styles.selectedText,
+                            deshabilitado && styles.disabledText,
+                          ]}
+                        >
                           {dia}
                         </Text>
+                        {horariosDelDia.size > 0 && !seleccionado ? (
+                          <View style={styles.occupiedDot} />
+                        ) : null}
                       </Pressable>
                     );
                   })}
                 </View>
+                <View style={styles.legend}>
+                  <View style={styles.occupiedDot} />
+                  <Text style={styles.legendText}>Fecha con horarios ocupados</Text>
+                </View>
+                {cargandoDisponibilidad ? (
+                  <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>
+                ) : errorDisponibilidad ? (
+                  <Text style={styles.availabilityMessage}>{errorDisponibilidad}</Text>
+                ) : null}
               </>
             ) : (
               <>
-                <View style={styles.timeColumns}>
-                  <View style={styles.timeColumn}>
-                    <Text style={styles.columnLabel}>Hora</Text>
-                    <ScrollView style={styles.timeScroll} contentContainerStyle={styles.timeChoices}>
-                      {Array.from({ length: 24 }, (_value, hour) => (
-                        <Pressable
-                          key={`hora-${hour}`}
-                          onPress={() => setHoraSeleccionada(hour)}
-                          style={[styles.timeChoice, horaSeleccionada === hour && styles.selectedDay]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: horaSeleccionada === hour }}
-                        >
-                          <Text style={[styles.dayText, horaSeleccionada === hour && styles.selectedText]}>
-                            {String(hour).padStart(2, '0')}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                  <Text style={styles.colon}>:</Text>
-                  <View style={styles.timeColumn}>
-                    <Text style={styles.columnLabel}>Minutos</Text>
-                    <ScrollView style={styles.timeScroll} contentContainerStyle={styles.timeChoices}>
-                      {Array.from({ length: 2 }, (_value, index) => index * 30).map((minute) => (
-                        <Pressable
-                          key={`minuto-${minute}`}
-                          onPress={() => setMinutoSeleccionado(minute)}
-                          style={[styles.timeChoice, minutoSeleccionado === minute && styles.selectedDay]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: minutoSeleccionado === minute }}
-                        >
-                          <Text style={[styles.dayText, minutoSeleccionado === minute && styles.selectedText]}>
-                            {String(minute).padStart(2, '0')}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-                <Pressable
-                  style={styles.confirm}
-                  onPress={() => {
-                    onChange(
-                      `${String(horaSeleccionada).padStart(2, '0')}:${String(minutoSeleccionado).padStart(2, '0')}`
-                    );
-                    setAbierto(false);
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.confirmText}>Usar horario</Text>
-                </Pressable>
+                <Text style={styles.slotSubtitle}>
+                  {valor
+                    ? `Horarios para el ${fechaSeleccionada.toLocaleDateString('es-AR')}`
+                    : 'Primero selecciona una fecha.'}
+                </Text>
+                {!valor ? (
+                  <Text style={styles.availabilityMessage}>Selecciona una fecha para ver los horarios.</Text>
+                ) : cargandoDisponibilidad ? (
+                  <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>
+                ) : errorDisponibilidad ? (
+                  <Text style={styles.availabilityMessage}>{errorDisponibilidad}</Text>
+                ) : horariosDisponibles.every((horario) => horariosOcupadosDia.has(horario)) ? (
+                  <Text style={styles.availabilityMessage}>No quedan horarios disponibles para esta fecha.</Text>
+                ) : (
+                  <ScrollView style={styles.slotsScroll}>
+                    <View style={styles.slotsGrid}>
+                      {horariosDisponibles.map((horario) => {
+                        const ocupado = horariosOcupadosDia.has(horario);
+                        const pasadoHoy =
+                          fechaSeleccionadaValor === fechaComoValor(new Date()) &&
+                          horario <= `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+                        const deshabilitado =
+                          ocupado ||
+                          pasadoHoy ||
+                          cargandoDisponibilidad ||
+                          Boolean(errorDisponibilidad);
+                        const seleccionado = valor === horario;
+                        return (
+                          <Pressable
+                            key={horario}
+                            disabled={deshabilitado}
+                            onPress={() => {
+                              onChange(horario);
+                              setAbierto(false);
+                            }}
+                            style={[
+                              styles.slot,
+                              seleccionado && styles.selectedDay,
+                              deshabilitado && styles.disabledSlot,
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
+                            accessibilityLabel={`${horario}${ocupado ? ', ocupado' : deshabilitado ? ', no disponible' : ', disponible'}`}
+                          >
+                            <Text
+                              style={[
+                                styles.slotText,
+                                seleccionado && styles.selectedText,
+                                deshabilitado && styles.disabledText,
+                              ]}
+                            >
+                              {horario}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                )}
               </>
             )}
           </View>
@@ -264,6 +344,18 @@ const styles = StyleSheet.create({
   weekday: { width: '14.2857%', paddingVertical: 8, color: '#69746a', fontSize: 13, fontWeight: '600', textAlign: 'center' },
   day: { width: '14.2857%', height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
   dayText: { color: '#263b32', fontSize: 15, textAlign: 'center' },
+  disabledDay: { backgroundColor: '#f0f1ee' },
+  disabledText: { color: '#a0a69f' },
+  occupiedDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#c05a32', position: 'absolute', bottom: 4 },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  legendText: { color: '#69746a', fontSize: 13 },
+  availabilityMessage: { color: '#69746a', fontSize: 14, textAlign: 'center', marginVertical: 18 },
+  slotSubtitle: { color: '#69746a', fontSize: 14, marginTop: 12 },
+  slotsScroll: { maxHeight: 300, marginTop: 12 },
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+  slot: { width: '30%', minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#e1f4df' },
+  disabledSlot: { backgroundColor: '#f0f1ee' },
+  slotText: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
   timeColumns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 },

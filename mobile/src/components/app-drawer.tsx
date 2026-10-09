@@ -23,6 +23,7 @@ const menuItems = [
 const adminMenuItems = [
   { label: 'Administrar usuarios', href: '/admin-usuarios', icon: 'people-outline' },
   { label: 'Modificar turnos', href: '/admin-turnos', icon: 'calendar-number-outline' },
+  { label: 'Turnos activos', href: '/admin-turnos-activos', icon: 'checkmark-circle-outline' },
 ] as const;
 
 type AppDrawerProps = {

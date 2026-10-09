@@ -60,7 +60,6 @@ export default function Index() {
         nombre: result.nombre,
         email: result.email,
         telefono: typeof result.telefono === 'string' ? result.telefono : null,
-        direccion: typeof result.direccion === 'string' ? result.direccion : null,
         esAdmin: result.esAdmin,
         accessToken: result.accessToken,
       });
@@ -71,7 +70,6 @@ export default function Index() {
           nombre: result.nombre,
           email: result.email,
           telefono: typeof result.telefono === 'string' ? result.telefono : null,
-          direccion: typeof result.direccion === 'string' ? result.direccion : null,
           esAdmin: result.esAdmin,
           accessToken: result.accessToken,
         });

@@ -12,6 +12,7 @@ import {
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvailabilityCalendar } from '@/components/availability-calendar';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
@@ -21,6 +22,8 @@ import {
   type TurnoGuardado,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import QRCode from 'react-native-qrcode-svg';
+import { CHECK_IN_QR } from '@/lib/check-in';
 
 type Mascota = {
   id: number;
@@ -49,6 +52,7 @@ export default function InicioScreen() {
   const [turnosGuardados, setTurnosGuardados] = useState<TurnoGuardado[]>([]);
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
+  const [esAdmin, setEsAdmin] = useState(false);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fotoModalSize = Math.max(
     0,
@@ -65,6 +69,7 @@ export default function InicioScreen() {
         router.replace('/');
         return;
       }
+      setEsAdmin(usuario.esAdmin);
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
@@ -225,6 +230,7 @@ export default function InicioScreen() {
         }
         ListHeaderComponent={
           <View>
+            <AvailabilityCalendar />
             <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
             <FlatList
               horizontal
@@ -246,18 +252,28 @@ export default function InicioScreen() {
                 </View>
               }
             />
-            <Link href="/escanear-qr" asChild>
-              <Pressable
-                style={estilos.qrBoton}
-                accessibilityRole="link"
-                accessibilityLabel="Escanear código QR de la veterinaria"
-              >
-                <View style={estilos.qrBotonFila}>
-                  <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
-                  <Text style={estilos.buttonTextPrimary}>Escanear QR en la veterinaria</Text>
-                </View>
-              </Pressable>
-            </Link>
+            {esAdmin ? (
+              <View style={[estilos.cardVertical, { alignItems: 'center', marginVertical: 12 }]}>
+                <Text style={estilos.cardTitle}>Código QR de llegada</Text>
+                <Text style={[estilos.cardSubtitle, { textAlign: 'center', marginVertical: 12 }]}>
+                  Presentá este código para que los usuarios registren su llegada.
+                </Text>
+                <QRCode value={CHECK_IN_QR} size={220} />
+              </View>
+            ) : (
+              <Link href="/escanear-qr" asChild>
+                <Pressable
+                  style={estilos.qrBoton}
+                  accessibilityRole="link"
+                  accessibilityLabel="Escanear código QR de la veterinaria"
+                >
+                  <View style={estilos.qrBotonFila}>
+                    <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
+                    <Text style={estilos.buttonTextPrimary}>Escanear QR en la veterinaria</Text>
+                  </View>
+                </Pressable>
+              </Link>
+            )}
 
             <Text style={estilos.sectionTitle}>Próximas Citas</Text>
             {cargandoTurnos ? (

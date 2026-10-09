@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -60,6 +60,8 @@ type MascotaPropia = {
   raza: string | null;
 };
 
+type HorarioOcupado = { fecha: string; hora: string };
+
 type Fila =
   | { id: 'tipo'; tipo: 'opciones'; label: string }
   | { id: 'sede'; tipo: 'sede'; label: string }
@@ -78,8 +80,12 @@ export default function NuevoTurno() {
   const [cargandoMascotas, setCargandoMascotas] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [errorMascotas, setErrorMascotas] = useState('');
+  const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
   const [mensajeFormulario, setMensajeFormulario] = useState('');
   const [esError, setEsError] = useState(false);
+  const solicitudDisponibilidad = useRef(0);
   const { top } = useSafeAreaInsets();
 
   const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
@@ -129,6 +135,73 @@ export default function NuevoTurno() {
     }, [cargarMascotas])
   );
 
+  const cargarDisponibilidad = useCallback(async (
+    year: number,
+    month: number,
+    sedeConsultada: SedeVeterinaria | ''
+  ) => {
+    const solicitud = ++solicitudDisponibilidad.current;
+    const mes = `${year}-${String(month).padStart(2, '0')}`;
+    setCargandoDisponibilidad(true);
+    setErrorDisponibilidad('');
+    setHorariosOcupados([]);
+    try {
+      if (!sedeConsultada) {
+        setErrorDisponibilidad('Selecciona una sede antes de elegir una fecha.');
+        return;
+      }
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+      const response = await fetch(
+        `${API_BASE_URL}/api/turnos/disponibilidad?mes=${encodeURIComponent(mes)}&sede=${encodeURIComponent(sedeConsultada)}`,
+        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
+      );
+      const resultado: unknown = await response.json();
+      if (!response.ok) {
+        if (solicitud === solicitudDisponibilidad.current) {
+          setErrorDisponibilidad(
+            mensajeDeRespuesta(resultado) ?? 'No se pudo cargar la disponibilidad.'
+          );
+        }
+        return;
+      }
+      if (
+        !Array.isArray(resultado) ||
+        !resultado.every(
+          (slot: unknown): slot is HorarioOcupado =>
+            typeof slot === 'object' &&
+            slot !== null &&
+            'fecha' in slot &&
+            typeof slot.fecha === 'string' &&
+            'hora' in slot &&
+            typeof slot.hora === 'string'
+        )
+      ) {
+        throw new Error('La API devolvió horarios ocupados inválidos.');
+      }
+      if (solicitud === solicitudDisponibilidad.current) {
+        setHorariosOcupados(resultado);
+      }
+    } catch (error) {
+      if (solicitud === solicitudDisponibilidad.current) {
+        setErrorDisponibilidad(
+          error instanceof TypeError
+            ? apiUnreachableMessage(error)
+            : error instanceof Error
+              ? error.message
+              : apiUnreachableMessage(error)
+        );
+      }
+    } finally {
+      if (solicitud === solicitudDisponibilidad.current) {
+        setCargandoDisponibilidad(false);
+      }
+    }
+  }, [router]);
+
   const handleSubmit = async () => {
     setMensajeFormulario('');
     if (mascotaId === null || !tipo || !sede || !fecha.trim() || !hora.trim()) {
@@ -145,7 +218,33 @@ export default function NuevoTurno() {
     }
     const horaNormalizada = hora.trim();
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaNormalizada)) {
-      setMensajeFormulario('La hora no es válida. Usa el formato de 24 horas, por ejemplo 10:30.');
+      setMensajeFormulario('Selecciona uno de los horarios disponibles.');
+      setEsError(true);
+      return;
+    }
+    const [year, month, day] = fechaApi.split('-').map(Number);
+    const fechaElegida = new Date(year, month - 1, day);
+    const ahora = new Date();
+    const minutos = Number(horaNormalizada.slice(0, 2)) * 60 + Number(horaNormalizada.slice(3));
+    if (
+      fechaElegida.getDay() === 0 ||
+      fechaElegida < new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()) ||
+      minutos < 600 ||
+      minutos > 1110 ||
+      minutos % 30 !== 0 ||
+      (fechaElegida.toDateString() === ahora.toDateString() &&
+        minutos <= ahora.getHours() * 60 + ahora.getMinutes())
+    ) {
+      setMensajeFormulario('Elige un horario futuro de lunes a sábado entre las 10:00 y las 18:30.');
+      setEsError(true);
+      return;
+    }
+    if (
+      horariosOcupados.some(
+        (slot) => slot.fecha === fechaApi && slot.hora === horaNormalizada
+      )
+    ) {
+      setMensajeFormulario('Ese horario está ocupado en esta sede. Elige otro horario disponible.');
       setEsError(true);
       return;
     }
@@ -159,7 +258,10 @@ export default function NuevoTurno() {
       }
       const response = await fetch(`${API_BASE_URL}/api/turnos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${usuario.accessToken}`,
+        },
         body: JSON.stringify({
           userId: usuario.id,
           mascotaId,
@@ -207,7 +309,13 @@ export default function NuevoTurno() {
             <Picker
               selectedValue={sede}
               onValueChange={(value) => {
-                if (value === '' || esSedeVeterinaria(value)) setSede(value);
+                if (value === '' || esSedeVeterinaria(value)) {
+                  setSede(value);
+                  setFecha('');
+                  setHora('');
+                  setHorariosOcupados([]);
+                  setErrorDisponibilidad('');
+                }
               }}
               mode="dropdown"
               accessibilityLabel="Seleccionar sede"
@@ -291,7 +399,19 @@ export default function NuevoTurno() {
         <TurnoDateTimeField
           tipo={item.id}
           valor={item.id === 'fecha' ? fecha : hora}
-          onChange={item.id === 'fecha' ? setFecha : setHora}
+          fechaSeleccionadaValor={fecha}
+          horariosOcupados={horariosOcupados}
+          cargandoDisponibilidad={cargandoDisponibilidad}
+          errorDisponibilidad={errorDisponibilidad}
+          onMonthChange={(year, month) => void cargarDisponibilidad(year, month, sede)}
+          onChange={(value) => {
+            if (item.id === 'fecha') {
+              setFecha(value);
+              setHora('');
+            } else {
+              setHora(value);
+            }
+          }}
         />
       </View>
     );

@@ -29,7 +29,6 @@ model Usuario {
   password      String
   role          String              @default("USER")
   telefono      String?
-  direccion     String?
   createdAt     String              @default(dbgenerated("CURRENT_TIMESTAMP"))
   mascotas      Mascota[]
   turnos        Turno[]
@@ -45,6 +44,7 @@ model Turno {
   sede          String         @default("Recoleta")
   fecha         String
   hora          String
+  llegadaEn     String?
   recordatorioEnviadoEn String?
   userId        Int
   user          Usuario        @relation(fields: [userId], references: [id], onDelete: Cascade)

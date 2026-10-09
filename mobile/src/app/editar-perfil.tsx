@@ -12,13 +12,14 @@ import {
 } from '@/lib/session';
 
 type Campo = {
-  id: 'nombre' | 'email' | 'telefono' | 'direccion';
+  id: 'nombre' | 'email' | 'telefono';
   label: string;
   placeholder: string;
   value: string;
-  onChangeText: (texto: string) => void;
+  onChangeText?: (texto: string) => void;
   keyboardType?: 'email-address' | 'phone-pad';
-  autoComplete?: 'name' | 'email' | 'street-address' | 'tel';
+  autoComplete?: 'name' | 'email' | 'tel';
+  editable?: boolean;
   returnKeyType?: 'next' | 'done';
   onSubmitEditing?: () => void;
 };
@@ -35,9 +36,7 @@ export default function EditarPerfil() {
   const { top } = useSafeAreaInsets();
 
   const [nombre, setNombre] = useState('');
-  const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [direccion, setDireccion] = useState('');
   const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -83,18 +82,12 @@ export default function EditarPerfil() {
               'telefono' in result && typeof result.telefono === 'string'
                 ? result.telefono
                 : null,
-            direccion:
-              'direccion' in result && typeof result.direccion === 'string'
-                ? result.direccion
-                : null,
             esAdmin: sesion.esAdmin,
             accessToken: sesion.accessToken,
           };
           setUsuario(perfil);
           setNombre(perfil.nombre);
-          setEmail(perfil.email);
           setTelefono(perfil.telefono ?? '');
-          setDireccion(perfil.direccion ?? '');
         } catch (error) {
           if (activo) {
             Alert.alert(
@@ -119,12 +112,8 @@ export default function EditarPerfil() {
       Alert.alert('Perfil no disponible', 'Vuelve a cargar la pantalla e inténtalo nuevamente.');
       return;
     }
-    if (!nombre.trim() || !email.trim() || !telefono.trim()) {
-      Alert.alert('Faltan datos', 'Completa tu nombre, correo y teléfono. La dirección es opcional.');
-      return;
-    }
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      Alert.alert('Correo no válido', 'Revisa el formato de tu correo electrónico.');
+    if (!nombre.trim() || !telefono.trim()) {
+      Alert.alert('Faltan datos', 'Completa tu nombre y teléfono.');
       return;
     }
 
@@ -135,9 +124,7 @@ export default function EditarPerfil() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: nombre.trim(),
-          email: email.trim(),
           telefono: telefono.trim(),
-          direccion: direccion.trim() || null,
         }),
       });
       const result: unknown = await response.json();
@@ -164,8 +151,6 @@ export default function EditarPerfil() {
         email: result.email,
         telefono:
           'telefono' in result && typeof result.telefono === 'string' ? result.telefono : null,
-        direccion:
-          'direccion' in result && typeof result.direccion === 'string' ? result.direccion : null,
         esAdmin: usuario.esAdmin,
         accessToken: usuario.accessToken,
       });
@@ -194,10 +179,10 @@ export default function EditarPerfil() {
       id: 'email',
       label: 'Correo electrónico',
       placeholder: 'Ej. ana@correo.com',
-      value: email,
-      onChangeText: setEmail,
+      value: usuario?.email ?? '',
       keyboardType: 'email-address',
       autoComplete: 'email',
+      editable: false,
       returnKeyType: 'next',
     },
     {
@@ -209,16 +194,6 @@ export default function EditarPerfil() {
       keyboardType: 'phone-pad',
       autoComplete: 'tel',
       returnKeyType: 'next',
-    },
-    {
-      id: 'direccion',
-      label: 'Dirección (opcional)',
-      placeholder: 'Ej. Calle 123, Ciudad',
-      value: direccion,
-      onChangeText: setDireccion,
-      autoComplete: 'street-address',
-      returnKeyType: 'done',
-      onSubmitEditing: () => void handleSubmit(),
     },
   ];
 
@@ -243,7 +218,7 @@ export default function EditarPerfil() {
               keyboardType={item.keyboardType}
               autoComplete={item.autoComplete}
               autoCapitalize={item.id === 'email' ? 'none' : 'words'}
-              editable={!cargando && !guardando}
+              editable={item.editable ?? (!cargando && !guardando)}
               returnKeyType={item.returnKeyType}
               onSubmitEditing={item.onSubmitEditing}
             />
@@ -263,9 +238,7 @@ export default function EditarPerfil() {
 
             <View style={estilos.formWrapper}>
               <Text style={estilos.formTitle}>Editar perfil</Text>
-              <Text style={estilos.formSubtitle}>
-                Actualizá tus datos. La dirección es opcional.
-              </Text>
+              <Text style={estilos.formSubtitle}>Actualizá tus datos.</Text>
             </View>
           </View>
         }

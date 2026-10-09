@@ -22,7 +22,7 @@ type Campo = {
   value: string;
   onChangeText: (texto: string) => void;
   secureTextEntry?: boolean;
-  autoComplete?: 'name' | 'email' | 'new-password' | 'street-address' | 'tel';
+  autoComplete?: 'name' | 'email' | 'new-password' | 'tel';
   keyboardType?: 'email-address' | 'phone-pad';
   returnKeyType?: 'next' | 'done';
   onSubmitEditing?: () => void;
@@ -33,13 +33,11 @@ export default function Registro() {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [direccion, setDireccion] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
   const [sesionVerificada, setSesionVerificada] = useState(false);
-  const [crearAdmin, setCrearAdmin] = useState(false);
   const [mostrarConfirmacionAdmin, setMostrarConfirmacionAdmin] = useState(false);
   const { top } = useSafeAreaInsets();
 
@@ -93,8 +91,7 @@ export default function Registro() {
             email: email.trim(),
             telefono: telefono.trim(),
             password,
-            direccion: direccion.trim() || null,
-            ...(sesionAdmin ? { esAdmin: crearAdmin } : {}),
+            ...(sesionAdmin ? { esAdmin: true } : {}),
           }),
         }
       );
@@ -107,8 +104,6 @@ export default function Registro() {
 
       setPassword('');
       setConfirmPassword('');
-      setDireccion('');
-      setCrearAdmin(false);
       if (sesionAdmin) {
         setMostrarConfirmacionAdmin(true);
       } else {
@@ -149,14 +144,6 @@ export default function Registro() {
       returnKeyType: 'next',
     },
     {
-      id: 'direccion',
-      placeholder: 'Dirección (opcional)',
-      value: direccion,
-      onChangeText: setDireccion,
-      autoComplete: 'street-address',
-      returnKeyType: 'next',
-    },
-    {
       id: 'password',
       placeholder: 'Contraseña (mínimo 8 caracteres)',
       value: password,
@@ -185,7 +172,7 @@ export default function Registro() {
       <FlatList
         data={campos}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, sesionAdmin && styles.adminContent]}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
@@ -207,38 +194,13 @@ export default function Registro() {
               accessibilityLabel="VetPro, cuidado y bienestar"
             />
             <View style={styles.titleRow}>
-              <Text style={styles.title}>Crear cuenta</Text>
+              <Text style={styles.title}>{sesionAdmin ? 'Crear veterinario' : 'Crear cuenta'}</Text>
             </View>
-            <Text style={styles.subtitle}>Únete a VetPro y cuida mejor de tus mascotas.</Text>
-            {sesionAdmin ? (
-              <View style={styles.roleSelector}>
-                <Text style={styles.roleLabel}>Tipo de usuario</Text>
-                {[
-                  { label: 'Usuario normal', value: false },
-                  { label: 'Administrador', value: true },
-                ].map((option) => (
-                  <Pressable
-                    key={option.label}
-                    style={[
-                      styles.roleOption,
-                      crearAdmin === option.value && styles.roleOptionSelected,
-                    ]}
-                    onPress={() => setCrearAdmin(option.value)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: crearAdmin === option.value }}
-                  >
-                    <Text
-                      style={[
-                        styles.roleOptionText,
-                        crearAdmin === option.value && styles.roleOptionTextSelected,
-                      ]}
-                    >
-                      {crearAdmin === option.value ? '●' : '○'} {option.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
+            <Text style={styles.subtitle}>
+              {sesionAdmin
+                ? 'Crea una cuenta para un veterinario.'
+                : 'Únete a VetPro y cuida mejor de tus mascotas.'}
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -269,14 +231,16 @@ export default function Registro() {
               onPress={handleRegister}
               disabled={isSubmitting || !sesionVerificada}
               accessibilityRole="button"
-              accessibilityLabel="Crear cuenta"
+              accessibilityLabel={sesionAdmin ? 'Crear veterinario' : 'Crear cuenta'}
             >
               <Text style={styles.registerButtonText}>
                 {!sesionVerificada
                   ? 'Verificando sesión...'
                   : isSubmitting
                     ? 'Creando cuenta...'
-                    : 'Crear cuenta'}
+                    : sesionAdmin
+                      ? 'Crear veterinario'
+                      : 'Crear cuenta'}
               </Text>
             </Pressable>
 
@@ -337,6 +301,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 24,
   },
+  adminContent: {
+    paddingTop: 72,
+  },
   header: {
     width: '100%',
     alignItems: 'center',
@@ -376,44 +343,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginBottom: 14,
-  },
-  roleSelector: {
-    alignSelf: 'stretch',
-    marginBottom: 22,
-    padding: 18,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#d8e3d5',
-    backgroundColor: '#f7fbf6',
-  },
-  roleLabel: {
-    color: '#263b32',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  roleOption: {
-    minHeight: 48,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#d8e3d5',
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  roleOptionSelected: {
-    borderColor: '#1B4D3E',
-    backgroundColor: '#eaf4e9',
-  },
-  roleOptionText: {
-    color: '#365247',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  roleOptionTextSelected: {
-    color: '#0f3e17',
-    fontWeight: 'bold',
   },
   campoFila: {
     width: '100%',
