@@ -12,7 +12,6 @@ import {
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
-import { AvailabilityCalendar } from '@/components/availability-calendar';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
@@ -230,7 +229,6 @@ export default function InicioScreen() {
         }
         ListHeaderComponent={
           <View>
-            <AvailabilityCalendar />
             <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
             <FlatList
               horizontal
@@ -382,9 +380,6 @@ export default function InicioScreen() {
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
               <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
               <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
-              {citaSeleccionada.guardado && (
-                <Text style={estilos.modalText}>Turno registrado en tu cuenta.</Text>
-              )}
             </View>
           )}
         </View>

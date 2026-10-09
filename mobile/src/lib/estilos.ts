@@ -50,6 +50,37 @@ export const estilos = StyleSheet.create({
     borderColor: '#efeeeb',
     borderWidth: 1,
   },
+  // Tarjeta de turno, verdes claros de la misma familia que el resto de la app.
+  cardTurno: {
+    backgroundColor: '#d9f0da',
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderColor: '#b9ddba',
+    borderWidth: 1,
+  },
+  cardTituloTurno: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0f3e17',
+    marginBottom: 5,
+  },
+  cardSubtituloTurno: {
+    fontSize: 14,
+    color: '#4a6152',
+  },
+  sectionTitleTurno: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0f3e17',
+    marginBottom: 4,
+    marginTop: 16,
+  },
+  sectionSubtitleTurno: {
+    fontSize: 13,
+    color: '#6b7d6d',
+    marginBottom: 10,
+  },
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
