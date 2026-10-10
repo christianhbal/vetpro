@@ -79,7 +79,10 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
       void cargarContadorNotificaciones();
     }, [cargarContadorNotificaciones])
   );
-  const items = esAdmin ? [...menuItems, ...adminMenuItems] : menuItems;
+
+  const items = esAdmin
+    ? [...menuItems, ...adminMenuItems].filter((item) => item.href !== '/mascotas')
+    : menuItems;
   const abrirMenu = () => {
     setVisible(true);
     void cargarContadorNotificaciones();

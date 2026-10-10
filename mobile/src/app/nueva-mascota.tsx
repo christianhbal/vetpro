@@ -76,6 +76,11 @@ export default function NuevaMascota() {
         return;
       }
 
+      if (usuario.esAdmin) {
+        router.replace('/app');
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/mascotas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

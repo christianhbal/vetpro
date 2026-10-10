@@ -230,27 +230,31 @@ export default function InicioScreen() {
         }
         ListHeaderComponent={
           <View>
-            <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
-            <FlatList
-              horizontal
-              data={mascotas}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={renderMascota}
-              showsHorizontalScrollIndicator={false}
-              style={estilos.horizontalList}
-              contentContainerStyle={estilos.horizontalListContent}
-              ListEmptyComponent={
-                <View style={{ paddingVertical: 16, paddingHorizontal: 8 }}>
-                  {cargandoMascotas ? (
-                    <ActivityIndicator color="#0f3e17" />
-                  ) : (
-                    <Text style={estilos.cardSubtitle}>
-                      {errorMascotas || 'Todavía no tienes mascotas registradas.'}
-                    </Text>
-                  )}
-                </View>
-              }
-            />
+            {esAdmin ? null : (
+              <>
+                <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
+                <FlatList
+                  horizontal
+                  data={mascotas}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={renderMascota}
+                  showsHorizontalScrollIndicator={false}
+                  style={estilos.horizontalList}
+                  contentContainerStyle={estilos.horizontalListContent}
+                  ListEmptyComponent={
+                    <View style={styles.mascotasVacias}>
+                      {cargandoMascotas ? (
+                        <ActivityIndicator color="#0f3e17" />
+                      ) : (
+                        <Text style={estilos.cardSubtitle}>
+                          {errorMascotas || 'Todavía no tienes mascotas registradas.'}
+                        </Text>
+                      )}
+                    </View>
+                  }
+                />
+              </>
+            )}
             {esAdmin ? (
               <View style={styles.qrAdminBloque}>
                 <Pressable
@@ -433,6 +437,10 @@ export default function InicioScreen() {
 }
 
 const styles = {
+  mascotasVacias: {
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+  },
   qrAdminBloque: {
     marginVertical: 12,
   },

@@ -55,6 +55,11 @@ export default function MascotasScreen() {
         return;
       }
 
+      if (usuario.esAdmin) {
+        router.replace('/app');
+        return;
+      }
+
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
       );
