@@ -181,7 +181,12 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
           </View>
         }
         renderItem={({ item }) => (
-          <View style={estilos.cardTurno}>
+          <Pressable
+            style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
+            onPress={() => registrarAtencion(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Registrar la atención del turno de ${item.mascota.nombre}`}
+          >
             <View style={styles.fila}>
               <View style={styles.texto}>
                 <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
@@ -202,24 +207,9 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
                 </Text>
               </View>
 
-              <View style={styles.acciones}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.botonTilde,
-                    pressed && estilos.buttonPressed,
-                  ]}
-                  onPress={() => registrarAtencion(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Registrar la atención del turno de ${item.mascota.nombre}`}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={34} color="#2f7a3f" />
-                </Pressable>
-                <Text style={styles.accionTexto} numberOfLines={1}>
-                  Atender
-                </Text>
-              </View>
+              <Ionicons name="checkmark-circle-outline" size={22} color="#0f3e17" />
             </View>
-          </View>
+          </Pressable>
         )}
       />
     </AppDrawer>
@@ -237,7 +227,6 @@ const styles = StyleSheet.create({
   texto: { flex: 1 },
   
   dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
-  acciones: { alignItems: 'center', gap: 5 },
   botonTilde: {
     width: 56,
     height: 56,
@@ -258,5 +247,4 @@ const styles = StyleSheet.create({
     borderColor: '#2f7a3f',
     shadowOpacity: 0.22,
   },
-  accionTexto: { color: '#556b58', fontSize: 12, fontWeight: '600' },
 });

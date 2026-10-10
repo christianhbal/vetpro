@@ -318,6 +318,13 @@ export default function TurnosScreen() {
 
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
+              <Text style={estilos.modalText}>
+                Fecha:{' '}
+                {new Date(`${citaSeleccionada.guardado.fecha}T12:00:00`).toLocaleDateString(
+                  'es-AR',
+                  { weekday: 'long', day: 'numeric', month: 'long' }
+                )}
+              </Text>
               <Text style={estilos.modalText}>Hora: {citaSeleccionada.hora}</Text>
               {citaSeleccionada.dueno ? (
                 <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>

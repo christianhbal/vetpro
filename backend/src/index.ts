@@ -29,6 +29,11 @@ function parseId(value: string | undefined): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+function formatearFechaLarga(fecha: string): string {
+  const partes = fecha.split('-');
+  return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : fecha;
+}
+
 function isValidDateOnly(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -880,6 +885,95 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
     }
     console.error('No se pudo modificar el turno:', error);
     return response.status(500).json({ message: 'No se pudo modificar el turno.' });
+  }
+});
+
+
+// Cancela un turno. No se permite si el paciente ya fue atendido
+app.delete('/api/admin/turnos/:id', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id del turno no es válido.' });
+  }
+
+  try {
+    const resultado = await prisma.$transaction(async (transaction) => {
+      const turno = await transaction.turno.findUnique({
+        where: { id },
+        include: {
+          user: { select: { id: true, nombre: true } },
+          mascota: { select: { nombre: true } },
+        },
+      });
+      if (!turno) return null;
+      if (turno.atendidoEn) {
+        return { blocked: 'atendido' as const };
+      }
+      if (turno.llegadaEn) {
+        return { blocked: 'llegada' as const };
+      }
+
+      // La notificación se crea antes del borrado y sin turnoId: al eliminar el
+      // turno la relación queda en null (onDelete: SetNull) y el aviso sobrevive.
+      const notification = await transaction.notification.create({
+        data: {
+          userId: turno.userId,
+          title: 'Tu turno fue cancelado',
+          message: `El turno de ${turno.mascota.nombre} del ${formatearFechaLarga(turno.fecha)} a las ${turno.hora} fue cancelado por la veterinaria.`,
+        },
+      });
+
+      await transaction.turno.delete({ where: { id } });
+
+      return { turno, notification };
+    });
+
+    if (!resultado) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    if ('blocked' in resultado) {
+      return response.status(409).json({
+        message:
+          resultado.blocked === 'atendido'
+            ? 'Ese turno ya fue atendido, no se puede cancelar.'
+            : 'Ese paciente ya se presentó, no se puede cancelar.',
+      });
+    }
+
+    let pushSent = false;
+    try {
+      const devices = await prisma.notificacionPush.findMany({
+        where: { userId: resultado.turno.userId },
+        select: { token: true },
+      });
+      if (devices.length > 0) {
+        await sendPushNotification(
+          devices.map((device) => device.token),
+          resultado.notification.title,
+          resultado.notification.message,
+          resultado.notification.id
+        );
+        pushSent = true;
+      }
+    } catch (pushError) {
+      console.error('El turno se canceló, pero no se pudo enviar el push:', pushError);
+    }
+
+    return response.json({
+      id: resultado.turno.id,
+      cancelado: true,
+      notificationCreated: true,
+      pushSent,
+    });
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    console.error('No se pudo cancelar el turno:', error);
+    return response.status(500).json({ message: 'No se pudo cancelar el turno.' });
   }
 });
 

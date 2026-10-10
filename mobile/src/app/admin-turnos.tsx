@@ -31,6 +31,8 @@ type TurnoAdministrado = {
   sede: SedeVeterinaria;
   fecha: string;
   hora: string;
+  llegadaEn: string | null;
+  atendidoEn: string | null;
   user: { nombre: string; email: string };
   mascota: { nombre: string; especie: string; raza: string | null };
 };
@@ -64,6 +66,8 @@ function esTurnoAdministrado(value: unknown): value is TurnoAdministrado {
     esSedeVeterinaria(turno.sede) &&
     typeof turno.fecha === 'string' &&
     typeof turno.hora === 'string' &&
+    (typeof turno.llegadaEn === 'string' || turno.llegadaEn === null) &&
+    (typeof turno.atendidoEn === 'string' || turno.atendidoEn === null) &&
     typeof turno.user === 'object' &&
     turno.user !== null &&
     typeof datosMascota.nombre === 'string' &&
@@ -86,6 +90,9 @@ export default function AdminTurnosScreen() {
   const [error, setError] = useState('');
   const [errorGuardado, setErrorGuardado] = useState('');
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [errorCancelar, setErrorCancelar] = useState('');
   const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
@@ -179,6 +186,40 @@ export default function AdminTurnosScreen() {
   };
 
   const turnosProximos = turnos.filter((turno) => turnoSiguePendiente(turno, new Date()));
+
+  const cancelarTurno = async () => {
+    if (!seleccionado || cancelando) return;
+    setErrorCancelar('');
+    setCancelando(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${seleccionado.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        setErrorCancelar(mensajeApi(result) ?? 'No se pudo cancelar el turno.');
+        setConfirmarCancelacion(false);
+        return;
+      }
+      if (typeof result !== 'object' || result === null || !('cancelado' in result) || result.cancelado !== true) {
+        setErrorCancelar('La API no confirmó la cancelación del turno.');
+        return;
+      }
+
+      setConfirmarCancelacion(false);
+      setSeleccionado(null);
+      setMostrarConfirmacion(false);
+      await cargarTurnos();
+    } catch (error) {
+      setErrorCancelar(
+        error instanceof TypeError ? apiUnreachableMessage(error) : 'No se pudo cancelar el turno.'
+      );
+      setConfirmarCancelacion(false);
+    } finally {
+      setCancelando(false);
+    }
+  };
 
   const guardarCambios = async () => {
     if (!seleccionado || guardando) return;
@@ -423,9 +464,86 @@ export default function AdminTurnosScreen() {
                   {guardando ? 'Guardando...' : 'Guardar cambios'}
                 </Text>
               </Pressable>
+
+              {seleccionado.llegadaEn || seleccionado.atendidoEn ? (
+                <Text style={styles.cancelarBloqueado}>
+                  {seleccionado.atendidoEn
+                    ? 'Este turno ya fue atendido y no se puede cancelar.'
+                    : 'Este paciente ya se presentó y no se puede cancelar.'}
+                </Text>
+              ) : (
+                <Pressable
+                  style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
+                  onPress={() => setConfirmarCancelacion(true)}
+                  disabled={cancelando}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cancelar el turno de ${seleccionado.mascota.nombre}`}
+                >
+                  <Text style={styles.cancelarTexto}>Cancelar turno</Text>
+                </Pressable>
+              )}
+              {errorCancelar ? (
+                <Text style={styles.saveError} accessibilityRole="alert">
+                  {errorCancelar}
+                </Text>
+              ) : null}
               </ScrollView>
             </View>
           ) : null}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={confirmarCancelacion}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setConfirmarCancelacion(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setConfirmarCancelacion(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar confirmación"
+          />
+          <View style={estilos.modalCard} accessibilityRole="alert">
+            <Text style={estilos.modalTitle}>¿Cancelar el turno?</Text>
+            <Text style={estilos.modalText}>
+              Se elimina el turno de {seleccionado?.mascota.nombre ?? 'la mascota'} y se le avisa al
+              dueño. Esta acción no se puede deshacer.
+            </Text>
+            <View style={estilos.modalActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  estilos.modalButton,
+                  estilos.modalButtonNeutral,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => setConfirmarCancelacion(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Volver"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  estilos.modalButton,
+                  estilos.modalButtonPrimary,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => void cancelarTurno()}
+                disabled={cancelando}
+                accessibilityRole="button"
+                accessibilityLabel="Confirmar cancelación"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -472,8 +590,7 @@ const styles = StyleSheet.create({
   saveError: {
     color: '#a32828',
     fontSize: 14,
-    lineHeight: 20,
-    marginTop: 10,
+    lineHeight: 20,    marginTop: 10,
   },
   label: {
     color: '#4d6154',
@@ -496,6 +613,27 @@ const styles = StyleSheet.create({
   opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
   opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
   bloqueCampo: { marginTop: 12 },
+  cancelar: {
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: '#d3a179',
+    borderRadius: 12,
+    backgroundColor: '#f7ede6',
+  },
+  cancelarTexto: {
+    color: '#8a5324',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  cancelarBloqueado: {
+    marginTop: 14,
+    color: '#69746a',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
   confirmar: {
     alignItems: 'center',
     marginTop: 16,
