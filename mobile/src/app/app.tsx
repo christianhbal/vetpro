@@ -52,6 +52,7 @@ export default function InicioScreen() {
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
+  const [modalQr, setModalQr] = useState(false);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fotoModalSize = Math.max(
     0,
@@ -251,12 +252,18 @@ export default function InicioScreen() {
               }
             />
             {esAdmin ? (
-              <View style={[estilos.cardVertical, { alignItems: 'center', marginVertical: 12 }]}>
-                <Text style={estilos.cardTitle}>Código QR de llegada</Text>
-                <Text style={[estilos.cardSubtitle, { textAlign: 'center', marginVertical: 12 }]}>
-                  Presentá este código para que los usuarios registren su llegada.
-                </Text>
-                <QRCode value={CHECK_IN_QR} size={220} />
+              <View style={styles.qrAdminBloque}>
+                <Pressable
+                  style={({ pressed }) => [estilos.qrBoton, pressed && estilos.buttonPressed]}
+                  onPress={() => setModalQr(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mostrar código QR de llegada"
+                >
+                  <View style={estilos.qrBotonFila}>
+                    <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
+                    <Text style={estilos.buttonTextPrimary}>Mostrar QR de llegada</Text>
+                  </View>
+                </Pressable>
               </View>
             ) : (
               <Link href="/escanear-qr" asChild>
@@ -384,11 +391,61 @@ export default function InicioScreen() {
           )}
         </View>
       </Modal>
+
+      <Modal
+        visible={modalQr}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setModalQr(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setModalQr(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar código QR"
+          />
+          <View style={estilos.modalCard}>
+            <Pressable
+              style={({ pressed }) => [estilos.petPhotoClose, pressed && estilos.buttonPressed]}
+              onPress={() => setModalQr(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar código QR"
+            >
+              <Ionicons name="close" size={24} color="#263b32" />
+            </Pressable>
+
+            <Text style={estilos.modalTitle}>Código QR de llegada</Text>
+            <Text style={[estilos.modalText, styles.qrAdminTexto]}>
+              Presentá este código para que los usuarios registren su llegada.
+            </Text>
+
+            <View style={styles.qrAdminMarco}>
+              <QRCode value={CHECK_IN_QR} size={220} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AppDrawer>
   );
 }
 
 const styles = {
+  qrAdminBloque: {
+    marginVertical: 12,
+  },
+  qrAdminTexto: {
+    textAlign: 'center' as const,
+    marginBottom: 16,
+  },
+  qrAdminMarco: {
+    alignItems: 'center' as const,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+  },
   turnPhotoPlaceholder: {
     width: 56,
     height: 56,

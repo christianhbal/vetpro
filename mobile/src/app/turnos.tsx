@@ -13,6 +13,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
+import { CalendarioTurnos } from '@/components/calendario-turnos';
 import { estilos } from '@/lib/estilos';
 import {
   formatearFechaTurno,
@@ -252,6 +253,7 @@ export default function TurnosScreen() {
         ) : null}
 
         <View style={styles.listas}>
+          {!esAdmin ? <CalendarioTurnos turnos={turnos} valorHoy={valorHoy} /> : null}
           {seccionLista(
             'Turnos de hoy',
             turnosHoy,

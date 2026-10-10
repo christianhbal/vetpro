@@ -136,7 +136,6 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
 
             {items.map((item) => {
               const selected = pathname === item.href;
-              const isAdminItem = adminMenuItems.some((adminItem) => adminItem.href === item.href);
               return (
                 <Link key={item.href} href={item.href} asChild>
                   <Pressable
@@ -144,7 +143,6 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
                     style={StyleSheet.flatten([
                       styles.menuItem,
                       selected && styles.menuItemSelected,
-                      isAdminItem && styles.adminMenuItem,
                     ])}
                     accessibilityRole="link"
                     accessibilityState={{ selected }}
@@ -157,15 +155,9 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
                     <Ionicons
                       name={item.icon}
                       size={22}
-                      color={isAdminItem ? '#fffefc' : selected ? '#0f3e17' : '#555d54'}
+                      color={selected ? '#0f3e17' : '#555d54'}
                     />
-                    <Text
-                      style={[
-                        styles.menuLabel,
-                        isAdminItem && styles.adminMenuLabel,
-                        selected && !isAdminItem && styles.menuLabelSelected,
-                      ]}
-                    >
+                    <Text style={[styles.menuLabel, selected && styles.menuLabelSelected]}>
                       {item.label}
                     </Text>
                     {item.href === '/notificaciones' && notificacionesSinLeer > 0 ? (
@@ -276,18 +268,11 @@ const styles = StyleSheet.create({
   menuItemSelected: {
     backgroundColor: '#e1f4df',
   },
-  adminMenuItem: {
-    backgroundColor: '#0a3513',
-  },
   menuLabel: {
     flex: 1,
     color: '#263b32',
     fontSize: 16,
     fontWeight: '500',
-  },
-  adminMenuLabel: {
-    color: '#fffefc',
-    fontWeight: '700',
   },
   menuLabelSelected: {
     color: '#0f3e17',
