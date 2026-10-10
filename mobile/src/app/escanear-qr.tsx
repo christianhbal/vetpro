@@ -1,16 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { estilos } from '@/lib/estilos';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { CHECK_IN_QR } from '@/lib/check-in';
+import { obtenerUsuarioActual } from '@/lib/session';
 
 export default function EscanearQr() {
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
   const [permiso, pedirPermiso] = useCameraPermissions();
   const [escaniado, setEscaneado] = useState<string | null>(null);
+  const [resultado, setResultado] = useState('');
+  const [llegadaRegistrada, setLlegadaRegistrada] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const escaneoEnCurso = useRef(false);
   const [vistaCamara, setVistaCamara] = useState({ width: 0, height: 0 });
   const [altoPie, setAltoPie] = useState(0);
 
@@ -27,9 +34,57 @@ export default function EscanearQr() {
     height: tamanoMarco,
   };
 
-  const handleBarcodeScanned = ({ data }: { data: string }) => {
-    if (escaniado !== null) return;
+  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+    if (escaneoEnCurso.current) return;
+    escaneoEnCurso.current = true;
     setEscaneado(data);
+    setProcesando(true);
+    setLlegadaRegistrada(false);
+    try {
+      if (data !== CHECK_IN_QR) {
+        throw new Error('Este no es el código QR de llegada de VetPro.');
+      }
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+      if (usuario.esAdmin) {
+        throw new Error('El registro de llegada está disponible para cuentas de usuario.');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/turnos/check-in`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${usuario.accessToken}`,
+        },
+        body: JSON.stringify({ code: data }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === 'object' &&
+          result !== null &&
+          'message' in result &&
+          typeof result.message === 'string'
+            ? result.message
+            : 'No se pudo registrar la llegada.';
+        throw new Error(message);
+      }
+      setLlegadaRegistrada(true);
+      setResultado('Tu llegada quedó registrada correctamente.');
+    } catch (error) {
+      setResultado(
+        error instanceof TypeError
+          ? apiUnreachableMessage(error)
+          : error instanceof Error
+            ? error.message
+            : apiUnreachableMessage(error)
+      );
+    } finally {
+      setProcesando(false);
+    }
   };
 
   if (!permiso) {
@@ -144,8 +199,14 @@ export default function EscanearQr() {
           >
             {escaniado ? (
               <View style={estilos.escanerResultado}>
-                <Text style={estilos.escanerResultadoLabel}>Código leído</Text>
-                <Text style={estilos.escanerResultadoTexto}>{escaniado}</Text>
+                <Text style={estilos.escanerResultadoLabel}>
+                  {procesando
+                    ? 'Registrando llegada...'
+                    : llegadaRegistrada
+                      ? 'Llegada registrada'
+                      : 'No se pudo registrar'}
+                </Text>
+                <Text style={estilos.escanerResultadoTexto}>{resultado}</Text>
 
                 <Pressable
                   style={({ pressed }) => [
@@ -153,7 +214,13 @@ export default function EscanearQr() {
                     estilos.modalButtonPrimary,
                     pressed && estilos.buttonPressed,
                   ]}
-                  onPress={() => setEscaneado(null)}
+                  disabled={procesando}
+                  onPress={() => {
+                    escaneoEnCurso.current = false;
+                    setEscaneado(null);
+                    setResultado('');
+                    setLlegadaRegistrada(false);
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel="Escanear otro código"
                 >
@@ -164,7 +231,7 @@ export default function EscanearQr() {
               </View>
             ) : (
               <Text style={estilos.escanerInstruccion}>
-                Apuntá la cámara al código QR de la veterinaria.
+                Apuntá la cámara al código QR de llegada de VetPro.
               </Text>
             )}
           </View>

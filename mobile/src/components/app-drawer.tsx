@@ -23,14 +23,18 @@ const menuItems = [
 const adminMenuItems = [
   { label: 'Administrar usuarios', href: '/admin-usuarios', icon: 'people-outline' },
   { label: 'Modificar turnos', href: '/admin-turnos', icon: 'calendar-number-outline' },
+  { label: 'Turnos activos', href: '/admin-turnos-activos', icon: 'checkmark-circle-outline' },
 ] as const;
 
 type AppDrawerProps = {
   title: string;
   children: ReactNode;
+  /** Si se pasa, la barra superior muestra una flecha en vez del menu. */
+  onVolver?: () => void;
+  etiquetaVolver?: string;
 };
 
-export function AppDrawer({ title, children }: AppDrawerProps) {
+export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDrawerProps) {
   const [visible, setVisible] = useState(false);
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -86,11 +90,15 @@ export function AppDrawer({ title, children }: AppDrawerProps) {
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <Pressable
           style={styles.menuButton}
-          onPress={abrirMenu}
+          onPress={onVolver ?? abrirMenu}
           accessibilityRole="button"
-          accessibilityLabel="Abrir menú de navegación"
+          accessibilityLabel={onVolver ? etiquetaVolver ?? 'Volver' : 'Abrir menú de navegación'}
         >
-          <Ionicons name="menu" size={28} color="#0f3e17" />
+          <Ionicons
+            name={onVolver ? 'arrow-back' : 'menu'}
+            size={onVolver ? 24 : 28}
+            color="#0f3e17"
+          />
         </Pressable>
         <Text style={styles.headerTitle}>{title}</Text>
         <View style={styles.headerSpacer} />

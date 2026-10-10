@@ -42,6 +42,28 @@ function isValidDateOnly(value: unknown): value is string {
   );
 }
 
+function isValidAppointmentSlot(fecha: string, hora: string): boolean {
+  const [year, month, day] = fecha.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const [hour, minute] = hora.split(':').map(Number);
+  const slotMinutes = hour * 60 + minute;
+  const ahora = new Date();
+  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    date.getDay() >= 1 &&
+    date.getDay() <= 6 &&
+    date >= hoy &&
+    slotMinutes >= 10 * 60 &&
+    slotMinutes <= 18 * 60 + 30 &&
+    minute % 30 === 0 &&
+    (date.getTime() !== hoy.getTime() ||
+      slotMinutes > ahora.getHours() * 60 + ahora.getMinutes())
+  );
+}
+
 // Prisma usa P2025 cuando se intenta actualizar o borrar un registro inexistente.
 function isMissingRecord(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
@@ -394,6 +416,39 @@ app.delete('/api/mascotas/:id', async (request, response) => {
 // 2. Rutas de turnos
 // -----------------------------------------------------------------------------
 
+const CHECK_IN_QR = 'vetpro://check-in';
+
+// GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
+// Devuelve las fechas y horas ocupadas para una sede, sin datos de clientes.
+app.get('/api/turnos/disponibilidad', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  const mes =
+    typeof request.query.mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(request.query.mes)
+      ? request.query.mes
+      : null;
+  if (!mes) {
+    return response.status(400).json({ message: 'Indica un mes válido en formato AAAA-MM.' });
+  }
+  const sede = request.query.sede;
+  if (typeof sede !== 'string' || !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)) {
+    return response.status(400).json({ message: 'Indica una sede válida para consultar disponibilidad.' });
+  }
+
+  try {
+    const turnos = await prisma.turno.findMany({
+      // Los turnos de ejemplo no ocupan agenda real.
+      where: { fecha: { startsWith: mes }, sede, esDemo: false },
+      select: { fecha: true, hora: true },
+    });
+    return response.json(turnos);
+  } catch (error) {
+    console.error('No se pudo consultar la disponibilidad de turnos:', error);
+    return response.status(500).json({ message: 'No se pudo consultar la disponibilidad.' });
+  }
+});
+
 // GET /api/turnos?userId=1
 // Devuelve los turnos del usuario junto con el nombre de cada mascota.
 app.get('/api/turnos', async (request, response) => {
@@ -419,14 +474,78 @@ app.get('/api/turnos', async (request, response) => {
   }
 });
 
+// POST /api/turnos/check-in
+// Registra la llegada del usuario al escanear el QR de la veterinaria.
+app.post('/api/turnos/check-in', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  if (user.role === 'ADMIN') {
+    return response.status(403).json({ message: 'El registro de llegada es para cuentas de usuario.' });
+  }
+  if (request.body?.code !== CHECK_IN_QR) {
+    return response.status(400).json({ message: 'El código QR no es válido.' });
+  }
+
+  const ahora = new Date();
+  const fechaActual = [
+    ahora.getFullYear(),
+    String(ahora.getMonth() + 1).padStart(2, '0'),
+    String(ahora.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  try {
+    const turnoLlegado = await prisma.turno.findFirst({
+      where: { userId: user.id, fecha: fechaActual, llegadaEn: { not: null } },
+      include: {
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
+    });
+    if (turnoLlegado) {
+      return response.json({ turno: turnoLlegado, yaRegistrado: true });
+    }
+
+    const turno = await prisma.turno.findFirst({
+      where: { userId: user.id, fecha: fechaActual, llegadaEn: null },
+      include: {
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+      orderBy: [{ hora: 'asc' }, { id: 'asc' }],
+    });
+    if (!turno) {
+      return response.status(404).json({ message: 'No tienes turnos para hoy.' });
+    }
+
+    const llegadaEn = ahora.toISOString();
+    const actualizacion = await prisma.turno.updateMany({
+      where: { id: turno.id, userId: user.id, llegadaEn: null },
+      data: { llegadaEn },
+    });
+    if (actualizacion.count === 0) {
+      return response.status(409).json({ message: 'La llegada de este turno ya fue registrada.' });
+    }
+
+    return response.json({
+      turno: { ...turno, llegadaEn },
+      yaRegistrado: false,
+    });
+  } catch (error) {
+    console.error('No se pudo registrar la llegada del turno:', error);
+    return response.status(500).json({ message: 'No se pudo registrar la llegada.' });
+  }
+});
+
 // POST /api/turnos
 // Guarda un turno asociado al dueño y a una de sus mascotas.
 app.post('/api/turnos', async (request, response) => {
+  const usuario = await requireAuthenticatedUser(request, response);
+  if (!usuario) return;
   const { userId, mascotaId, tipo, sede, fecha, hora } = request.body ?? {};
 
   if (
     !Number.isInteger(userId) ||
     userId <= 0 ||
+    userId !== usuario.id ||
     !Number.isInteger(mascotaId) ||
     mascotaId <= 0
   ) {
@@ -444,8 +563,10 @@ app.post('/api/turnos', async (request, response) => {
   if (!isValidDateOnly(fecha)) {
     return response.status(400).json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
   }
-  if (typeof hora !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
-    return response.status(400).json({ message: 'La hora debe tener formato HH:mm.' });
+  if (typeof hora !== 'string' || !isValidAppointmentSlot(fecha, hora)) {
+    return response.status(400).json({
+      message: 'Elige un horario futuro de lunes a sábado entre las 10:00 y las 18:30, cada media hora.',
+    });
   }
 
   try {
@@ -457,19 +578,30 @@ app.post('/api/turnos', async (request, response) => {
       return response.status(404).json({ message: 'La mascota no existe o no pertenece a ese usuario.' });
     }
 
-    const turno = await prisma.turno.create({
-      data: {
-        tipo,
-        sede,
-        fecha,
-        hora,
-        user: { connect: { id: userId } },
-        mascota: { connect: { id: mascotaId } },
-      },
-      include: {
-        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
-      },
+    const turno = await prisma.$transaction(async (transaction) => {
+      const ocupado = await transaction.turno.findFirst({
+        where: { fecha, hora, sede },
+        select: { id: true },
+      });
+      if (ocupado) return null;
+
+      return transaction.turno.create({
+        data: {
+          tipo,
+          sede,
+          fecha,
+          hora,
+          user: { connect: { id: userId } },
+          mascota: { connect: { id: mascotaId } },
+        },
+        include: {
+          mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+        },
+      });
     });
+    if (!turno) {
+      return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
+    }
     return response.status(201).json(turno);
   } catch (error) {
     console.error('No se pudo registrar el turno:', error);
@@ -495,6 +627,103 @@ app.get('/api/admin/turnos', async (request, response) => {
   } catch (error) {
     console.error('No se pudieron consultar los turnos para administración:', error);
     return response.status(500).json({ message: 'No se pudieron consultar los turnos.' });
+  }
+});
+
+// GET /api/admin/turnos-activos
+// Lista los turnos de hoy que ya registraron su llegada por QR y que todavia
+// no fueron atendidos.
+app.get('/api/admin/turnos-activos', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const ahora = new Date();
+  const fechaActual = [
+    ahora.getFullYear(),
+    String(ahora.getMonth() + 1).padStart(2, '0'),
+    String(ahora.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  try {
+    const turnos = await prisma.turno.findMany({
+      // Turno activo = ya llego (QR) y todavia no fue atendido. Al completarlo
+      // sale de esta lista y pasa a "Turnos completados". Los de ejemplo
+      // flotan: aparecen mas alla de la fecha de hoy.
+      where: {
+        llegadaEn: { not: null },
+        atendidoEn: null,
+        OR: [{ fecha: fechaActual }, { esDemo: true }],
+      },
+      include: {
+        user: { select: { id: true, nombre: true, email: true } },
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
+    });
+    return response.json(turnos);
+  } catch (error) {
+    console.error('No se pudieron consultar los turnos activos:', error);
+    return response.status(500).json({ message: 'No se pudieron consultar los turnos activos.' });
+  }
+});
+
+// Los turnos de ejemplo (esDemo) se borran por consola con
+// "npm run db:demo:borrar", no desde la app.
+
+// PATCH /api/admin/turnos/:id/atendido
+// Marca el turno como atendido guardando la descripcion de lo que paso.
+// Volver a llamarlo actualiza la descripcion. Para desmarcar se envia
+// { desmarcar: true }.
+app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id del turno no es válido.' });
+  }
+
+  const { descripcion, desmarcar } = request.body ?? {};
+
+  if (desmarcar !== undefined && typeof desmarcar !== 'boolean') {
+    return response.status(400).json({ message: 'El campo desmarcar debe ser booleano.' });
+  }
+  // Salir de un turno exige una descripcion de lo que ocurrio.
+  if (desmarcar !== true) {
+    if (typeof descripcion !== 'string' || !descripcion.trim()) {
+      return response
+        .status(400)
+        .json({ message: 'Escribí una descripción de lo que pasó en el turno.' });
+    }
+    if (descripcion.trim().length > 500) {
+      return response
+        .status(400)
+        .json({ message: 'La descripción no puede superar los 500 caracteres.' });
+    }
+  }
+
+  try {
+    const turno = await prisma.turno.findUnique({ where: { id }, select: { id: true } });
+    if (!turno) {
+      return response.status(404).json({ message: 'El turno no existe.' });
+    }
+
+    const marca = new Date().toISOString();
+    const actualizado = await prisma.turno.update({
+      where: { id },
+      data:
+        desmarcar === true
+          ? { atendidoEn: null, descripcion: null }
+          : { atendidoEn: marca, descripcion: descripcion.trim() },
+      include: {
+        user: { select: { id: true, nombre: true, email: true } },
+        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+      },
+    });
+    return response.json(actualizado);
+  } catch (error) {
+    console.error('No se pudo actualizar el estado de atención del turno:', error);
+    return response.status(500).json({ message: 'No se pudo marcar el turno como atendido.' });
   }
 });
 
@@ -559,7 +788,26 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       const cambiaHorario =
         (fecha !== undefined && fecha !== anterior.fecha) ||
         (hora !== undefined && hora !== anterior.hora);
-      if (cambiaHorario) data.recordatorioEnviadoEn = null;
+      const cambiaDisponibilidad =
+        cambiaHorario || (sede !== undefined && sede !== anterior.sede);
+      const fechaDestino = fecha ?? anterior.fecha;
+      const horaDestino = hora ?? anterior.hora;
+      if (cambiaHorario) {
+        if (!isValidAppointmentSlot(fechaDestino, horaDestino)) {
+          return { validationError: 'invalid' as const };
+        }
+      }
+      if (cambiaDisponibilidad) {
+        const sedeDestino = sede ?? anterior.sede;
+        const ocupado = await transaction.turno.findFirst({
+          where: { id: { not: id }, fecha: fechaDestino, hora: horaDestino, sede: sedeDestino },
+          select: { id: true },
+        });
+        if (ocupado) return { validationError: 'occupied' as const };
+      }
+      if (cambiaHorario) {
+        data.recordatorioEnviadoEn = null;
+      }
 
       const turno = await transaction.turno.update({
         where: { id },
@@ -591,6 +839,13 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
     });
     if (!resultado) {
       return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    if ('validationError' in resultado) {
+      return resultado.validationError === 'occupied'
+        ? response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' })
+        : response.status(400).json({
+            message: 'El turno debe ser de lunes a sábado, entre las 10:00 y las 18:30, cada media hora y en el futuro.',
+          });
     }
 
     let pushSent = false;
@@ -716,7 +971,7 @@ app.post('/api/push-tokens', async (request, response) => {
 // POST /api/users
 // Crea una cuenta y guarda la contraseña como texto para el ejercicio de clase.
 app.post('/api/users', async (request, response) => {
-  const { nombre, email, password, telefono, direccion } = request.body ?? {};
+  const { nombre, email, password, telefono } = request.body ?? {};
 
   if (
     typeof nombre !== 'string' ||
@@ -726,8 +981,7 @@ app.post('/api/users', async (request, response) => {
     !nombre.trim() ||
     !/^\S+@\S+\.\S+$/.test(email.trim()) ||
     password.length < MIN_PASSWORD_LENGTH ||
-    !telefono.trim() ||
-    (direccion !== undefined && direccion !== null && typeof direccion !== 'string')
+    !telefono.trim()
   ) {
     return response.status(400).json({ message: 'Revisa el nombre, el correo y la contraseña.' });
   }
@@ -739,9 +993,8 @@ app.post('/api/users', async (request, response) => {
         email: email.trim().toLowerCase(),
         password,
         telefono: telefono.trim(),
-        direccion: typeof direccion === 'string' && direccion.trim() ? direccion.trim() : null,
       },
-      select: { id: true, nombre: true, email: true, telefono: true, direccion: true, createdAt: true },
+      select: { id: true, nombre: true, email: true, telefono: true, createdAt: true },
     });
     return response.status(201).json(user);
   } catch (error) {
@@ -767,7 +1020,6 @@ app.get('/api/admin/users', async (request, response) => {
         email: true,
         role: true,
         telefono: true,
-        direccion: true,
         createdAt: true,
       },
       orderBy: { id: 'asc' },
@@ -780,23 +1032,19 @@ app.get('/api/admin/users', async (request, response) => {
 });
 
 // POST /api/admin/users
-// Solo un administrador autenticado puede crear cuentas y asignarles un rol.
+// Solo un administrador autenticado puede crear otras cuentas administradoras.
 app.post('/api/admin/users', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
 
-  const { nombre, email, password, telefono, direccion, esAdmin } = request.body ?? {};
+  const { nombre, email, telefono } = request.body ?? {};
   if (
     typeof nombre !== 'string' ||
     typeof email !== 'string' ||
-    typeof password !== 'string' ||
     typeof telefono !== 'string' ||
-    typeof esAdmin !== 'boolean' ||
     !nombre.trim() ||
     !/^\S+@\S+\.\S+$/.test(email.trim()) ||
-    password.length < MIN_PASSWORD_LENGTH ||
-    !telefono.trim() ||
-    (direccion !== undefined && direccion !== null && typeof direccion !== 'string')
+    !telefono.trim()
   ) {
     return response.status(400).json({ message: 'Revisa los datos y el rol del usuario.' });
   }
@@ -806,12 +1054,11 @@ app.post('/api/admin/users', async (request, response) => {
       data: {
         nombre: nombre.trim(),
         email: email.trim().toLowerCase(),
-        password,
+        password: nombre.trim(),
         telefono: telefono.trim(),
-        direccion: typeof direccion === 'string' && direccion.trim() ? direccion.trim() : null,
-        role: esAdmin ? 'ADMIN' : 'USER',
+        role: 'ADMIN',
       },
-      select: { id: true, nombre: true, email: true, role: true, telefono: true, direccion: true },
+      select: { id: true, nombre: true, email: true, role: true, telefono: true },
     });
     return response.status(201).json(user);
   } catch (error) {
@@ -870,7 +1117,7 @@ app.get('/api/users/:id', async (request, response) => {
   try {
     const user = await prisma.usuario.findUnique({
       where: { id },
-      select: { id: true, nombre: true, email: true, telefono: true, direccion: true },
+      select: { id: true, nombre: true, email: true, telefono: true },
     });
     if (!user) {
       return response.status(404).json({ message: 'No se encontro el usuario.' });
@@ -889,12 +1136,14 @@ app.patch('/api/users/:id', async (request, response) => {
   if (id === null) {
     return response.status(400).json({ message: 'El id de usuario no es valido.' });
   }
-  const { nombre, email, telefono, direccion } = request.body ?? {};
+  const body = request.body ?? {};
+  if (typeof body === 'object' && body !== null && 'email' in body) {
+    return response.status(400).json({ message: 'El correo electrónico no se puede modificar.' });
+  }
+  const { nombre, telefono } = body;
   const data: {
     nombre?: string;
-    email?: string;
     telefono?: string | null;
-    direccion?: string | null;
   } = {};
 
   if (nombre !== undefined) {
@@ -903,23 +1152,11 @@ app.patch('/api/users/:id', async (request, response) => {
     }
     data.nombre = nombre.trim();
   }
-  if (email !== undefined) {
-    if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-      return response.status(400).json({ message: 'El correo no es valido.' });
-    }
-    data.email = email.trim().toLowerCase();
-  }
   if (telefono !== undefined) {
     if (typeof telefono !== 'string' || !telefono.trim()) {
       return response.status(400).json({ message: 'El telefono es obligatorio.' });
     }
     data.telefono = telefono.trim();
-  }
-  if (direccion !== undefined) {
-    if (direccion !== null && typeof direccion !== 'string') {
-      return response.status(400).json({ message: 'La direccion no es valida.' });
-    }
-    data.direccion = typeof direccion === 'string' && direccion.trim() ? direccion.trim() : null;
   }
   if (Object.keys(data).length === 0) {
     return response.status(400).json({ message: 'No hay datos de perfil para actualizar.' });
@@ -932,7 +1169,7 @@ app.patch('/api/users/:id', async (request, response) => {
     const user = await prisma.usuario.update({
       where: { id },
       data,
-      select: { id: true, nombre: true, email: true, telefono: true, direccion: true },
+      select: { id: true, nombre: true, email: true, telefono: true },
     });
     return response.json(user);
   } catch (error) {
@@ -946,6 +1183,63 @@ app.patch('/api/users/:id', async (request, response) => {
     }
     console.error('No se pudo actualizar el perfil:', error);
     return response.status(500).json({ message: 'No se pudo actualizar el perfil.' });
+  }
+});
+
+// PATCH /api/users/:id/password
+// Permite al usuario cambiar su contraseña y revoca el token anterior.
+app.patch('/api/users/:id/password', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id de usuario no es válido.' });
+  }
+  if (user.id !== id) {
+    return response.status(403).json({ message: 'Solo puedes cambiar tu propia contraseña.' });
+  }
+
+  const { currentPassword, newPassword } = request.body ?? {};
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return response.status(400).json({ message: 'Completa la contraseña actual y la nueva.' });
+  }
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return response.status(400).json({
+      message: `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+    });
+  }
+
+  try {
+    const account = await prisma.usuario.findUnique({
+      where: { id },
+      select: { id: true, nombre: true, email: true, telefono: true, password: true },
+    });
+    if (!account || account.password !== currentPassword) {
+      return response.status(400).json({ message: 'La contraseña actual no es correcta.' });
+    }
+    if (account.password === newPassword) {
+      return response.status(400).json({ message: 'La nueva contraseña debe ser diferente.' });
+    }
+
+    const updated = await prisma.usuario.update({
+      where: { id },
+      data: { password: newPassword },
+      select: { id: true, nombre: true, email: true, telefono: true, password: true },
+    });
+    return response.json({
+      id: updated.id,
+      nombre: updated.nombre,
+      email: updated.email,
+      telefono: updated.telefono,
+      accessToken: createAccessToken(updated.id, updated.password),
+    });
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+    console.error('No se pudo cambiar la contraseña:', error);
+    return response.status(500).json({ message: 'No se pudo cambiar la contraseña.' });
   }
 });
 
@@ -974,7 +1268,6 @@ app.post('/api/sessions', async (request, response) => {
       nombre: user.nombre,
       email: user.email,
       telefono: user.telefono,
-      direccion: user.direccion,
       esAdmin: user.role === 'ADMIN',
       accessToken,
     });

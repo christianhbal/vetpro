@@ -38,13 +38,14 @@ export default function RootLayout() {
       <Stack.Screen name="turnos" />
       <Stack.Screen name="perfil" />
       <Stack.Screen name="editar-perfil" />
-      <Stack.Screen name="metodos-pago" />
       <Stack.Screen name="historial" />
       <Stack.Screen name="escanear-qr" />
       <Stack.Screen name="nueva-mascota" />
       <Stack.Screen name="nuevo-turno" />
+      <Stack.Screen name="marcar-turno" />
       <Stack.Screen name="admin-usuarios" />
       <Stack.Screen name="admin-turnos" />
+      <Stack.Screen name="admin-turnos-activos" />
       <Stack.Screen name="notificaciones" />
     </Stack>
   );

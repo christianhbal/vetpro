@@ -21,6 +21,8 @@ import {
   type TurnoGuardado,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import QRCode from 'react-native-qrcode-svg';
+import { CHECK_IN_QR } from '@/lib/check-in';
 
 type Mascota = {
   id: number;
@@ -49,6 +51,7 @@ export default function InicioScreen() {
   const [turnosGuardados, setTurnosGuardados] = useState<TurnoGuardado[]>([]);
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
+  const [esAdmin, setEsAdmin] = useState(false);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fotoModalSize = Math.max(
     0,
@@ -65,6 +68,7 @@ export default function InicioScreen() {
         router.replace('/');
         return;
       }
+      setEsAdmin(usuario.esAdmin);
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
@@ -246,18 +250,28 @@ export default function InicioScreen() {
                 </View>
               }
             />
-            <Link href="/escanear-qr" asChild>
-              <Pressable
-                style={estilos.qrBoton}
-                accessibilityRole="link"
-                accessibilityLabel="Escanear código QR de la veterinaria"
-              >
-                <View style={estilos.qrBotonFila}>
-                  <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
-                  <Text style={estilos.buttonTextPrimary}>Escanear QR en la veterinaria</Text>
-                </View>
-              </Pressable>
-            </Link>
+            {esAdmin ? (
+              <View style={[estilos.cardVertical, { alignItems: 'center', marginVertical: 12 }]}>
+                <Text style={estilos.cardTitle}>Código QR de llegada</Text>
+                <Text style={[estilos.cardSubtitle, { textAlign: 'center', marginVertical: 12 }]}>
+                  Presentá este código para que los usuarios registren su llegada.
+                </Text>
+                <QRCode value={CHECK_IN_QR} size={220} />
+              </View>
+            ) : (
+              <Link href="/escanear-qr" asChild>
+                <Pressable
+                  style={estilos.qrBoton}
+                  accessibilityRole="link"
+                  accessibilityLabel="Escanear código QR de la veterinaria"
+                >
+                  <View style={estilos.qrBotonFila}>
+                    <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
+                    <Text style={estilos.buttonTextPrimary}>Escanear QR en la veterinaria</Text>
+                  </View>
+                </Pressable>
+              </Link>
+            )}
 
             <Text style={estilos.sectionTitle}>Próximas Citas</Text>
             {cargandoTurnos ? (
@@ -366,9 +380,6 @@ export default function InicioScreen() {
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
               <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
               <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
-              {citaSeleccionada.guardado && (
-                <Text style={estilos.modalText}>Turno registrado en tu cuenta.</Text>
-              )}
             </View>
           )}
         </View>

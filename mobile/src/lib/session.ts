@@ -7,7 +7,6 @@ export type UsuarioActual = {
   nombre: string;
   email: string;
   telefono?: string | null;
-  direccion?: string | null;
   esAdmin: boolean;
   accessToken: string;
 };
@@ -24,10 +23,7 @@ function esUsuarioActual(value: unknown): value is UsuarioActual {
     typeof usuario.accessToken === 'string' &&
     (usuario.telefono === undefined ||
       usuario.telefono === null ||
-      typeof usuario.telefono === 'string') &&
-    (usuario.direccion === undefined ||
-      usuario.direccion === null ||
-      typeof usuario.direccion === 'string')
+      typeof usuario.telefono === 'string')
   );
 }
 
@@ -42,7 +38,16 @@ export async function obtenerUsuarioActual(): Promise<UsuarioActual | null> {
   try {
     const usuario: unknown = JSON.parse(storedUser);
     if (esUsuarioActual(usuario)) {
-      return usuario;
+      const usuarioActual: UsuarioActual = {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        email: usuario.email,
+        telefono: usuario.telefono,
+        esAdmin: usuario.esAdmin,
+        accessToken: usuario.accessToken,
+      };
+      await guardarUsuarioActual(usuarioActual);
+      return usuarioActual;
     }
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;

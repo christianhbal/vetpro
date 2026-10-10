@@ -4,15 +4,15 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { AppDrawer } from '@/components/app-drawer';
+import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
@@ -34,6 +34,16 @@ type TurnoAdministrado = {
   user: { nombre: string; email: string };
   mascota: { nombre: string; especie: string; raza: string | null };
 };
+
+type HorarioOcupado = { fecha: string; hora: string };
+
+const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
+
+function esHorarioOcupado(value: unknown): value is HorarioOcupado {
+  if (typeof value !== 'object' || value === null) return false;
+  const slot = value as Record<string, unknown>;
+  return typeof slot.fecha === 'string' && typeof slot.hora === 'string';
+}
 
 function mensajeApi(resultado: unknown): string | null {
   if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
@@ -76,6 +86,9 @@ export default function AdminTurnosScreen() {
   const [error, setError] = useState('');
   const [errorGuardado, setErrorGuardado] = useState('');
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
 
   const cargarTurnos = useCallback(async () => {
     setCargando(true);
@@ -116,6 +129,44 @@ export default function AdminTurnosScreen() {
     }, [cargarTurnos])
   );
 
+  const cargarDisponibilidad = useCallback(
+    async (year: number, month: number, sedeConsultada: SedeVeterinaria) => {
+      const mes = `${year}-${String(month).padStart(2, '0')}`;
+      setCargandoDisponibilidad(true);
+      setErrorDisponibilidad('');
+      setHorariosOcupados([]);
+      try {
+        const sesion = await obtenerUsuarioActual();
+        if (!sesion) {
+          throw new Error('Inicia sesión para consultar la disponibilidad.');
+        }
+        const response = await fetch(
+          `${API_BASE_URL}/api/turnos/disponibilidad?mes=${encodeURIComponent(mes)}&sede=${encodeURIComponent(sedeConsultada)}`,
+          { headers: { Authorization: `Bearer ${sesion.accessToken}` } }
+        );
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(mensajeApi(result) ?? 'No se pudo cargar la disponibilidad.');
+        }
+        if (!Array.isArray(result) || !result.every(esHorarioOcupado)) {
+          throw new Error('La API devolvió horarios ocupados inválidos.');
+        }
+        setHorariosOcupados(result);
+      } catch (requestError) {
+        setErrorDisponibilidad(
+          requestError instanceof TypeError
+            ? apiUnreachableMessage(requestError)
+            : requestError instanceof Error
+              ? requestError.message
+              : apiUnreachableMessage(requestError)
+        );
+      } finally {
+        setCargandoDisponibilidad(false);
+      }
+    },
+    []
+  );
+
   const abrirEdicion = (turno: TurnoAdministrado) => {
     setSeleccionado(turno);
     setErrorGuardado('');
@@ -123,6 +174,8 @@ export default function AdminTurnosScreen() {
     setSede(turno.sede);
     setFecha(turno.fecha);
     setHora(turno.hora);
+    const [year, month] = turno.fecha.split('-').map(Number);
+    if (year && month) void cargarDisponibilidad(year, month, turno.sede);
   };
 
   const turnosProximos = turnos.filter((turno) => turnoSiguePendiente(turno, new Date()));
@@ -249,6 +302,15 @@ export default function AdminTurnosScreen() {
           />
           {seleccionado ? (
             <View style={estilos.modalCard}>
+              <Pressable
+                style={({ pressed }) => [estilos.petPhotoClose, pressed && estilos.buttonPressed]}
+                onPress={() => setSeleccionado(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar edición de turno"
+              >
+                <Ionicons name="close" size={24} color="#263b32" />
+              </Pressable>
+              <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={estilos.modalTitle}>Modificar turno</Text>
               <Text style={estilos.modalTitle}>{seleccionado.mascota.nombre}</Text>
               <Text style={estilos.modalText}>
@@ -261,54 +323,107 @@ export default function AdminTurnosScreen() {
               <Text style={styles.ownerName}>{seleccionado.user.nombre}</Text>
               <Text style={estilos.modalText}>{seleccionado.user.email}</Text>
               <Text style={styles.label}>Tipo de turno</Text>
-              <Picker selectedValue={tipo} onValueChange={(value) => setTipo(value)}>
-                <Picker.Item label="Control" value="Control" />
-                <Picker.Item label="Vacunas" value="Vacunas" />
-                <Picker.Item label="Estética" value="Estética" />
-              </Picker>
+              <View style={styles.filaOpciones}>
+                {tiposTurno.map((opcion) => {
+                  const seleccionado = tipo === opcion;
+                  return (
+                    <Pressable
+                      key={opcion}
+                      onPress={() => setTipo(opcion)}
+                      accessibilityRole="radio"
+                      accessibilityLabel={opcion}
+                      accessibilityState={{ selected: seleccionado }}
+                      style={({ pressed }) => [
+                        styles.opcion,
+                        seleccionado && styles.opcionSeleccionada,
+                        pressed && estilos.buttonPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.opcionTexto, seleccionado && styles.opcionTextoSeleccionado]}
+                      >
+                        {opcion}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
               <Text style={styles.label}>Sede</Text>
-              <Picker
-                selectedValue={sede}
-                onValueChange={(value) => {
-                  if (esSedeVeterinaria(value)) setSede(value);
-                }}
-                accessibilityLabel="Sede del turno"
-              >
-                {sedesVeterinaria.map((opcion) => (
-                  <Picker.Item key={opcion} label={opcion} value={opcion} />
-                ))}
-              </Picker>
-              <Text style={styles.label}>Fecha (AAAA-MM-DD)</Text>
-              <TextInput
-                value={fecha}
-                onChangeText={setFecha}
-                autoCapitalize="none"
-                style={styles.input}
-                accessibilityLabel="Fecha del turno"
-              />
-              <Text style={styles.label}>Hora (HH:mm)</Text>
-              <TextInput
-                value={hora}
-                onChangeText={setHora}
-                autoCapitalize="none"
-                style={styles.input}
-                accessibilityLabel="Hora del turno"
-              />
+              <View style={styles.filaOpciones}>
+                {sedesVeterinaria.map((opcion) => {
+                  const seleccionada = sede === opcion;
+                  return (
+                    <Pressable
+                      key={opcion}
+                      onPress={() => {
+                        if (opcion === sede) return;
+                        setSede(opcion);
+                        const [year, month] = fecha.split('-').map(Number);
+                        if (year && month) void cargarDisponibilidad(year, month, opcion);
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityLabel={opcion}
+                      accessibilityState={{ selected: seleccionada }}
+                      style={({ pressed }) => [
+                        styles.opcion,
+                        seleccionada && styles.opcionSeleccionada,
+                        pressed && estilos.buttonPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.opcionTexto, seleccionada && styles.opcionTextoSeleccionado]}
+                      >
+                        {opcion}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.bloqueCampo}>
+                <TurnoDateTimeField
+                  tipo="fecha"
+                  valor={fecha}
+                  onChange={(valor) => {
+                    setFecha(valor);
+                    setHora('');
+                  }}
+                  onMonthChange={(year, month) => void cargarDisponibilidad(year, month, sede)}
+                />
+              </View>
+
+              <View style={styles.bloqueCampo}>
+                <TurnoDateTimeField
+                  tipo="hora"
+                  valor={hora}
+                  onChange={setHora}
+                  fechaSeleccionadaValor={fecha}
+                  horariosOcupados={horariosOcupados}
+                  cargandoDisponibilidad={cargandoDisponibilidad}
+                  errorDisponibilidad={errorDisponibilidad}
+                />
+              </View>
               {errorGuardado ? (
                 <Text style={styles.saveError} accessibilityRole="alert">
                   {errorGuardado}
                 </Text>
               ) : null}
               <Pressable
-                style={[estilos.addTurnButton, { marginTop: 14 }]}
+                style={({ pressed }) => [
+                  styles.confirmar,
+                  pressed && estilos.buttonPressed,
+                ]}
                 onPress={() => void guardarCambios()}
                 disabled={guardando}
                 accessibilityRole="button"
+                accessibilityState={{ busy: guardando }}
               >
-                <Text style={estilos.buttonTextPrimary}>
+                <Text style={styles.confirmarTexto}>
                   {guardando ? 'Guardando...' : 'Guardar cambios'}
                 </Text>
               </Pressable>
+              </ScrollView>
             </View>
           ) : null}
         </View>
@@ -361,18 +476,32 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   label: {
-    color: '#263b32',
-    fontSize: 14,
+    color: '#4d6154',
+    fontSize: 13,
     fontWeight: '600',
-    marginTop: 8,
-    marginBottom: 4,
+    marginTop: 12,
+    marginBottom: 6,
   },
-  input: {
-    backgroundColor: '#f1f5ef',
-    borderRadius: 8,
-    color: '#263b32',
-    fontSize: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  filaOpciones: { flexDirection: 'row', gap: 6, marginBottom: 4 },
+  opcion: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#fffefc',
   },
+  opcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
+  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
+  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
+  bloqueCampo: { marginTop: 12 },
+  confirmar: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#0f3e17',
+  },
+  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
 });
