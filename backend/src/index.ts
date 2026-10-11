@@ -614,6 +614,83 @@ app.post('/api/turnos', async (request, response) => {
   }
 });
 
+// POST /api/admin/turnos
+// Agenda el turno de seguimiento de una mascota que es de un cliente. El
+// dueño se resuelve desde la mascota: el admin solo elige el horario, asi que
+// no puede inventarse a nombre de otra persona.
+app.post('/api/admin/turnos', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+  const { mascotaId, tipo, sede, fecha, hora } = request.body ?? {};
+
+  if (!Number.isInteger(mascotaId) || mascotaId <= 0) {
+    return response.status(400).json({ message: 'Indica una mascota válida.' });
+  }
+  if (typeof tipo !== 'string' || !['Control', 'Vacunas', 'Estética'].includes(tipo)) {
+    return response.status(400).json({ message: 'El tipo de turno no es valido.' });
+  }
+  if (
+    typeof sede !== 'string' ||
+    !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+  ) {
+    return response.status(400).json({ message: 'Selecciona una sede válida.' });
+  }
+  if (!isValidDateOnly(fecha)) {
+    return response
+      .status(400)
+      .json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
+  }
+  if (typeof hora !== 'string' || !isValidAppointmentSlot(fecha, hora)) {
+    return response.status(400).json({
+      message: 'Elige un horario futuro de lunes a sábado entre las 10:00 y las 18:30, cada media hora.',
+    });
+  }
+
+  try {
+    const mascota = await prisma.mascota.findFirst({
+      where: { id: mascotaId, userId: { not: null } },
+      select: { id: true, userId: true },
+    });
+    if (!mascota || mascota.userId === null) {
+      return response.status(404).json({ message: 'La mascota no existe o no tiene dueño.' });
+    }
+    // Se copia el id a una constante porque TypeScript no mantiene el
+    // estrechamiento de una propiedad dentro del closure de la transaccion.
+    const duenoId = mascota.userId;
+
+    const turno = await prisma.$transaction(async (transaction) => {
+      const ocupado = await transaction.turno.findFirst({
+        where: { fecha, hora, sede },
+        select: { id: true },
+      });
+      if (ocupado) return null;
+
+      return transaction.turno.create({
+        data: {
+          tipo,
+          sede,
+          fecha,
+          hora,
+          user: { connect: { id: duenoId } },
+          mascota: { connect: { id: mascota.id } },
+        },
+        include: {
+          mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
+        },
+      });
+    });
+    if (!turno) {
+      return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
+    }
+    return response.status(201).json(turno);
+  } catch (error) {
+    console.error('No se pudo agendar el turno de seguimiento:', error);
+    return response
+      .status(500)
+      .json({ message: 'No se pudo agendar el turno de seguimiento.' });
+  }
+});
+
 // GET /api/admin/turnos
 // Lista todos los turnos para su administración.
 app.get('/api/admin/turnos', async (request, response) => {

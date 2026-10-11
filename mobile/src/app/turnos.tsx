@@ -119,23 +119,38 @@ export default function TurnosScreen() {
     guardado: turno,
   });
 
-  // Los turnos de ejemplo flotan: se ven siempre, mas alla de la fecha de hoy,
+// Los turnos de ejemplo flotan: se ven siempre, mas alla de la fecha de hoy,
   // para poder mostrar la app en cualquier momento.
-  const esDeHoy = (turno: TurnoLista) => turno.esDemo === true || turno.fecha === valorHoy;
+  const esEjemploOHoy = (turno: TurnoLista) => turno.esDemo === true || turno.fecha === valorHoy;
 
-  const deHoyEnSede = turnos.filter(
-    (turno) => esDeHoy(turno) && turno.sede === sedeSeleccionada
+  // El admin mira una sola sede a la vez, y lo que le interesa son los turnos
+  // que todavia no atendio, mas alla del dia en que estamos.
+  const enSedeSeleccionada = turnos.filter(
+    (turno) => esEjemploOHoy(turno) && turno.sede === sedeSeleccionada
   );
 
-  const turnosHoy = (
-    esAdmin ? deHoyEnSede.filter((t) => !t.atendidoEn) : turnos.filter(esDeHoy)
+  // Los pendientes van de menor a mayor: el proximo turno primero. Los completados
+  // al reves, del mas reciente al mas antiguo, que es como se lee una lista de
+  // lo que ya se atendio. El backend los manda en orden ascendente, asi que hay
+  // que darle vuelta.
+  const turnosPendientes = (
+    esAdmin ? enSedeSeleccionada.filter((t) => !t.atendidoEn) : turnos.filter(esEjemploOHoy)
   ).map(aCita);
 
-  const segundoListado = esAdmin
-    ? deHoyEnSede.filter((t) => t.atendidoEn).map(aCita)
-    : turnos
-        .filter((turno) => turno.fecha > valorHoy && turnoSiguePendiente(turno, ahora))
-        .map(aCita);
+  const segundoListado = (
+    esAdmin
+      ? enSedeSeleccionada
+          // Un turno con fecha futura no puede estar completado: si aparece
+          // aca queda dando vueltas. No se muestra, y sigue estando en la
+          // lista de los siguientes.
+          .filter((t) => t.atendidoEn && t.fecha <= valorHoy)
+          .sort((a, b) =>
+            a.fecha === b.fecha
+              ? b.hora.localeCompare(a.hora)
+              : b.fecha.localeCompare(a.fecha)
+          )
+      : turnos.filter((turno) => turno.fecha > valorHoy && turnoSiguePendiente(turno, ahora))
+  ).map(aCita);
 
   const tituloSegundo = esAdmin ? 'Turnos completados' : 'Turnos próximos';
 
@@ -186,7 +201,7 @@ export default function TurnosScreen() {
             </Text>
           ) : null}
           <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {cita.hora} hs
+            {cita.fecha}
           </Text>
         </View>
 
@@ -255,11 +270,12 @@ export default function TurnosScreen() {
 
         <View style={styles.listas}>
           {!esAdmin ? <CalendarioTurnos turnos={turnos} valorHoy={valorHoy} /> : null}
-          {seccionLista(
-            'Turnos de hoy',
-            turnosHoy,
+          
+{seccionLista(
+            esAdmin ? 'Turnos siguientes' : 'Turnos de hoy',
+            turnosPendientes,
             esAdmin
-              ? `No hay turnos para hoy en ${sedeSeleccionada}.`
+              ? `No hay turnos siguientes en ${sedeSeleccionada}.`
               : 'No tenés turnos para hoy.'
           )}
           {seccionLista(

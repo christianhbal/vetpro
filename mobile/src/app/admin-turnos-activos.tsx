@@ -1,5 +1,13 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
@@ -19,7 +27,7 @@ type TurnoActivo = {
   descripcion: string | null;
   esDemo: boolean;
   user: { nombre: string; email: string };
-  mascota: { id: number; nombre: string; especie: string; raza: string | null };
+  mascota: { id: number; nombre: string; especie: string; raza: string | null; foto: string | null };
 };
 
 function mensajeApi(resultado: unknown): string | null {
@@ -54,7 +62,8 @@ function esTurnoActivo(value: unknown): value is TurnoActivo {
     typeof datosMascota.id === 'number' &&
     typeof datosMascota.nombre === 'string' &&
     typeof datosMascota.especie === 'string' &&
-    (typeof datosMascota.raza === 'string' || datosMascota.raza === null)
+    (typeof datosMascota.raza === 'string' || datosMascota.raza === null) &&
+    (typeof datosMascota.foto === 'string' || datosMascota.foto === null)
   );
 }
 
@@ -130,6 +139,9 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
         tipo: turno.tipo,
         sede: turno.sede,
         fecha: formatearFechaTurno(turno.fecha, turno.hora),
+        // La descripcion y "atendido" son cosas distintas: un turno pendiente
+        // puede venir con una nota y sigue sin estar atendido.
+        atendido: String(turno.atendidoEn !== null),
         descripcion: turno.descripcion ?? undefined,
       },
     });
@@ -180,10 +192,6 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
 
             <View style={styles.intro}>
               <Text style={styles.introTexto}>
-                Pacientes que escanearon el QR y todavía no fueron atendidos. Tocá{' '}
-                <Text style={styles.introResaltado}>Atender</Text> para registrar qué pasó.
-              </Text>
-              <Text style={styles.introNota}>
                 Para cambiar de sede, volvé a la pantalla de Turnos.
               </Text>
             </View>
@@ -200,10 +208,14 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
             ) : (
               <>
                 <View style={styles.vacioIcono}>
-                  <Ionicons name="checkmark-done-outline" size={30} color="#5d8a63" />
+                  <Ionicons
+                  name="checkmark-done-outline"
+                  size={30}
+                  // Mismo verde del aviso de turno creado: #1f6b33.
+                  color="#1f6b33"
+                />
                 </View>
-                <Text style={styles.vacioTitulo}>Todo al día</Text>
-                <Text style={styles.vacioTexto}>
+                <Text style={styles.vacioTitulo}>
                   No hay pacientes esperando en {sedeSeleccionada}.
                 </Text>
               </>
@@ -213,6 +225,18 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
         renderItem={({ item }) => (
           <View style={estilos.cardTurno}>
             <View style={styles.fila}>
+              {item.mascota.foto ? (
+                <Image
+                  source={{ uri: item.mascota.foto }}
+                  style={styles.foto}
+                  resizeMode="cover"
+                  accessibilityLabel={`Foto de ${item.mascota.nombre}`}
+                />
+              ) : (
+                <View style={styles.fotoVacia}>
+                  <Ionicons name="paw-outline" size={20} color="#0f3e17" />
+                </View>
+              )}
               <View style={styles.texto}>
                 <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
                   {item.mascota.nombre} · {item.tipo}
@@ -278,14 +302,19 @@ const styles = StyleSheet.create({
   contadorNumero: { color: '#0f3e17', fontSize: 24, fontWeight: 'bold', lineHeight: 28 },
   contadorLabel: { color: '#6b7d6d', fontSize: 11 },
   intro: {
+    alignItems: 'center',
     padding: 13,
     marginBottom: 14,
     borderRadius: 14,
     backgroundColor: '#f2f9f1',
   },
-  introTexto: { color: '#3d5546', fontSize: 13, lineHeight: 19 },
-  introResaltado: { color: '#0f3e17', fontWeight: '700' },
-  introNota: { marginTop: 6, color: '#7b8c7d', fontSize: 12 },
+  introTexto: {
+    alignSelf: 'stretch',
+    color: '#3d5546',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
   vacio: { alignItems: 'center', paddingVertical: 34, paddingHorizontal: 20 },
   vacioIcono: {
     width: 62,
@@ -297,17 +326,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef5ea',
   },
   vacioTitulo: {
+    // alignSelf + textAlign ensures the wrapped lines are centered and not
+    // left-aligned like the icon above it.
+    alignSelf: 'stretch',
     color: '#0f3e17',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 22,
+    textAlign: 'center',
   },
-  vacioTexto: { color: '#6b7d6d', fontSize: 14, lineHeight: 20, textAlign: 'center' },
   fila: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     minHeight: 64,
+  },
+  foto: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#e4f1e0',
+  },
+  fotoVacia: {
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#e4f1e0',
   },
   texto: { flex: 1 },
   dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },

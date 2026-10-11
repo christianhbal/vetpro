@@ -61,6 +61,14 @@ type TurnoCreado = {
   hora: string;
 };
 
+/** Lo que quedo elegido en la agenda, para que la pantalla lo muestre. */
+export type TurnoElegido = {
+  tipo: TipoTurno;
+  fecha: string;
+  hora: string;
+  sede: SedeVeterinaria;
+};
+
 type Props = {
   onTurnoGuardado?: () => void;
   /** Se llama cuando el usuario cierra el aviso de turno creado. */
@@ -87,6 +95,21 @@ type Props = {
    * tiene su propio boton y hace las dos cosas juntas.
    */
   ocultarBotonGuardar?: boolean;
+  /**
+   * Agenda en nombre de un cliente. El admin no es el dueño de la mascota, asi
+   * que el turno va por un endpoint propio en vez de POST /api/turnos.
+   */
+  comoAdmin?: boolean;
+  /**
+   * No muestra el aviso de turno creado, porque quien lo muestra es la pantalla
+   * que contiene la agenda.
+   */
+  ocultarAviso?: boolean;
+  /**
+   * No agenda nada: valida lo elegido y se da por hecho que se pudo guardar.
+   * Lo usa la pantalla de atencion mientras todavia no sincroniza.
+   */
+  simular?: boolean;
 };
 
 /** Lo que la pantalla que contiene la agenda puede pedirle. */
@@ -95,6 +118,8 @@ export type AgendaHandle = {
   guardar: () => Promise<boolean>;
   /** True cuando ya se eligió tipo, fecha y hora y se puede guardar. */
   listo: boolean;
+  /** Lo elegido en la agenda, para mostrarlo en el aviso de la pantalla. */
+  elegido: TurnoElegido | null;
 };
 
 function fechaComoValor(fecha: Date): string {
@@ -170,6 +195,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       titulo = 'Agendar turno',
       compacta = false,
       ocultarBotonGuardar = false,
+      comoAdmin = false,
+      ocultarAviso = false,
+      simular = false,
     },
     ref
   ) {
@@ -251,6 +279,13 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     );
 
     const cargarMascotas = useCallback(async () => {
+      // Con la mascota fija no hace falta la lista: es la de un cliente y no
+      // va a estar entre las del admin. Se evita el pedido.
+      if (mascotaIdFija !== null) {
+        setMascotas([]);
+        setCargandoMascotas(false);
+        return;
+      }
       setCargandoMascotas(true);
       setErrorMascotas('');
       try {
@@ -288,7 +323,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       } finally {
         setCargandoMascotas(false);
       }
-    }, []);
+    }, [mascotaIdFija]);
 
     useFocusEffect(
       useCallback(() => {
@@ -321,15 +356,19 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       [opcionesSede, sede]
     );
 
-    // Con mascotaIdFija el selector queda bloqueado en esa mascota, que es lo que
+// Con mascotaIdFija el selector queda bloqueado en esa mascota, que es lo que
     // se usa al agendar el seguimiento de un turno ya atendido.
-    const mascotaSeleccionada = useMemo(
-      () =>
-        opcionesMascota.find(
-          (opcion) => opcion.valor === String(mascotaIdFija ?? mascotaId)
-        ) ?? null,
-      [mascotaId, mascotaIdFija, opcionesMascota]
-    );
+    //
+    // Ojo: esa mascota es de un cliente, no del admin que esta agendando, asi
+    // que no aparece en la lista de /api/mascotas. Cuando no esta, se arma la
+    // opcion a mano con el nombre que trae el turno.
+    const mascotaSeleccionada = useMemo(() => {
+      const idBuscado = String(mascotaIdFija ?? mascotaId);
+      const enMiLista = opcionesMascota.find((opcion) => opcion.valor === idBuscado);
+      if (enMiLista) return enMiLista;
+      if (mascotaIdFija === null) return null;
+      return { valor: idBuscado, titulo: mascotaNombreFija ?? 'Mascota del turno', detalle: '' };
+    }, [mascotaId, mascotaIdFija, mascotaNombreFija, opcionesMascota]);
 
     const ahora = new Date();
     const hoyValor = fechaComoValor(ahora);
@@ -400,27 +439,36 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         return false;
       }
 
+      // En modo simulacion se pasa todo lo que falta y no se toca la base. La
+      // disponibilidad si se consulta, asi los horarios ocupados se ven bien.
+      if (simular) return true;
+
       setGuardando(true);
       try {
         const usuario = await obtenerUsuarioActual();
         if (!usuario) {
           throw new Error('Inicia sesión para guardar el turno.');
         }
-        const response = await fetch(`${API_BASE_URL}/api/turnos`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${usuario.accessToken}`,
-          },
-          body: JSON.stringify({
-            userId: usuario.id,
-            mascotaId: mascotaAUsar,
-            tipo,
-            sede,
-            fecha: fechaSeleccionada,
-            hora: horaSeleccionada,
-          }),
-        });
+        // El admin agenda en nombre de un cliente, asi que va por su propio endpoint:
+        // POST /api/turnos exige que la mascota sea del que esta llamando.
+        const response = await fetch(
+          `${API_BASE_URL}${comoAdmin ? '/api/admin/turnos' : '/api/turnos'}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${usuario.accessToken}`,
+            },
+            body: JSON.stringify({
+              ...(comoAdmin ? {} : { userId: usuario.id }),
+              mascotaId: mascotaAUsar,
+              tipo,
+              sede,
+              fecha: fechaSeleccionada,
+              hora: horaSeleccionada,
+            }),
+          }
+        );
         const resultado: unknown = await response.json().catch(() => null);
         if (!response.ok) {
           setMensajeError(
@@ -437,14 +485,18 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         }
 
         const mascota = mascotas.find((item) => item.id === mascotaAUsar);
-        setTurnoCreado({
-          mascota: mascota?.nombre ?? mascotaSeleccionada.titulo,
-          especie: mascotaSeleccionada.detalle ?? '',
-          tipo,
-          sede,
-          fecha: fechaSeleccionada,
-          hora: horaSeleccionada,
-        });
+        // Con ocultarAviso no se muestra nada: el aviso lo pone la pantalla de
+        // atencion, que ademas muestra como quedo el turno original.
+        if (!ocultarAviso) {
+          setTurnoCreado({
+            mascota: mascota?.nombre ?? mascotaSeleccionada.titulo,
+            especie: mascotaSeleccionada.detalle ?? '',
+            tipo,
+            sede,
+            fecha: fechaSeleccionada,
+            hora: horaSeleccionada,
+          });
+        }
         setHoraSeleccionada('');
         void cargarDisponibilidad();
         onTurnoGuardado?.();
@@ -464,6 +516,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     }, [
       ahoraMinutos,
       cargarDisponibilidad,
+      comoAdmin,
       fechaSeleccionada,
       guardando,
       horaSeleccionada,
@@ -472,9 +525,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       mascotaId,
       mascotaIdFija,
       mascotaSeleccionada,
+      ocultarAviso,
       onTurnoGuardado,
       ocupadosDia,
       sede,
+      simular,
       tipo,
     ]);
 
@@ -499,7 +554,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
     // La pantalla de atencion guarda el turno de seguimiento con su propio
     // boton, asi que le prestamos el guardado y le decimos si esta completo.
-    useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar }));
+    const elegido: TurnoElegido | null =
+      tipo !== '' && fechaSeleccionada !== '' && horaSeleccionada !== ''
+        ? { tipo, fecha: fechaSeleccionada, hora: horaSeleccionada, sede }
+        : null;
+    useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar, elegido }));
 
     // Medidas que se comprimen con la escala para que el formulario entre entero.
     // En modo compacto los pisos son mas bajos porque la agenda va dentro de otra

@@ -1,11 +1,26 @@
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type DimensionValue,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
-import { AvailabilityCalendar, type AgendaHandle } from '@/components/availability-calendar';
+import {
+  AvailabilityCalendar,
+  type AgendaHandle,
+  type TurnoElegido,
+} from '@/components/availability-calendar';
 import { estilos } from '@/lib/estilos';
-import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { esSedeVeterinaria } from '@/lib/datos';
 
@@ -27,6 +42,7 @@ export default function MarcarTurnoScreen() {
     sede?: string;
     fecha?: string;
     hora?: string;
+    atendido?: string;
     descripcion?: string;
   }>();
 
@@ -34,6 +50,10 @@ export default function MarcarTurnoScreen() {
   const [agendarSeguimiento, setAgendarSeguimiento] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  const [exito, setExito] = useState<{
+    conSeguimiento: boolean;
+    seguimiento: TurnoElegido | null;
+  } | null>(null);
   const agenda = useRef<AgendaHandle>(null);
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -46,7 +66,9 @@ export default function MarcarTurnoScreen() {
 
   const turnoId = Number(params.id);
   const mascotaId = Number(params.mascotaId);
-  const yaAtendido = Boolean(params.descripcion);
+  // Atendido viene del backend, no de la descripcion: un turno pendiente puede
+// tener una nota cargada y aun asi no estar atendido.
+const yaAtendido = params.atendido === 'true';
 
   const volver = () => {
     if (router.canGoBack()) {
@@ -56,6 +78,9 @@ export default function MarcarTurnoScreen() {
     router.replace('/admin-turnos-activos');
   };
 
+// OJO: todavia no se escribe nada en la base. Esta pantalla se esta probando
+  // y sincronizar el turno atendido todavia no hace falta, asi que completar
+  // el turno es solo una simulacion local: valida, avisa y vuelve.
   const guardar = async () => {
     if (guardando) return;
     setError('');
@@ -69,50 +94,28 @@ export default function MarcarTurnoScreen() {
       return;
     }
     // Si pidio seguimiento, la fecha y la hora tienen que estar elegidas antes
-    // de completar el turno: si no, la agenda muestra su propio aviso.
+    // de completar el turno.
     if (agendarSeguimiento && agenda.current && !agenda.current.listo) {
       setError('Elegí el tipo, la fecha y la hora del turno de seguimiento.');
       return;
     }
 
+    const sesion = await obtenerUsuarioActual();
+    if (!sesion?.esAdmin) {
+      router.replace('/app');
+      return;
+    }
+
     setGuardando(true);
     try {
-      const sesion = await obtenerUsuarioActual();
-      if (!sesion?.esAdmin) {
-        router.replace('/app');
-        return;
-      }
-      const response = await fetch(
-        `${API_BASE_URL}/api/admin/turnos/${turnoId}/atendido`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${sesion.accessToken}`,
-          },
-          body: JSON.stringify({ descripcion: descripcion.trim() }),
-        }
-      );
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const mensaje =
-          typeof result === 'object' &&
-          result !== null &&
-          'message' in result &&
-          typeof result.message === 'string'
-            ? result.message
-            : 'No se pudo guardar la atención del turno.';
-        setError(mensaje);
-        return;
-      }
-
-      // La agenda no tiene boton propio: se guarda con este mismo boton. Primero se
-      // cierra la atencion y recien despues se saca el turno de seguimiento.
+      // La agenda corre en modo simulacion: elige horario pero no agenda nada.
+      let seguimiento = null;
       if (agendarSeguimiento && agenda.current) {
         const guardado = await agenda.current.guardar();
         if (!guardado) return;
+        seguimiento = agenda.current.elegido;
       }
-      router.replace('/admin-turnos-activos');
+      setExito({ conSeguimiento: seguimiento !== null, seguimiento });
     } catch (requestError) {
       setError(
         requestError instanceof TypeError
@@ -126,57 +129,13 @@ export default function MarcarTurnoScreen() {
     }
   };
 
+// Tampoco va a la base: si completar el turno es una simulacion, desmarcarlo
+  // solo limpia la pantalla. Cuando se conecte, aca vuelve el PATCH.
   const desmarcar = async () => {
     if (guardando) return;
     setError('');
-
-    if (!Number.isInteger(turnoId) || turnoId <= 0) {
-      setError('No se pudo identificar el turno.');
-      return;
-    }
-
-    setGuardando(true);
-    try {
-      const sesion = await obtenerUsuarioActual();
-      if (!sesion?.esAdmin) {
-        router.replace('/app');
-        return;
-      }
-      const response = await fetch(
-        `${API_BASE_URL}/api/admin/turnos/${turnoId}/atendido`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${sesion.accessToken}`,
-          },
-          body: JSON.stringify({ desmarcar: true }),
-        }
-      );
-      if (!response.ok) {
-        const result: unknown = await response.json().catch(() => null);
-        setError(
-          typeof result === 'object' &&
-            result !== null &&
-            'message' in result &&
-            typeof result.message === 'string'
-            ? result.message
-            : 'No se pudo desmarcar el turno.'
-        );
-        return;
-      }
-      router.replace('/admin-turnos-activos');
-    } catch (requestError) {
-      setError(
-        requestError instanceof TypeError
-          ? apiUnreachableMessage(requestError)
-          : requestError instanceof Error
-            ? requestError.message
-            : apiUnreachableMessage(requestError)
-      );
-    } finally {
-      setGuardando(false);
-    }
+    setDescripcion('');
+    router.replace('/admin-turnos-activos');
   };
 
   const restantes = MAX_DESCRIPCION - descripcion.trim().length;
@@ -278,12 +237,14 @@ export default function MarcarTurnoScreen() {
               escala={escalaSeguimiento}
               compacta
               ocultarBotonGuardar
+              ocultarAviso
+              comoAdmin
+              simular
               mascotaIdFija={
                 Number.isInteger(mascotaId) && mascotaId > 0 ? mascotaId : null
               }
               mascotaNombreFija={params.mascota}
               sedeFija={esSedeVeterinaria(params.sede) ? params.sede : null}
-              onTurnoCerrado={() => router.replace('/admin-turnos-activos')}
             />
           </View>
         ) : null}
@@ -321,6 +282,61 @@ export default function MarcarTurnoScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
+
+      <Modal
+        visible={exito !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => router.replace('/admin-turnos-activos')}
+      >
+        <View style={styles.avisoRaiz}>
+          <Pressable
+            style={styles.avisoFondo}
+            onPress={() => router.replace('/admin-turnos-activos')}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar aviso"
+          />
+
+          {exito !== null && (
+            <View style={styles.aviso}>
+              <View style={styles.avisoIcono}>
+                <Ionicons name="checkmark" size={38} color="#fffefc" />
+              </View>
+
+              <Text style={styles.avisoTitulo}>¡Turno completado!</Text>
+              <Text style={styles.avisoSubtitulo}>
+                Guardamos la atención de {params.mascota ?? 'la mascota'}.
+              </Text>
+
+              {exito.conSeguimiento && exito.seguimiento ? (
+                <View style={styles.avisoSeguimiento}>
+                  <Text style={styles.avisoSeguimientoTitulo}>Turno agendado</Text>
+                  <Text style={styles.avisoSeguimientoTexto}>
+                    {exito.seguimiento.tipo} ·{' '}
+                    {new Date(`${exito.seguimiento.fecha}T12:00:00`).toLocaleDateString('es-AR', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                    })}{' '}
+                    a las {exito.seguimiento.hora} hs
+                  </Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
+                onPress={() => router.replace('/admin-turnos-activos')}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar y volver a los pacientes que esperan"
+              >
+                <Text style={styles.avisoBotonTexto}>Listo</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </Modal>
     </AppDrawer>
   );
 }
@@ -387,4 +403,76 @@ const styles = {
     borderRadius: 12,
   },
   desmarcarTexto: { color: '#6b7d6d', fontSize: 13, fontWeight: '600' as const },
+  avisoRaiz: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    padding: 24,
+  },
+  avisoFondo: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(18, 32, 22, 0.55)',
+  },
+  aviso: {
+    width: '100%' as DimensionValue,
+    maxWidth: 380,
+    alignItems: 'center' as const,
+    paddingHorizontal: 22,
+    paddingTop: 26,
+    paddingBottom: 20,
+    borderRadius: 20,
+    backgroundColor: '#fffefc',
+  },
+  avisoIcono: {
+    width: 72,
+    height: 72,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 16,
+    borderRadius: 36,
+    backgroundColor: '#1f6b33',
+  },
+  avisoTitulo: {
+    color: '#0f3e17',
+    fontSize: 21,
+    fontWeight: 'bold' as const,
+    textAlign: 'center' as const,
+  },
+  avisoSubtitulo: {
+    marginTop: 6,
+    color: '#5c6b60',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center' as const,
+  },
+  avisoSeguimiento: {
+    alignSelf: 'stretch' as const,
+    gap: 4,
+    marginTop: 18,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#b9ddba',
+    backgroundColor: '#e8f3e4',
+  },
+  avisoSeguimientoTitulo: {
+    color: '#0f3e17',
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  avisoSeguimientoTexto: {
+    color: '#3d5546',
+    fontSize: 14,
+    lineHeight: 20,
+    textTransform: 'capitalize' as const,
+  },
+  avisoBoton: {
+    alignSelf: 'stretch' as const,
+    alignItems: 'center' as const,
+    marginTop: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#0f3e17',
+  },
+  avisoBotonTexto: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' as const },
 };

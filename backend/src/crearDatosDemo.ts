@@ -8,6 +8,8 @@ const prisma = new PrismaClient();
 
 const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
 
+type Tipo = 'Control' | 'Vacunas' | 'Estética';
+
 function fechaComoValor(fecha: Date): string {
   return [
     fecha.getFullYear(),
@@ -16,109 +18,230 @@ function fechaComoValor(fecha: Date): string {
   ].join('-');
 }
 
-// Turnos de ejemplo. Se scrapean de los dueños y mascotas que ya existen,
-// por eso el script necesita al menos un usuario y una mascota en la base.
+// Todos los turnos de ejemplo son de HOY, sin importar el dia que sea. Las dos
+// listas de la pantalla de Turnos ("Turnos siguientes" y "Turnos completados")
+// muestran el dia en curso, y si los ejemplos se repartieran en fechas futuras
+// se verian mezclados con los de hoy.
+/** Mascota.userId es opcional, pero un turno siempre necesita un dueño. */
+function tieneDueno<T extends { userId: number | null }>(
+  mascota: T
+): mascota is T & { userId: number } {
+  return mascota.userId !== null;
+}
+
+// Cada sede tiene un perfil distinto, para poder ver la app en situaciones
+// diferentes sin tener que esperar a que pase algo:
 //
-// Se generan para las TRES sedes y todos quedan pendientes de atender, que
-// es lo que muestra la pantalla "Atender pacientes". Con eso siempre hay
-// ejemplos visibles sin importar la sede que se haya elegido en Turnos.
-const HORARIOS_PENDIENTES = ['10:30', '12:00', '14:30', '16:00', '17:30'] as const;
-
-const TIPOS = ['Control', 'Vacunas', 'Estética'] as const;
-
-// Un par de turnos ya completados, para que la seccion "Turnos completados"
-// de la pantalla de Turnos tampoco quede vacia.
-const COMPLETADOS = [
+//   Recoleta      hora pico: la tarde llena de gente.
+//   San Isidro    casi lleno: una cola mas corta.
+//   Vicente Lopez aun no abrio: tiene agenda, pero todavia no llego nadie.
+//
+// "llegan" es cuantos de los pendientes ya escanearon el QR. Es lo unico que
+// decide si el turno aparece en "Atender pacientes": sin llegada no hay nadie
+// en la sala, aunque el turno exista y se vea en "Turnos siguientes".
+//
+// Se cuentan los primeros de la lista, que son los de menor hora: los que
+// llegaron antes son los que tenian turno antes.
+//
+// Los horarios de cada sede no se repiten: completados y pendientes comparten
+// el mismo dia, asi que dos turnos a la misma hora en la misma sede serian una
+// doble reserva.
+const PERFILES: Record<
+  string,
   {
-    sede: 'Recoleta',
-    hora: '11:00',
-    descripcion: 'Se aplico la vacuna anual y la mascota quedo tranquila, sin reaccion.',
+    pendientes: readonly string[];
+    completados: readonly string[];
+    llegan: number;
+  }
+> = {
+  Recoleta: {
+    // Ya se atendio toda la manana y queda la tarde entera.
+    completados: ['10:00', '11:30', '13:00', '14:00', '15:00'],
+    pendientes: ['16:30', '17:00', '17:30', '18:00', '18:30'],
+    llegan: 3,
   },
-  {
-    sede: 'San Isidro',
-    hora: '18:00',
-    descripcion: 'Bano y corte. Se dejo comentario sobre el pelo para la proxima visita.',
+  'San Isidro': {
+    completados: ['10:30'],
+    pendientes: ['11:00', '12:00', '13:30', '15:00', '16:30', '17:30'],
+    llegan: 2,
   },
-] as const;
+  'Vicente López': {
+    completados: [],
+    pendientes: [
+      '10:00',
+      '10:30',
+      '11:00',
+      '11:30',
+      '12:00',
+      '13:00',
+      '13:30',
+      '14:00',
+      '14:30',
+      '15:00',
+    ],
+    llegan: 0,
+  },
+};
+
+// Una descripcion distinta por turno completado. Para que el detalle de cada
+// tarjeta no se vea repetido, cada tipo tiene cinco textos diferentes y se van
+// recorriendo en orden. Los pendientes van sin descripcion: todavia no
+// occurredio nada que anotar.
+const DESCRIPCIONES: Record<Tipo, readonly string[]> = {
+  Control: [
+    'Control de peso y vacunacion al dia. La mascota esta activa y sin sintomas.',
+    'Revision de dientes y encias. Se recomienda continuar con la dieta habitual.',
+    'Control post quirurgico. La herida cierra bien, sin signos de infeccion.',
+    'Control de hidratacion y temperatura. Todo dentro de los parametros normales.',
+    'Revision de movilidad y reflejos. Se sugiere repetir el control en tres meses.',
+  ],
+  Vacunas: [
+    'Se aplico la vacuna anual y la mascota quedo tranquila, sin reaccion.',
+    'Vacuna antirrabica al dia. La proxima dosis va en doce meses.',
+    'Se completo el esquema de vacunas. La proxima visita es en un año.',
+    'Vacuna contra la leptospirosis aplicada. Sin efectos adversos.',
+    'Desparasitacion trimestral junto con la vacuna. Vuelve en tres meses.',
+  ],
+  'Estética': [
+    'Baño y corte. Se dejo comentario sobre el pelo para la proxima visita.',
+    'Limpieza de oidos y corte de uñas. La mascota quedo tranquila.',
+    'Corte de pelo y limpieza de dientes. Sin cambios en la piel.',
+    'Baño medicado porque venia con una irritacion leve. Continua bien.',
+    'Arrasado y corte de garras. Recomendamos repetir cada seis semanas.',
+  ],
+};
+
+const TIPOS: readonly Tipo[] = ['Control', 'Vacunas', 'Estética'];
 
 async function main(): Promise<void> {
-  const hoy = fechaComoValor(new Date());
+  const hoy = new Date();
 
   const anteriores = await prisma.turno.deleteMany({ where: { esDemo: true } });
   if (anteriores.count > 0) {
     console.log(`Se borraron ${anteriores.count} turnos de ejemplo previos.`);
   }
 
-  const duenos = await prisma.usuario.findMany({
-    where: { mascotas: { some: {} } },
-    select: { id: true },
+  // Se reparten las mascotas que ya tienen foto para que las tarjetas no se
+  // vean todas con la misma imagen. Si no hay al menos dos con foto, se usan
+  // todas las que haya.
+  const conFoto = await prisma.mascota.findMany({
+    where: { foto: { not: null } },
+    select: { id: true, userId: true, nombre: true },
     orderBy: { id: 'asc' },
   });
-  if (duenos.length === 0) {
-    throw new Error('Ningun usuario tiene mascotas. Registra al menos una primero.');
+  const candidatas = (
+    conFoto.length > 1
+      ? conFoto
+      : await prisma.mascota.findMany({
+          select: { id: true, userId: true, nombre: true },
+          orderBy: { id: 'asc' },
+        })
+  ).filter(tieneDueno);
+  if (candidatas.length === 0) {
+    throw new Error('No hay mascotas con dueño en la base. Registra al menos una primero.');
   }
 
-  // Arma la lista: pendientes en cada sede + un par de completados.
   const ejemplos: {
-    tipo: string;
+    tipo: Tipo;
     sede: string;
     hora: string;
+    fecha: string;
     minutosAtras: number;
+    llego: boolean;
     atendido: boolean;
     descripcion: string | null;
   }[] = [];
 
-  let minuto = 5;
+  const usadosPorTipo: Record<Tipo, number> = { Control: 0, Vacunas: 0, 'Estética': 0 };
+  const proximaDescripcion = (tipo: Tipo): string => {
+    const textos = DESCRIPCIONES[tipo];
+    const texto = textos[usadosPorTipo[tipo] % textos.length];
+    usadosPorTipo[tipo] += 1;
+    return texto;
+  };
+
   for (const sede of sedesVeterinaria) {
-    HORARIOS_PENDIENTES.forEach((hora, i) => {
+    const perfil = PERFILES[sede];
+
+    // Solo los primeros "llegan" pendientes escanearon el QR. Los demas existen y
+    // se ven en "Turnos siguientes", pero todavia no llegaron a la sala.
+    perfil.pendientes.forEach((hora, i) => {
+      const tipo = TIPOS[i % TIPOS.length];
       ejemplos.push({
-        tipo: TIPOS[i % TIPOS.length],
+        tipo,
         sede,
         hora,
-        minutosAtras: minuto,
+        fecha: fechaComoValor(hoy),
+        minutosAtras: 5 + i * 6,
+        llego: i < perfil.llegan,
         atendido: false,
         descripcion: null,
       });
-      minuto += 7;
+    });
+
+    // Los completados son del mismo dia, asi que la seccion "Turnos completados"
+    // tenga algo para mostrar.
+    perfil.completados.forEach((hora, i) => {
+      const tipo = TIPOS[i % TIPOS.length];
+      ejemplos.push({
+        tipo,
+        sede,
+        hora,
+        fecha: fechaComoValor(hoy),
+        minutosAtras: 40 + i * 25,
+        llego: perfil.llegan > 0,
+        atendido: true,
+        descripcion: proximaDescripcion(tipo),
+      });
     });
   }
 
-  for (const [i, completado] of COMPLETADOS.entries()) {
-    ejemplos.push({
-      tipo: TIPOS[i % TIPOS.length],
-      sede: completado.sede,
-      hora: completado.hora,
-      minutosAtras: 40 + i * 30,
-      atendido: true,
-      descripcion: completado.descripcion,
-    });
-  }
+  const creados: {
+    id: number;
+    dueno: string;
+    mascota: string;
+    conFoto: boolean;
+    sede: string;
+    fecha: string;
+    hora: string;
+    llego: boolean;
+    atendido: boolean;
+    conDescripcion: boolean;
+  }[] = [];
 
-  const creados = [];
+// Un nombre no puede caer en el mismo horario de la misma sede dos veces. La
+// reserva va por nombre y no por id porque hay dos mascotas distintas que se
+// llaman igual (dos "mati", dos "jorge") y en la tarjeta solo se ve el
+// nombre. Sin esto, "mati 17:00" salia una vez en cada lista.
+  const reservasPorHorario = new Map<string, Set<string>>();
+
   for (const [indice, ejemplo] of ejemplos.entries()) {
-    // Alterna entre las mascotas del dueño para que"Some tengan foto y otros no.
-    const dueno = duenos[indice % duenos.length];
-    const mascotas = await prisma.mascota.findMany({
-      where: { userId: dueno.id },
-      select: { id: true },
-      orderBy: { id: 'asc' },
-    });
-    // indice par -> con foto, impar -> sin foto.
-    const mascotaId = indice % 2 === 0 ? mascotas[0].id : (mascotas[1]?.id ?? mascotas[0].id);
+    // Se rota sobre todas las candidatas: con dos o mas fotos, dos turnos
+    // seguidos nunca muestran la misma imagen.
+    const clave = `${ejemplo.sede}|${ejemplo.fecha}|${ejemplo.hora}`;
+    const yaReservadas = reservasPorHorario.get(clave) ?? new Set<string>();
+    reservasPorHorario.set(clave, yaReservadas);
+
+    let mascota = candidatas[indice % candidatas.length];
+    for (let salto = 0; salto < candidatas.length && yaReservadas.has(mascota.nombre); salto += 1) {
+      mascota = candidatas[(indice + salto + 1) % candidatas.length];
+    }
+    yaReservadas.add(mascota.nombre);
 
     const llegada = new Date(Date.now() - ejemplo.minutosAtras * 60 * 1000).toISOString();
     const turno = await prisma.turno.create({
       data: {
         tipo: ejemplo.tipo,
         sede: ejemplo.sede,
-        fecha: hoy,
+        fecha: ejemplo.fecha,
         hora: ejemplo.hora,
-        llegadaEn: llegada,
-        atendidoEn: ejemplo.atendido ? llegada : null,
+        llegadaEn: ejemplo.llego ? llegada : null,
+        // Sin llegada no se puede haber atendido: nadie entro a la consulta.
+        atendidoEn: ejemplo.atendido && ejemplo.llego ? llegada : null,
         descripcion: ejemplo.descripcion,
         esDemo: true,
-        user: { connect: { id: dueno.id } },
-        mascota: { connect: { id: mascotaId } },
+        user: { connect: { id: mascota.userId } },
+        mascota: { connect: { id: mascota.id } },
       },
       include: {
         user: { select: { nombre: true } },
@@ -131,19 +254,68 @@ async function main(): Promise<void> {
       mascota: turno.mascota.nombre,
       conFoto: Boolean(turno.mascota.foto),
       sede: turno.sede,
+      fecha: turno.fecha,
       hora: turno.hora,
+      llego: ejemplo.llego,
       atendido: ejemplo.atendido,
+      conDescripcion: ejemplo.descripcion !== null,
     });
   }
 
-  console.log(`\nSe crearon ${creados.length} turnos de ejemplo para hoy (${hoy}):\n`);
+  console.log(`\nSe crearon ${creados.length} turnos de ejemplo:\n`);
   for (const turno of creados) {
-    const estado = turno.atendido ? 'COMPLETADO' : 'PENDIENTE ';
+    const estado = turno.atendido
+      ? 'COMPLETADO'
+      : turno.llego
+        ? 'EN SALA  '
+        : 'SIGUIENTE';
     console.log(
-      `  ${turno.id}  ${estado}  ${turno.hora}  ${turno.sede.padEnd(13)} ` +
-        `${turno.mascota} (${turno.dueno})  foto: ${turno.conFoto ? 'si' : 'no'}`
+      `  ${String(turno.id).padStart(4)}  ${estado}  ${turno.fecha} ${turno.hora}  ` +
+        `${turno.sede.padEnd(13)} ${turno.mascota} (${turno.dueno})  ` +
+        `foto: ${turno.conFoto ? 'si' : 'no'}  nota: ${turno.conDescripcion ? 'si' : 'no'}`
     );
   }
+  // Resumen por sede: es lo que se ve en cada pantalla.
+  console.log('\nResumen por sede:');
+  console.log('  sede          Siguientes  Completados  En sala');
+  for (const sede of sedesVeterinaria) {
+    const deLaSede = creados.filter((turno) => turno.sede === sede);
+    const cuenta = (predicado: (t: (typeof creados)[number]) => boolean) =>
+      deLaSede.filter(predicado).length;
+    console.log(
+      `  ${sede.padEnd(13)}${String(cuenta((t) => !t.atendido)).padStart(11)}` +
+        `${String(cuenta((t) => t.atendido)).padStart(13)}` +
+        `${String(cuenta((t) => !t.atendido && t.llego)).padStart(10)}`
+    );
+  }
+
+  // Chequeos. Todos los ejemplos son de hoy, asi que tienen que cumplirse dos
+// cosas: que no haya dos turnos a la misma hora en la misma sede (seria una
+  // doble reserva) y que en un mismo horario no se repita un nombre (las
+  // tarjetas se verian iguales).
+  const porHorario = new Map<string, string[]>();
+  for (const turno of creados) {
+    const clave = `${turno.sede}|${turno.fecha}|${turno.hora}`;
+    const nombres = porHorario.get(clave) ?? [];
+    nombres.push(turno.mascota);
+    porHorario.set(clave, nombres);
+  }
+
+  const dobleReserva = [...porHorario.entries()].filter(([, nombres]) => nombres.length > 1);
+  if (dobleReserva.length > 0) {
+    console.log('\nOjo: hay dos turnos en el mismo horario de la misma sede:');
+    for (const [clave, nombres] of dobleReserva) {
+      console.log(`  ${clave}: ${nombres.join(', ')}`);
+    }
+  } else {
+    console.log('\nSin doble reservas de horario.');
+  }
+
+  const fechasDistintas = [...new Set(creados.map((turno) => turno.fecha))];
+  if (fechasDistintas.length > 1) {
+    console.log(`\nOjo: se crearon turnos en varios dias: ${fechasDistintas.join(', ')}`);
+  }
+
   console.log('\nPara borrarlos: npm run db:demo:borrar');
 }
 
