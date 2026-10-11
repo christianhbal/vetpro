@@ -26,7 +26,7 @@ import {
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 import QRCode from 'react-native-qrcode-svg';
-import { CHECK_IN_QR } from '@/lib/check-in';
+import { checkInDeSede } from '@/lib/check-in';
 
 type Mascota = {
   id: number;
@@ -158,6 +158,7 @@ export default function InicioScreen() {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [modalQr, setModalQr] = useState(false);
+  const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
   const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
 
   const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
@@ -423,7 +424,10 @@ export default function InicioScreen() {
               <View style={styles.qrAdminBloque}>
                 <Pressable
                   style={({ pressed }) => [estilos.qrBoton, pressed && estilos.buttonPressed]}
-                  onPress={() => setModalQr(true)}
+                  onPress={() => {
+                    setSedeQr(sedeSeleccionada);
+                    setModalQr(true);
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={`Mostrar el código QR de llegada de ${sedeSeleccionada}`}
                 >
@@ -594,8 +598,9 @@ export default function InicioScreen() {
 
             <View style={styles.qrAdminMarco}>
               <View style={styles.qrAdminSvg}>
-                <QRCode value={CHECK_IN_QR} size={220} />
+                <QRCode value={checkInDeSede(sedeQr)} size={220} />
               </View>
+              <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
           </View>
         </View>
@@ -687,6 +692,12 @@ const styles = {
     alignSelf: 'center' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  qrAdminSede: {
+    marginTop: 12,
+    color: '#0f3e17',
+    fontSize: 18,
+    fontWeight: 'bold' as const,
   },
   turnPhotoPlaceholder: {
     width: 56,

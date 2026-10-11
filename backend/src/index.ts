@@ -421,7 +421,23 @@ app.delete('/api/mascotas/:id', async (request, response) => {
 // 2. Rutas de turnos
 // -----------------------------------------------------------------------------
 
-const CHECK_IN_QR = 'vetpro://check-in';
+const PREFIJO_CHECK_IN = 'vetpro://check-in';
+const SEDES_VALIDAS = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
+
+type Sede = (typeof SEDES_VALIDAS)[number];
+
+/**
+ * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
+ * Devuelve null si el QR no es de VetPro o si la sede no existe.
+ */
+function sedeDeCheckIn(code: unknown): Sede | null {
+  if (typeof code !== 'string') return null;
+  const [base, consulta] = code.split('?');
+  if (base !== PREFIJO_CHECK_IN) return null;
+
+  const valor = new URLSearchParams(consulta ?? '').get('sede');
+  return SEDES_VALIDAS.find((sede) => sede === valor) ?? null;
+}
 
 // GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
 // Devuelve las fechas y horas ocupadas para una sede, sin datos de clientes.
@@ -487,7 +503,9 @@ app.post('/api/turnos/check-in', async (request, response) => {
   if (user.role === 'ADMIN') {
     return response.status(403).json({ message: 'El registro de llegada es para cuentas de usuario.' });
   }
-  if (request.body?.code !== CHECK_IN_QR) {
+
+  const sede = sedeDeCheckIn(request.body?.code);
+  if (sede === null) {
     return response.status(400).json({ message: 'El código QR no es válido.' });
   }
 
@@ -500,25 +518,27 @@ app.post('/api/turnos/check-in', async (request, response) => {
 
   try {
     const turnoLlegado = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, llegadaEn: { not: null } },
+      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: { not: null } },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
       orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
     });
     if (turnoLlegado) {
-      return response.json({ turno: turnoLlegado, yaRegistrado: true });
+      return response.json({ turno: turnoLlegado, sede, yaRegistrado: true });
     }
 
     const turno = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, llegadaEn: null },
+      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
       orderBy: [{ hora: 'asc' }, { id: 'asc' }],
     });
     if (!turno) {
-      return response.status(404).json({ message: 'No tienes turnos para hoy.' });
+      return response.status(404).json({
+        message: `No tienes turnos para hoy en ${sede}.`,
+      });
     }
 
     const llegadaEn = ahora.toISOString();
@@ -532,6 +552,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
 
     return response.json({
       turno: { ...turno, llegadaEn },
+      sede,
       yaRegistrado: false,
     });
   } catch (error) {
