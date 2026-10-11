@@ -1,17 +1,11 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
-import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import {
-  esSedeVeterinaria,
-  formatearFechaTurno,
-  sedesVeterinaria,
-  type SedeVeterinaria,
-} from '@/lib/datos';
+import { esSedeVeterinaria, formatearFechaTurno, type SedeVeterinaria } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 type TurnoActivo = {
@@ -25,7 +19,7 @@ type TurnoActivo = {
   descripcion: string | null;
   esDemo: boolean;
   user: { nombre: string; email: string };
-  mascota: { nombre: string; especie: string; raza: string | null };
+  mascota: { id: number; nombre: string; especie: string; raza: string | null };
 };
 
 function mensajeApi(resultado: unknown): string | null {
@@ -57,6 +51,7 @@ function esTurnoActivo(value: unknown): value is TurnoActivo {
     typeof turno.esDemo === 'boolean' &&
     typeof datosUsuario.nombre === 'string' &&
     typeof datosUsuario.email === 'string' &&
+    typeof datosMascota.id === 'number' &&
     typeof datosMascota.nombre === 'string' &&
     typeof datosMascota.especie === 'string' &&
     (typeof datosMascota.raza === 'string' || datosMascota.raza === null)
@@ -65,10 +60,25 @@ function esTurnoActivo(value: unknown): value is TurnoActivo {
 
 export default function AdminTurnosActivosScreen() {
   const router = useRouter();
+
+  // La sede se elige en la pantalla de Turnos y llega por parametro. Acá no
+  // se modifica: si el usuario cambia de sede, tiene que volver a Turnos.
+  const params = useLocalSearchParams<{ sede?: string }>();
+  const sedeSeleccionada = esSedeVeterinaria(params.sede) ? params.sede : 'Recoleta';
+
+  // Esta pantalla se entra desde Turnos o desde la portada, asi que la
+  // cabecera muestra la flecha de volver en lugar del menu.
+  const volver = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/turnos');
+  };
+
   const [turnos, setTurnos] = useState<TurnoActivo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
-  const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
 
   const cargarTurnos = useCallback(async () => {
     setCargando(true);
@@ -106,14 +116,6 @@ export default function AdminTurnosActivosScreen() {
 
   // El veterinario elige en que sede esta trabajando y solo ve las llegadas
 // de esa sede.
-const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
-  valor: nombre,
-  titulo: nombre,
-}));
-
-const sedeSeleccionadaOpcion =
-  opcionesSede.find((opcion) => opcion.valor === sedeSeleccionada) ?? null;
-
 const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada);
 
 // Marcar ya no es un toggle: lleva a la pantalla donde se escribe lo que
@@ -123,6 +125,7 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
       pathname: '/marcar-turno',
       params: {
         id: String(turno.id),
+        mascotaId: String(turno.mascota.id),
         mascota: turno.mascota.nombre,
         tipo: turno.tipo,
         sede: turno.sede,
@@ -141,7 +144,11 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
   );
 
   return (
-    <AppDrawer title="Turnos activos">
+    <AppDrawer
+      title="Atender pacientes"
+      onVolver={volver}
+      etiquetaVolver="Volver a Turnos"
+    >
       <FlatList
         style={estilos.container}
         data={turnosDeLaSede}
@@ -151,42 +158,60 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
         refreshing={cargando}
         ListHeaderComponent={
           <View>
-            <View style={styles.bloqueSede}>
-              <SelectorCampo
-                label="Sede"
-                icono="location-outline"
-                placeholder="Elegí una sede"
-                opciones={opcionesSede}
-                seleccion={sedeSeleccionadaOpcion}
-                onSelect={(opcion) => setSedeSeleccionada(opcion.valor as SedeVeterinaria)}
-                compacto
-                accessibilityLabel="Elegir sede de la veterinaria"
-              />
+            <View style={styles.cabecera}>
+              <View style={styles.cabeceraIcono}>
+                <Ionicons name="location" size={20} color="#0f3e17" />
+              </View>
+              <View style={styles.cabeceraTexto}>
+                <Text style={styles.cabeceraLabel}>Sede</Text>
+                <Text style={styles.cabeceraSede} numberOfLines={1}>
+                  {sedeSeleccionada}
+                </Text>
+              </View>
+              <View style={styles.contador}>
+                <Text style={styles.contadorNumero}>
+                  {turnosDeLaSede.length === 1 ? '1' : turnosDeLaSede.length}
+                </Text>
+                <Text style={styles.contadorLabel}>
+                  {turnosDeLaSede.length === 1 ? 'esperando' : 'esperando'}
+                </Text>
+              </View>
             </View>
-            <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>
-              Llegadas de hoy en {sedeSeleccionada} al escanear el QR. Tocá el botón para registrar
-              qué pasó en el turno.
-            </Text>
+
+            <View style={styles.intro}>
+              <Text style={styles.introTexto}>
+                Pacientes que escanearon el QR y todavía no fueron atendidos. Tocá{' '}
+                <Text style={styles.introResaltado}>Atender</Text> para registrar qué pasó.
+              </Text>
+              <Text style={styles.introNota}>
+                Para cambiar de sede, volvé a la pantalla de Turnos.
+              </Text>
+            </View>
           </View>
         }
         ListEmptyComponent={
-          <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+          <View style={styles.vacio}>
             {cargando ? (
               <ActivityIndicator color="#0f3e17" />
-            ) : (
-              <Text style={estilos.cardSubtitle}>
-                {error || `Todavía no se registraron llegadas en ${sedeSeleccionada}.`}
+            ) : error ? (
+              <Text accessibilityRole="alert" style={estilos.cardSubtituloTurno}>
+                {error}
               </Text>
+            ) : (
+              <>
+                <View style={styles.vacioIcono}>
+                  <Ionicons name="checkmark-done-outline" size={30} color="#5d8a63" />
+                </View>
+                <Text style={styles.vacioTitulo}>Todo al día</Text>
+                <Text style={styles.vacioTexto}>
+                  No hay pacientes esperando en {sedeSeleccionada}.
+                </Text>
+              </>
             )}
           </View>
         }
         renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
-            onPress={() => registrarAtencion(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`Registrar la atención del turno de ${item.mascota.nombre}`}
-          >
+          <View style={estilos.cardTurno}>
             <View style={styles.fila}>
               <View style={styles.texto}>
                 <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
@@ -195,21 +220,25 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
                 <Text style={styles.dueno} numberOfLines={1} ellipsizeMode="tail">
                   {item.user.nombre}
                 </Text>
-                <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-                  {formatearFechaTurno(item.fecha, item.hora)} · {item.sede}
-                </Text>
                 <Text style={estilos.cardSubtituloTurno} numberOfLines={1}>
-                  Llegó a las{' '}
-                  {new Date(item.llegadaEn).toLocaleTimeString('es-AR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {item.hora} hs
                 </Text>
               </View>
 
-              <Ionicons name="checkmark-circle-outline" size={22} color="#0f3e17" />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.botonAtender,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => registrarAtencion(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Registrar la atención del turno de ${item.mascota.nombre}`}
+              >
+                <Ionicons name="create-outline" size={17} color="#0f3e17" />
+                <Text style={styles.botonAtenderTexto}>Atender</Text>
+              </Pressable>
             </View>
-          </Pressable>
+          </View>
         )}
       />
     </AppDrawer>
@@ -217,7 +246,63 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
 }
 
 const styles = StyleSheet.create({
-  bloqueSede: { marginBottom: 12 },
+  cabecera: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#cfdcc9',
+    backgroundColor: '#eef5ea',
+  },
+  cabeceraIcono: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#d9f0da',
+  },
+  cabeceraTexto: { flex: 1 },
+  cabeceraLabel: {
+    color: '#6b7d6d',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cabeceraSede: { color: '#0f3e17', fontSize: 18, fontWeight: '700', marginTop: 2 },
+  contador: { alignItems: 'center', minWidth: 52 },
+  contadorNumero: { color: '#0f3e17', fontSize: 24, fontWeight: 'bold', lineHeight: 28 },
+  contadorLabel: { color: '#6b7d6d', fontSize: 11 },
+  intro: {
+    padding: 13,
+    marginBottom: 14,
+    borderRadius: 14,
+    backgroundColor: '#f2f9f1',
+  },
+  introTexto: { color: '#3d5546', fontSize: 13, lineHeight: 19 },
+  introResaltado: { color: '#0f3e17', fontWeight: '700' },
+  introNota: { marginTop: 6, color: '#7b8c7d', fontSize: 12 },
+  vacio: { alignItems: 'center', paddingVertical: 34, paddingHorizontal: 20 },
+  vacioIcono: {
+    width: 62,
+    height: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderRadius: 31,
+    backgroundColor: '#eef5ea',
+  },
+  vacioTitulo: {
+    color: '#0f3e17',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  vacioTexto: { color: '#6b7d6d', fontSize: 14, lineHeight: 20, textAlign: 'center' },
   fila: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -225,26 +310,21 @@ const styles = StyleSheet.create({
     minHeight: 64,
   },
   texto: { flex: 1 },
-  
   dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
-  botonTilde: {
-    width: 56,
-    height: 56,
+  botonAtender: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: '#b9ddba',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: '#0f3e17',
+    borderRadius: 12,
     backgroundColor: '#e8f3e4',
-    shadowColor: '#0f3e17',
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
   },
-  botonTildeActivo: {
-    backgroundColor: '#2f7a3f',
-    borderColor: '#2f7a3f',
-    shadowOpacity: 0.22,
+  botonAtenderTexto: {
+    color: '#0f3e17',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -6,6 +6,8 @@ config({ path: path.resolve(__dirname, '..', '.env') });
 
 const prisma = new PrismaClient();
 
+const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
+
 function fechaComoValor(fecha: Date): string {
   return [
     fecha.getFullYear(),
@@ -16,46 +18,26 @@ function fechaComoValor(fecha: Date): string {
 
 // Turnos de ejemplo. Se scrapean de los dueños y mascotas que ya existen,
 // por eso el script necesita al menos un usuario y una mascota en la base.
-const EJEMPLOS = [
+//
+// Se generan para las TRES sedes y todos quedan pendientes de atender, que
+// es lo que muestra la pantalla "Atender pacientes". Con eso siempre hay
+// ejemplos visibles sin importar la sede que se haya elegido en Turnos.
+const HORARIOS_PENDIENTES = ['10:30', '12:00', '14:30', '16:00', '17:30'] as const;
+
+const TIPOS = ['Control', 'Vacunas', 'Estética'] as const;
+
+// Un par de turnos ya completados, para que la seccion "Turnos completados"
+// de la pantalla de Turnos tampoco quede vacia.
+const COMPLETADOS = [
   {
-    tipo: 'Control',
     sede: 'Recoleta',
-    hora: '10:30',
-    minutosAtras: 35,
-    atendido: false,
-    descripcion: null,
-  },
-  {
-    tipo: 'Vacunas',
-    sede: 'Recoleta',
-    hora: '12:00',
-    minutosAtras: 20,
-    atendido: true,
+    hora: '11:00',
     descripcion: 'Se aplico la vacuna anual y la mascota quedo tranquila, sin reaccion.',
   },
   {
-    tipo: 'Estética',
     sede: 'San Isidro',
-    hora: '16:00',
-    minutosAtras: 80,
-    atendido: true,
-    descripcion: 'Bano y corte. Se dejo commento sobre el pelo para la proxima visita.',
-  },
-  {
-    tipo: 'Control',
-    sede: 'Vicente López',
-    hora: '11:00',
-    minutosAtras: 15,
-    atendido: false,
-    descripcion: null,
-  },
-  {
-    tipo: 'Vacunas',
-    sede: 'Recoleta',
     hora: '18:00',
-    minutosAtras: 120,
-    atendido: false,
-    descripcion: null,
+    descripcion: 'Bano y corte. Se dejo comentario sobre el pelo para la proxima visita.',
   },
 ] as const;
 
@@ -76,8 +58,44 @@ async function main(): Promise<void> {
     throw new Error('Ningun usuario tiene mascotas. Registra al menos una primero.');
   }
 
+  // Arma la lista: pendientes en cada sede + un par de completados.
+  const ejemplos: {
+    tipo: string;
+    sede: string;
+    hora: string;
+    minutosAtras: number;
+    atendido: boolean;
+    descripcion: string | null;
+  }[] = [];
+
+  let minuto = 5;
+  for (const sede of sedesVeterinaria) {
+    HORARIOS_PENDIENTES.forEach((hora, i) => {
+      ejemplos.push({
+        tipo: TIPOS[i % TIPOS.length],
+        sede,
+        hora,
+        minutosAtras: minuto,
+        atendido: false,
+        descripcion: null,
+      });
+      minuto += 7;
+    });
+  }
+
+  for (const [i, completado] of COMPLETADOS.entries()) {
+    ejemplos.push({
+      tipo: TIPOS[i % TIPOS.length],
+      sede: completado.sede,
+      hora: completado.hora,
+      minutosAtras: 40 + i * 30,
+      atendido: true,
+      descripcion: completado.descripcion,
+    });
+  }
+
   const creados = [];
-  for (const [indice, ejemplo] of EJEMPLOS.entries()) {
+  for (const [indice, ejemplo] of ejemplos.entries()) {
     // Alterna entre las mascotas del dueño para que"Some tengan foto y otros no.
     const dueno = duenos[indice % duenos.length];
     const mascotas = await prisma.mascota.findMany({
@@ -126,7 +144,7 @@ async function main(): Promise<void> {
         `${turno.mascota} (${turno.dueno})  foto: ${turno.conFoto ? 'si' : 'no'}`
     );
   }
-  console.log('\nPara borrarlos: npm run db:demo:borrar  (o la pantalla Datos de ejemplo).');
+  console.log('\nPara borrarlos: npm run db:demo:borrar');
 }
 
 main()

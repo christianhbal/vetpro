@@ -1,4 +1,12 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -62,6 +70,31 @@ type Props = {
    * el formulario entre entero y la vista no tenga que scrollear.
    */
   escala?: number;
+  /**
+   * Cuando viene, el selector de mascota queda fijo en esa. Se usa para
+   * agendar el seguimiento de un turno ya atendido.
+   */
+  mascotaIdFija?: number | null;
+  /** Cuando viene, la sede queda fija en esa, sin selector. */
+  sedeFija?: SedeVeterinaria | null;
+  /** Nombre a mostrar cuando la mascota viene fija, por si el id no llego. */
+  mascotaNombreFija?: string;
+  titulo?: string;
+  /** Version mas chica, para cuando la agenda entra dentro de otra pantalla. */
+  compacta?: boolean;
+  /**
+   * Oculta el boton "Guardar turno". Lo usa la pantalla de atencion, que ya
+   * tiene su propio boton y hace las dos cosas juntas.
+   */
+  ocultarBotonGuardar?: boolean;
+};
+
+/** Lo que la pantalla que contiene la agenda puede pedirle. */
+export type AgendaHandle = {
+  /** Guarda el turno elegido. Devuelve false si faltaba algo o falló la API. */
+  guardar: () => Promise<boolean>;
+  /** True cuando ya se eligió tipo, fecha y hora y se puede guardar. */
+  listo: boolean;
 };
 
 function fechaComoValor(fecha: Date): string {
@@ -125,633 +158,741 @@ function esMascotaPropia(value: unknown): value is MascotaPropia {
   );
 }
 
-export function AvailabilityCalendar({ onTurnoGuardado, onTurnoCerrado, escala = 1 }: Props) {
-  const [mesVisible, setMesVisible] = useState(() => {
-    const hoy = new Date();
-    return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  });
-  const [fechaSeleccionada, setFechaSeleccionada] = useState(() =>
-    primerDiaAgendable(new Date())
-  );
-  const [sede, setSede] = useState<SedeVeterinaria>('Recoleta');
-  const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState('');
+export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
+  function AvailabilityCalendar(
+    {
+      onTurnoGuardado,
+      onTurnoCerrado,
+      escala = 1,
+      mascotaIdFija = null,
+      mascotaNombreFija,
+      sedeFija = null,
+      titulo = 'Agendar turno',
+      compacta = false,
+      ocultarBotonGuardar = false,
+    },
+    ref
+  ) {
+    const [mesVisible, setMesVisible] = useState(() => {
+      const hoy = new Date();
+      return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    });
+    const [fechaSeleccionada, setFechaSeleccionada] = useState(() =>
+      primerDiaAgendable(new Date())
+    );
+    // Con sedeFija arranca en esa sede y el selector desaparece.
+    const [sede, setSede] = useState<SedeVeterinaria>(sedeFija ?? 'Recoleta');
+    const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
+    const [cargando, setCargando] = useState(true);
+    const [error, setError] = useState('');
 
-  const [mascotas, setMascotas] = useState<MascotaPropia[]>([]);
-  const [cargandoMascotas, setCargandoMascotas] = useState(true);
-  const [errorMascotas, setErrorMascotas] = useState('');
-  const [mascotaId, setMascotaId] = useState<number | null>(null);
-  const [tipo, setTipo] = useState<TipoTurno | ''>('');
-  const [horaSeleccionada, setHoraSeleccionada] = useState('');
+    const [mascotas, setMascotas] = useState<MascotaPropia[]>([]);
+    const [cargandoMascotas, setCargandoMascotas] = useState(true);
+    const [errorMascotas, setErrorMascotas] = useState('');
+    const [mascotaId, setMascotaId] = useState<number | null>(null);
+    const [tipo, setTipo] = useState<TipoTurno | ''>('');
+    const [horaSeleccionada, setHoraSeleccionada] = useState('');
 
-  const [guardando, setGuardando] = useState(false);
-  const [mensajeError, setMensajeError] = useState('');
-  const [turnoCreado, setTurnoCreado] = useState<TurnoCreado | null>(null);
-  const solicitud = useRef(0);
+    const [guardando, setGuardando] = useState(false);
+    const [mensajeError, setMensajeError] = useState('');
+    const [turnoCreado, setTurnoCreado] = useState<TurnoCreado | null>(null);
+    const solicitud = useRef(0);
 
-  const cargarDisponibilidad = useCallback(async () => {
-    const idSolicitud = ++solicitud.current;
-    const mes = `${mesVisible.getFullYear()}-${String(mesVisible.getMonth() + 1).padStart(2, '0')}`;
-    setCargando(true);
-    setError('');
-    setHorariosOcupados([]);
-    try {
-      const usuario = await obtenerUsuarioActual();
-      if (!usuario) {
-        throw new Error('Inicia sesión para consultar la disponibilidad.');
-      }
-      const response = await fetch(
-        `${API_BASE_URL}/api/turnos/disponibilidad?mes=${encodeURIComponent(mes)}&sede=${encodeURIComponent(sede)}`,
-        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
-      );
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        throw new Error(mensajeApi(result) ?? 'No se pudo cargar la disponibilidad.');
-      }
-      if (!Array.isArray(result) || !result.every(esHorarioOcupado)) {
-        throw new Error('La API devolvió horarios ocupados inválidos.');
-      }
-      if (idSolicitud === solicitud.current) {
-        setHorariosOcupados(result);
-        // El horario elegido pudo ocuparse mientras recargabamos.
-        setHoraSeleccionada((actual) =>
-          actual !== '' && result.some((slot) => slot.hora === actual && slot.fecha === fechaSeleccionada)
-            ? ''
-            : actual
+    const cargarDisponibilidad = useCallback(async () => {
+      const idSolicitud = ++solicitud.current;
+      const mes = `${mesVisible.getFullYear()}-${String(mesVisible.getMonth() + 1).padStart(2, '0')}`;
+      setCargando(true);
+      setError('');
+      setHorariosOcupados([]);
+      try {
+        const usuario = await obtenerUsuarioActual();
+        if (!usuario) {
+          throw new Error('Inicia sesión para consultar la disponibilidad.');
+        }
+        const response = await fetch(
+          `${API_BASE_URL}/api/turnos/disponibilidad?mes=${encodeURIComponent(mes)}&sede=${encodeURIComponent(sede)}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
         );
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(mensajeApi(result) ?? 'No se pudo cargar la disponibilidad.');
+        }
+        if (!Array.isArray(result) || !result.every(esHorarioOcupado)) {
+          throw new Error('La API devolvió horarios ocupados inválidos.');
+        }
+        if (idSolicitud === solicitud.current) {
+          setHorariosOcupados(result);
+          // El horario elegido pudo ocuparse mientras recargabamos.
+          setHoraSeleccionada((actual) =>
+            actual !== '' && result.some((slot) => slot.hora === actual && slot.fecha === fechaSeleccionada)
+              ? ''
+              : actual
+          );
+        }
+      } catch (requestError) {
+        if (idSolicitud === solicitud.current) {
+          setError(
+            requestError instanceof TypeError
+              ? apiUnreachableMessage(requestError)
+              : requestError instanceof Error
+                ? requestError.message
+                : apiUnreachableMessage(requestError)
+          );
+        }
+      } finally {
+        if (idSolicitud === solicitud.current) setCargando(false);
       }
-    } catch (requestError) {
-      if (idSolicitud === solicitud.current) {
-        setError(
+    }, [fechaSeleccionada, mesVisible, sede]);
+
+    useFocusEffect(
+      useCallback(() => {
+        void cargarDisponibilidad();
+      }, [cargarDisponibilidad])
+    );
+
+    const cargarMascotas = useCallback(async () => {
+      setCargandoMascotas(true);
+      setErrorMascotas('');
+      try {
+        const usuario = await obtenerUsuarioActual();
+        if (!usuario) {
+          throw new Error('Inicia sesión para elegir una mascota.');
+        }
+        const response = await fetch(
+          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+        );
+        const resultado: unknown = await response.json();
+        if (!response.ok) {
+          setMascotas([]);
+          setErrorMascotas(mensajeApi(resultado) ?? 'No se pudieron cargar tus mascotas.');
+          return;
+        }
+        if (!Array.isArray(resultado) || !resultado.every(esMascotaPropia)) {
+          throw new Error('La API devolvió mascotas inválidas.');
+        }
+        setMascotas(resultado);
+        setMascotaId((seleccionActual) =>
+          resultado.some((mascota: MascotaPropia) => mascota.id === seleccionActual)
+            ? seleccionActual
+            : null
+        );
+      } catch (requestError) {
+        setMascotas([]);
+        setErrorMascotas(
           requestError instanceof TypeError
             ? apiUnreachableMessage(requestError)
             : requestError instanceof Error
               ? requestError.message
               : apiUnreachableMessage(requestError)
         );
+      } finally {
+        setCargandoMascotas(false);
       }
-    } finally {
-      if (idSolicitud === solicitud.current) setCargando(false);
-    }
-  }, [fechaSeleccionada, mesVisible, sede]);
+    }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void cargarDisponibilidad();
-    }, [cargarDisponibilidad])
-  );
+    useFocusEffect(
+      useCallback(() => {
+        void cargarMascotas();
+      }, [cargarMascotas])
+    );
 
-  const cargarMascotas = useCallback(async () => {
-    setCargandoMascotas(true);
-    setErrorMascotas('');
-    try {
-      const usuario = await obtenerUsuarioActual();
-      if (!usuario) {
-        throw new Error('Inicia sesión para elegir una mascota.');
+    const opcionesSede: OpcionSelector[] = useMemo(
+      () =>
+        sedesVeterinaria.map((nombre) => ({
+          valor: nombre,
+          titulo: nombre,
+        })),
+      []
+    );
+
+    const opcionesMascota: OpcionSelector[] = useMemo(
+      () =>
+        mascotas.map((mascota) => ({
+          valor: String(mascota.id),
+          titulo: mascota.nombre,
+          detalle: descripcionEspecieMascota(mascota.especie, mascota.raza),
+          foto: mascota.foto,
+        })),
+      [mascotas]
+    );
+
+    const sedeSeleccionada = useMemo(
+      () => opcionesSede.find((opcion) => opcion.valor === sede) ?? null,
+      [opcionesSede, sede]
+    );
+
+    // Con mascotaIdFija el selector queda bloqueado en esa mascota, que es lo que
+    // se usa al agendar el seguimiento de un turno ya atendido.
+    const mascotaSeleccionada = useMemo(
+      () =>
+        opcionesMascota.find(
+          (opcion) => opcion.valor === String(mascotaIdFija ?? mascotaId)
+        ) ?? null,
+      [mascotaId, mascotaIdFija, opcionesMascota]
+    );
+
+    const ahora = new Date();
+    const hoyValor = fechaComoValor(ahora);
+    const ahoraMinutos = ahora.getHours() * 60 + ahora.getMinutes();
+    const dias = useMemo(() => construirDias(mesVisible), [mesVisible]);
+
+    const ocupadosPorDia = useMemo(() => {
+      const conteo = new Map<string, number>();
+      for (const slot of horariosOcupados) {
+        if (!horariosDisponibles.includes(slot.hora)) continue;
+        conteo.set(slot.fecha, (conteo.get(slot.fecha) ?? 0) + 1);
       }
-      const response = await fetch(
-        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
-      );
-      const resultado: unknown = await response.json();
-      if (!response.ok) {
-        setMascotas([]);
-        setErrorMascotas(mensajeApi(resultado) ?? 'No se pudieron cargar tus mascotas.');
-        return;
+      return conteo;
+    }, [horariosOcupados]);
+
+    const ocupadosDia = useMemo(
+      () =>
+        new Set(
+          horariosOcupados
+            .filter(
+              (slot) => slot.fecha === fechaSeleccionada && horariosDisponibles.includes(slot.hora)
+            )
+            .map((slot) => slot.hora)
+        ),
+      [fechaSeleccionada, horariosOcupados]
+    );
+
+    const moverMes = (cantidad: number) => {
+      setFechaSeleccionada('');
+      setHoraSeleccionada('');
+      setMesVisible((actual) => new Date(actual.getFullYear(), actual.getMonth() + cantidad, 1));
+    };
+
+    const hayHorasLibres = horariosDisponibles.some(
+      (hora) =>
+        !ocupadosDia.has(hora) &&
+        !(fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos)
+    );
+
+    const confirmar = useCallback(async (): Promise<boolean> => {
+      if (guardando) return false;
+      setMensajeError('');
+
+      const mascotaAUsar = mascotaIdFija ?? mascotaId;
+
+      if (mascotaAUsar === null || !mascotaSeleccionada) {
+        setMensajeError('Elegí la mascota del turno.');
+        return false;
       }
-      if (!Array.isArray(resultado) || !resultado.every(esMascotaPropia)) {
-        throw new Error('La API devolvió mascotas inválidas.');
+      if (!tipo) {
+        setMensajeError('Elegí el tipo de turno.');
+        return false;
       }
-      setMascotas(resultado);
-      setMascotaId((seleccionActual) =>
-        resultado.some((mascota: MascotaPropia) => mascota.id === seleccionActual)
-          ? seleccionActual
-          : null
-      );
-    } catch (requestError) {
-      setMascotas([]);
-      setErrorMascotas(
-        requestError instanceof TypeError
-          ? apiUnreachableMessage(requestError)
-          : requestError instanceof Error
-            ? requestError.message
-            : apiUnreachableMessage(requestError)
-      );
-    } finally {
-      setCargandoMascotas(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void cargarMascotas();
-    }, [cargarMascotas])
-  );
-
-  const opcionesSede: OpcionSelector[] = useMemo(
-    () =>
-      sedesVeterinaria.map((nombre) => ({
-        valor: nombre,
-        titulo: nombre,
-      })),
-    []
-  );
-
-  const opcionesMascota: OpcionSelector[] = useMemo(
-    () =>
-      mascotas.map((mascota) => ({
-        valor: String(mascota.id),
-        titulo: mascota.nombre,
-        detalle: descripcionEspecieMascota(mascota.especie, mascota.raza),
-        foto: mascota.foto,
-      })),
-    [mascotas]
-  );
-
-  const sedeSeleccionada = useMemo(
-    () => opcionesSede.find((opcion) => opcion.valor === sede) ?? null,
-    [opcionesSede, sede]
-  );
-
-  const mascotaSeleccionada = useMemo(
-    () =>
-      mascotaId === null
-        ? null
-        : opcionesMascota.find((opcion) => opcion.valor === String(mascotaId)) ?? null,
-    [mascotaId, opcionesMascota]
-  );
-
-  const ahora = new Date();
-  const hoyValor = fechaComoValor(ahora);
-  const ahoraMinutos = ahora.getHours() * 60 + ahora.getMinutes();
-  const dias = useMemo(() => construirDias(mesVisible), [mesVisible]);
-
-  const ocupadosPorDia = useMemo(() => {
-    const conteo = new Map<string, number>();
-    for (const slot of horariosOcupados) {
-      if (!horariosDisponibles.includes(slot.hora)) continue;
-      conteo.set(slot.fecha, (conteo.get(slot.fecha) ?? 0) + 1);
-    }
-    return conteo;
-  }, [horariosOcupados]);
-
-  const ocupadosDia = useMemo(
-    () =>
-      new Set(
-        horariosOcupados
-          .filter(
-            (slot) => slot.fecha === fechaSeleccionada && horariosDisponibles.includes(slot.hora)
-          )
-          .map((slot) => slot.hora)
-      ),
-    [fechaSeleccionada, horariosOcupados]
-  );
-
-  const moverMes = (cantidad: number) => {
-    setFechaSeleccionada('');
-    setHoraSeleccionada('');
-    setMesVisible((actual) => new Date(actual.getFullYear(), actual.getMonth() + cantidad, 1));
-  };
-
-  const hayHorasLibres = horariosDisponibles.some(
-    (hora) =>
-      !ocupadosDia.has(hora) &&
-      !(fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos)
-  );
-
-  const confirmar = async () => {
-    if (guardando) return;
-    setMensajeError('');
-
-    if (mascotaId === null || !mascotaSeleccionada) {
-      setMensajeError('Elegí la mascota del turno.');
-      return;
-    }
-    if (!tipo) {
-      setMensajeError('Elegí el tipo de turno.');
-      return;
-    }
-    if (!fechaSeleccionada) {
-      setMensajeError('Elegí una fecha en el calendario.');
-      return;
-    }
-    if (!horaSeleccionada) {
-      setMensajeError('Elegí un horario disponible.');
-      return;
-    }
-    if (ocupadosDia.has(horaSeleccionada)) {
-      setMensajeError('Ese horario está ocupado. Elegí otro disponible.');
-      return;
-    }
-    if (fechaSeleccionada === hoyValor && horaComoMinutos(horaSeleccionada) <= ahoraMinutos) {
-      setMensajeError('Ese horario ya pasó. Elegí otro disponible.');
-      return;
-    }
-
-    setGuardando(true);
-    try {
-      const usuario = await obtenerUsuarioActual();
-      if (!usuario) {
-        throw new Error('Inicia sesión para guardar el turno.');
+      if (!fechaSeleccionada) {
+        setMensajeError('Elegí una fecha en el calendario.');
+        return false;
       }
-      const response = await fetch(`${API_BASE_URL}/api/turnos`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${usuario.accessToken}`,
-        },
-        body: JSON.stringify({
-          userId: usuario.id,
-          mascotaId,
+      if (!horaSeleccionada) {
+        setMensajeError('Elegí un horario disponible.');
+        return false;
+      }
+      if (ocupadosDia.has(horaSeleccionada)) {
+        setMensajeError('Ese horario está ocupado. Elegí otro disponible.');
+        return false;
+      }
+      if (fechaSeleccionada === hoyValor && horaComoMinutos(horaSeleccionada) <= ahoraMinutos) {
+        setMensajeError('Ese horario ya pasó. Elegí otro disponible.');
+        return false;
+      }
+
+      setGuardando(true);
+      try {
+        const usuario = await obtenerUsuarioActual();
+        if (!usuario) {
+          throw new Error('Inicia sesión para guardar el turno.');
+        }
+        const response = await fetch(`${API_BASE_URL}/api/turnos`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${usuario.accessToken}`,
+          },
+          body: JSON.stringify({
+            userId: usuario.id,
+            mascotaId: mascotaAUsar,
+            tipo,
+            sede,
+            fecha: fechaSeleccionada,
+            hora: horaSeleccionada,
+          }),
+        });
+        const resultado: unknown = await response.json().catch(() => null);
+        if (!response.ok) {
+          setMensajeError(
+            mensajeApi(resultado) ??
+              (response.status === 404
+                ? 'La API no reconoce el guardado de turnos. Reinicia el backend desde la carpeta backend.'
+                : `No se pudo guardar el turno (error ${response.status}).`)
+          );
+          if (response.status === 409) {
+            setHoraSeleccionada('');
+            void cargarDisponibilidad();
+          }
+          return false;
+        }
+
+        const mascota = mascotas.find((item) => item.id === mascotaAUsar);
+        setTurnoCreado({
+          mascota: mascota?.nombre ?? mascotaSeleccionada.titulo,
+          especie: mascotaSeleccionada.detalle ?? '',
           tipo,
           sede,
           fecha: fechaSeleccionada,
           hora: horaSeleccionada,
-        }),
-      });
-      const resultado: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
+        });
+        setHoraSeleccionada('');
+        void cargarDisponibilidad();
+        onTurnoGuardado?.();
+        return true;
+      } catch (requestError) {
         setMensajeError(
-          mensajeApi(resultado) ??
-            (response.status === 404
-              ? 'La API no reconoce el guardado de turnos. Reinicia el backend desde la carpeta backend.'
-              : `No se pudo guardar el turno (error ${response.status}).`)
+          requestError instanceof TypeError
+            ? apiUnreachableMessage(requestError)
+            : requestError instanceof Error
+              ? requestError.message
+              : apiUnreachableMessage(requestError)
         );
-        if (response.status === 409) {
-          setHoraSeleccionada('');
-          void cargarDisponibilidad();
-        }
-        return;
+        return false;
+      } finally {
+        setGuardando(false);
       }
+    }, [
+      ahoraMinutos,
+      cargarDisponibilidad,
+      fechaSeleccionada,
+      guardando,
+      horaSeleccionada,
+      hoyValor,
+      mascotas,
+      mascotaId,
+      mascotaIdFija,
+      mascotaSeleccionada,
+      onTurnoGuardado,
+      ocupadosDia,
+      sede,
+      tipo,
+    ]);
 
-      const mascota = mascotas.find((item) => item.id === mascotaId);
-      setTurnoCreado({
-        mascota: mascota?.nombre ?? mascotaSeleccionada.titulo,
-        especie: mascotaSeleccionada.detalle ?? '',
-        tipo,
-        sede,
-        fecha: fechaSeleccionada,
-        hora: horaSeleccionada,
-      });
-      setHoraSeleccionada('');
-      void cargarDisponibilidad();
-      onTurnoGuardado?.();
-    } catch (requestError) {
-      setMensajeError(
-        requestError instanceof TypeError
-          ? apiUnreachableMessage(requestError)
-          : requestError instanceof Error
-            ? requestError.message
-            : apiUnreachableMessage(requestError)
+    const cerrarAviso = () => {
+      setTurnoCreado(null);
+      onTurnoCerrado?.();
+    };
+
+    const puedeConfirmar =
+      !guardando &&
+      !cargando &&
+      !error &&
+      mascotaSeleccionada !== null &&
+      tipo !== '' &&
+      fechaSeleccionada !== '' &&
+      horaSeleccionada !== '' &&
+      !ocupadosDia.has(horaSeleccionada) &&
+      !(
+        fechaSeleccionada === hoyValor &&
+        horaComoMinutos(horaSeleccionada) <= ahoraMinutos
       );
-    } finally {
-      setGuardando(false);
-    }
-  };
 
-  const cerrarAviso = () => {
-    setTurnoCreado(null);
-    onTurnoCerrado?.();
-  };
+    // La pantalla de atencion guarda el turno de seguimiento con su propio
+    // boton, asi que le prestamos el guardado y le decimos si esta completo.
+    useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar }));
 
-  const puedeConfirmar =
-    !guardando &&
-    !cargando &&
-    !error &&
-    mascotaId !== null &&
-    tipo !== '' &&
-    fechaSeleccionada !== '' &&
-    horaSeleccionada !== '' &&
-    !ocupadosDia.has(horaSeleccionada) &&
-    !(
-      fechaSeleccionada === hoyValor &&
-      horaComoMinutos(horaSeleccionada) <= ahoraMinutos
-    );
+    // Medidas que se comprimen con la escala para que el formulario entre entero.
+    // En modo compacto los pisos son mas bajos porque la agenda va dentro de otra
+    // pantalla y no hay espacio para holguras.
+    const altoDia = Math.max(compacta ? 24 : 30, Math.round((compacta ? 32 : 36) * escala));
+    const altoSlot = Math.max(compacta ? 26 : 31, Math.round((compacta ? 32 : 36) * escala));
+    const diaText = Math.max(compacta ? 10 : 11, Math.round((compacta ? 12 : 13) * escala));
+    const slotText = Math.max(compacta ? 9 : 10, Math.round((compacta ? 11 : 12) * escala));
+    const gapSlot = Math.max(compacta ? 3 : 4, Math.round(5 * escala));
 
-  // Medidas que se comprimen con la escala para que el formulario entre entero.
-const altoDia = Math.max(30, Math.round(36 * escala));
-const altoSlot = Math.max(31, Math.round(36 * escala));
-const diaText = Math.max(11, Math.round(13 * escala));
-const slotText = Math.max(10, Math.round(12 * escala));
+    // Cuando sede y mascota vienen fijas ya se saben: la pantalla de atencion
+    // las muestra en el encabezado, asi que repetirlas aca es al pedo.
+    const ocultarFilaCampos = compacta && sedeFija !== null && mascotaIdFija !== null;
 
-const cuerpoAgenda: ReactNode = (
-    <>
-      <View style={styles.filaCampos}>
-        <View style={styles.columnaCampo}>
-          <SelectorCampo
-            label="Sede"
-            icono="location-outline"
-            placeholder="Elegí una sede"
-            opciones={opcionesSede}
-            seleccion={sedeSeleccionada}
-            onSelect={(opcion) => {
-              if (opcion.valor === sede) return;
-              setSede(opcion.valor as SedeVeterinaria);
-              setFechaSeleccionada('');
-              setHoraSeleccionada('');
-              setMensajeError('');
-            }}
-            compacto
-            accessibilityLabel="Elegir sede de la veterinaria"
-          />
-        </View>
-
-        <View style={styles.columnaCampo}>
-          <SelectorCampo
-            label="Mascota"
-            icono="paw-outline"
-            placeholder="Elegí una mascota"
-            opciones={opcionesMascota}
-            seleccion={mascotaSeleccionada}
-            onSelect={(opcion) => {
-              const elegido = Number(opcion.valor);
-              if (elegido === mascotaId) return;
-              setMascotaId(elegido);
-              setHoraSeleccionada('');
-              setMensajeError('');
-            }}
-            compacto
-            cargando={cargandoMascotas}
-            vacio={errorMascotas || 'Todavía no tenés mascotas. Registrá una para agendar.'}
-            accessibilityLabel="Elegir mascota del turno"
-          />
-        </View>
-      </View>
-
-      <Text style={styles.label}>Tipo de turno</Text>
-      <View style={styles.tiposFila}>
-        {tiposTurno.map((opcion) => {
-          const seleccionado = tipo === opcion;
-          return (
-            <Pressable
-              key={opcion}
-              style={({ pressed }) => [
-                styles.tipoOpcion,
-                seleccionado && styles.tipoOpcionSeleccionada,
-                pressed && estilos.buttonPressed,
-              ]}
-              onPress={() => {
-                setTipo(opcion);
-                setMensajeError('');
-              }}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: seleccionado }}
-              accessibilityLabel={opcion}
-            >
-              <Text style={[styles.tipoTexto, seleccionado && styles.tipoTextoSeleccionado]}>
-                {opcion}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.monthRow}>
-        <Pressable
-          style={styles.monthButton}
-          onPress={() => moverMes(-1)}
-          accessibilityRole="button"
-          accessibilityLabel="Mes anterior"
-        >
-          <Text style={styles.arrow}>‹</Text>
-        </Pressable>
-        <Text style={styles.month}>
-          {mesVisible.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
-        </Text>
-        <Pressable
-          style={styles.monthButton}
-          onPress={() => moverMes(1)}
-          accessibilityRole="button"
-          accessibilityLabel="Mes siguiente"
-        >
-          <Text style={styles.arrow}>›</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.calendar}>
-        {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, index) => (
-          <Text key={`weekday-${index}`} style={styles.weekday}>
-            {dia}
-          </Text>
-        ))}
-        {dias.map((dia, index) => {
-          if (dia === null) return <View key={`empty-${index}`} style={styles.day} />;
-          const date = new Date(mesVisible.getFullYear(), mesVisible.getMonth(), dia);
-          const value = fechaComoValor(date);
-          const ocupados = ocupadosPorDia.get(value) ?? 0;
-          const esPasado = value < hoyValor;
-          const esDomingo = date.getDay() === 0;
-          const completo = ocupados >= horariosDisponibles.length;
-          const deshabilitado = esPasado || esDomingo || completo || cargando || Boolean(error);
-          const seleccionado = fechaSeleccionada === value;
-          const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
-          return (
-            <Pressable
-              key={`day-${dia}`}
-              style={[styles.day, { height: altoDia }, seleccionado && styles.selectedDay]}
-              onPress={() => {
-                setFechaSeleccionada(value);
-                setHoraSeleccionada('');
-                setMensajeError('');
-              }}
-              disabled={deshabilitado}
-              accessibilityRole="button"
-              accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-              accessibilityLabel={`${dia} de ${nombreMes}${ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}${completo ? ', sin horarios' : ''}`}
-            >
-              <Text
-                style={[
-                  styles.dayText,
-                  { fontSize: diaText },
-                  seleccionado && styles.selectedText,
-                  deshabilitado && !seleccionado && styles.disabledText,
-                ]}
-              >
-                {dia}
-              </Text>
-              {ocupados > 0 && !seleccionado ? <View style={styles.busyDot} /> : null}
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.legend}>
-        <View style={styles.legendLibre} />
-        <Text style={styles.legendText}>Libre</Text>
-        <View style={styles.legendOcupado} />
-        <Text style={styles.legendText}>Ocupado</Text>
-        <View style={styles.legendPasado} />
-        <Text style={styles.legendText}>Pasado</Text>
-      </View>
-
-      <View style={styles.timesSection}>
-        <Text style={styles.timesTitle}>
-          Horarios del{' '}
-          {fechaSeleccionada
-            ? new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR')
-            : 'día seleccionado'}
-        </Text>
-        {cargando ? (
-          <ActivityIndicator color="#0f3e17" style={styles.cargandoBloque} />
-        ) : error ? (
-          <Text style={estilos.cardSubtitle}>{error}</Text>
-        ) : !fechaSeleccionada ? (
-          <Text style={estilos.cardSubtitle}>Elegí una fecha para ver los horarios.</Text>
-        ) : (
-          <View>
-            {!hayHorasLibres ? (
-              <Text style={styles.sinHoras}>
-                No quedan horarios libres para esta fecha. Probá con otro día.
-              </Text>
-            ) : null}
-            <View style={[styles.slotsGrid, { gap: Math.max(4, Math.round(5 * escala)) }]}>
-              {horariosDisponibles.map((hora) => {
-                const ocupado = ocupadosDia.has(hora);
-                const pasado =
-                  fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos;
-                const deshabilitado = ocupado || pasado || guardando;
-                const seleccionado = horaSeleccionada === hora;
-                return (
-                  <Pressable
-                    key={hora}
-                    disabled={deshabilitado}
-                    onPress={() => {
-                      setHoraSeleccionada(hora);
-                      setMensajeError('');
-                    }}
-                    style={({ pressed }) => [
-                      styles.slot,
-                      { minHeight: altoSlot },
-                      seleccionado && styles.slotSeleccionado,
-                      ocupado && styles.slotOcupado,
-                      pasado && !ocupado && styles.slotPasado,
-                      pressed && !deshabilitado && estilos.buttonPressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                    accessibilityLabel={`${hora}${ocupado ? ', ocupado' : pasado ? ', no disponible' : ', disponible'}`}
+    const cuerpoAgenda: ReactNode = (
+      <>
+        {ocultarFilaCampos ? null : (
+          <View style={styles.filaCampos}>
+            <View style={styles.columnaCampo}>
+              {sedeFija ? (
+                <>
+                  {compacta ? null : <Text style={styles.label}>Sede</Text>}
+                  <View
+                    style={[styles.mascotaFijaCampo, compacta && styles.mascotaFijaCampoCompacto]}
+                    accessibilityLabel={`Sede ${sedeFija}`}
                   >
+                    <View style={[styles.mascotaFijaIcono, compacta && styles.mascotaFijaIconoCompacto]}>
+                      <Ionicons name="location" size={14} color="#0f3e17" />
+                    </View>
                     <Text
-                      style={[
-                        styles.slotText,
-                        { fontSize: slotText },
-                        seleccionado && styles.slotTextSeleccionado,
-                        ocupado && styles.slotTextOcupado,
-                        pasado && !ocupado && styles.slotTextPasado,
-                      ]}
+                      style={[styles.mascotaFijaTexto, compacta && styles.mascotaFijaTextoCompacto]}
+                      numberOfLines={1}
                     >
-                      {hora}
+                      {sedeFija}
                     </Text>
-                    {ocupado ? (
-                      <View style={styles.slotIcono}>
-                        <Ionicons name="lock-closed" size={9} color={colorOcupadoTexto} />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
+                  </View>
+                </>
+              ) : (
+                <SelectorCampo
+                  label="Sede"
+                  icono="location-outline"
+                  placeholder="Elegí una sede"
+                  opciones={opcionesSede}
+                  seleccion={sedeSeleccionada}
+                  onSelect={(opcion) => {
+                    if (opcion.valor === sede) return;
+                    setSede(opcion.valor as SedeVeterinaria);
+                    setFechaSeleccionada('');
+                    setHoraSeleccionada('');
+                    setMensajeError('');
+                  }}
+                  compacto
+                  accessibilityLabel="Elegir sede de la veterinaria"
+                />
+              )}
             </View>
-          </View>
-        )}
-      </View>
 
-      {mensajeError ? (
-        <Text accessibilityRole="alert" style={styles.mensajeError}>
-          {mensajeError}
-        </Text>
-      ) : null}
-
-      <Pressable
-        style={({ pressed }) => [
-          styles.confirmar,
-          !puedeConfirmar && estilos.buttonPressed,
-          pressed && puedeConfirmar && estilos.buttonPressed,
-        ]}
-        onPress={() => void confirmar()}
-        disabled={!puedeConfirmar}
-        accessibilityRole="button"
-        accessibilityLabel="Guardar turno"
-        accessibilityState={{ disabled: !puedeConfirmar, busy: guardando }}
-      >
-        <Text style={styles.confirmarTexto}>
-          {guardando ? 'Guardando...' : 'Guardar turno'}
-        </Text>
-      </Pressable>
-    </>
-  );
-
-  return (
-    <>
-      <View style={styles.card}>{cuerpoAgenda}</View>
-
-      <Modal
-        visible={turnoCreado !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={cerrarAviso}
-      >
-        <View style={styles.avisoRaiz}>
-          <Pressable
-            style={styles.avisoFondo}
-            onPress={cerrarAviso}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar aviso"
-          />
-
-          {turnoCreado && (
-            <View style={styles.aviso}>
-              <View style={styles.avisoIcono}>
-                <Ionicons name="checkmark" size={38} color="#fffefc" />
-              </View>
-
-              <Text style={styles.avisoTitulo}>¡Turno creado con éxito!</Text>
-              <Text style={styles.avisoSubtitulo}>
-                Guardamos el turno de {turnoCreado.mascota}
-                {turnoCreado.especie ? ` · ${turnoCreado.especie}` : ''}.
-              </Text>
-
-              <View style={styles.avisoDatos}>
-                <View style={styles.avisoDato}>
-                  <Ionicons name="medical-outline" size={17} color="#0f3e17" />
-                  <Text style={styles.avisoDatoTexto}>{turnoCreado.tipo}</Text>
-                </View>
-                <View style={styles.avisoDato}>
-                  <Ionicons name="calendar-outline" size={17} color="#0f3e17" />
-                  <Text style={styles.avisoDatoTexto}>
-                    {new Date(`${turnoCreado.fecha}T12:00:00`).toLocaleDateString('es-AR', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                    })}
+            {mascotaIdFija || mascotaNombreFija ? (
+              <View style={styles.columnaCampo}>
+                {compacta ? null : <Text style={styles.label}>Mascota</Text>}
+                <View
+                  style={[styles.mascotaFijaCampo, compacta && styles.mascotaFijaCampoCompacto]}
+                  accessibilityLabel={`Mascota ${
+                    mascotaSeleccionada?.titulo ?? mascotaNombreFija ?? 'del turno'
+                  }`}
+                >
+                  <View style={[styles.mascotaFijaIcono, compacta && styles.mascotaFijaIconoCompacto]}>
+                    <Ionicons name="paw" size={15} color="#5f7d63" />
+                  </View>
+                  <Text
+                    style={[styles.mascotaFijaTexto, compacta && styles.mascotaFijaTextoCompacto]}
+                    numberOfLines={1}
+                  >
+                    {mascotaSeleccionada?.titulo ?? mascotaNombreFija ?? 'Mascota del turno'}
                   </Text>
                 </View>
-                <View style={styles.avisoDato}>
-                  <Ionicons name="time-outline" size={17} color="#0f3e17" />
-                  <Text style={styles.avisoDatoTexto}>{turnoCreado.hora} hs</Text>
-                </View>
-                <View style={styles.avisoDato}>
-                  <Ionicons name="location-outline" size={17} color="#0f3e17" />
-                  <Text style={styles.avisoDatoTexto}>{turnoCreado.sede}</Text>
-                </View>
               </View>
+            ) : (
+              <View style={styles.columnaCampo}>
+                <SelectorCampo
+                  label="Mascota"
+                  icono="paw-outline"
+                  placeholder="Elegí una mascota"
+                  opciones={opcionesMascota}
+                  seleccion={mascotaSeleccionada}
+                  onSelect={(opcion) => {
+                    const elegido = Number(opcion.valor);
+                    if (elegido === mascotaId) return;
+                    setMascotaId(elegido);
+                    setHoraSeleccionada('');
+                    setMensajeError('');
+                  }}
+                  compacto
+                  cargando={cargandoMascotas}
+                  vacio={errorMascotas || 'Todavía no tenés mascotas. Registrá una para agendar.'}
+                  accessibilityLabel="Elegir mascota del turno"
+                />
+              </View>
+          )}
+          </View>
+        )}
 
+        {compacta ? null : <Text style={styles.label}>Tipo de turno</Text>}
+        <View style={[styles.tiposFila, compacta && styles.tiposFilaCompacto]}>
+          {tiposTurno.map((opcion) => {
+            const seleccionado = tipo === opcion;
+            return (
               <Pressable
-                style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
-                onPress={cerrarAviso}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar y ver mis turnos"
+                key={opcion}
+                style={({ pressed }) => [
+                  styles.tipoOpcion,
+                  compacta && styles.tipoOpcionCompacto,
+                  seleccionado && styles.tipoOpcionSeleccionada,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => {
+                  setTipo(opcion);
+                  setMensajeError('');
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: seleccionado }}
+                accessibilityLabel={opcion}
               >
-                <Text style={styles.avisoBotonTexto}>Listo</Text>
+                <Text style={[styles.tipoTexto, seleccionado && styles.tipoTextoSeleccionado]}>
+                  {opcion}
+                </Text>
               </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={[styles.monthRow, compacta && styles.monthRowCompacto]}>
+          <Pressable
+            style={styles.monthButton}
+            onPress={() => moverMes(-1)}
+            accessibilityRole="button"
+            accessibilityLabel="Mes anterior"
+          >
+            <Text style={[styles.arrow, compacta && styles.arrowCompacto]}>‹</Text>
+          </Pressable>
+          <Text style={[styles.month, compacta && styles.monthCompacto]}>
+            {mesVisible.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
+          </Text>
+          <Pressable
+            style={styles.monthButton}
+            onPress={() => moverMes(1)}
+            accessibilityRole="button"
+            accessibilityLabel="Mes siguiente"
+          >
+            <Text style={[styles.arrow, compacta && styles.arrowCompacto]}>›</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.calendar}>
+          {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, index) => (
+            <Text
+              key={`weekday-${index}`}
+              style={[styles.weekday, compacta && styles.weekdayCompacto]}
+            >
+              {dia}
+            </Text>
+          ))}
+          {dias.map((dia, index) => {
+            if (dia === null) return <View key={`empty-${index}`} style={styles.day} />;
+            const date = new Date(mesVisible.getFullYear(), mesVisible.getMonth(), dia);
+            const value = fechaComoValor(date);
+            const ocupados = ocupadosPorDia.get(value) ?? 0;
+            const esPasado = value < hoyValor;
+            const esDomingo = date.getDay() === 0;
+            const completo = ocupados >= horariosDisponibles.length;
+            const deshabilitado = esPasado || esDomingo || completo || cargando || Boolean(error);
+            const seleccionado = fechaSeleccionada === value;
+            const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
+            return (
+              <Pressable
+                key={`day-${dia}`}
+                style={[styles.day, { height: altoDia }, seleccionado && styles.selectedDay]}
+                onPress={() => {
+                  setFechaSeleccionada(value);
+                  setHoraSeleccionada('');
+                  setMensajeError('');
+                }}
+                disabled={deshabilitado}
+                accessibilityRole="button"
+                accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
+                accessibilityLabel={`${dia} de ${nombreMes}${ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}${completo ? ', sin horarios' : ''}`}
+              >
+                <Text
+                  style={[
+                    styles.dayText,
+                    { fontSize: diaText },
+                    seleccionado && styles.selectedText,
+                    deshabilitado && !seleccionado && styles.disabledText,
+                  ]}
+                >
+                  {dia}
+                </Text>
+                {ocupados > 0 && !seleccionado ? <View style={styles.busyDot} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {compacta ? null : (
+          <View style={styles.legend}>
+            <View style={styles.legendLibre} />
+            <Text style={styles.legendText}>Libre</Text>
+            <View style={styles.legendOcupado} />
+            <Text style={styles.legendText}>Ocupado</Text>
+            <View style={styles.legendPasado} />
+            <Text style={styles.legendText}>Pasado</Text>
+          </View>
+        )}
+
+        <View style={[styles.timesSection, compacta && styles.timesSectionCompacto]}>
+          {/* En compacto el dia ya se ve marcado en el calendario, asi que el
+              titulo con la fecha es al第四次. */}
+          {compacta ? null : (
+            <Text style={styles.timesTitle}>
+              Horarios del{' '}
+              {fechaSeleccionada
+                ? new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR')
+                : 'día seleccionado'}
+            </Text>
+          )}
+          {cargando ? (
+            <ActivityIndicator color="#0f3e17" style={styles.cargandoBloque} />
+          ) : error ? (
+            <Text style={estilos.cardSubtitle}>{error}</Text>
+          ) : !fechaSeleccionada ? (
+            <Text style={estilos.cardSubtitle}>Elegí una fecha para ver los horarios.</Text>
+          ) : (
+            <View>
+              {!hayHorasLibres ? (
+                <Text style={styles.sinHoras}>
+                  No quedan horarios libres para esta fecha. Probá con otro día.
+                </Text>
+              ) : null}
+              <View style={[styles.slotsGrid, { gap: gapSlot }]}>
+                {horariosDisponibles.map((hora) => {
+                  const ocupado = ocupadosDia.has(hora);
+                  const pasado =
+                    fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos;
+                  const deshabilitado = ocupado || pasado || guardando;
+                  const seleccionado = horaSeleccionada === hora;
+                  return (
+                    <Pressable
+                      key={hora}
+                      disabled={deshabilitado}
+                      onPress={() => {
+                        setHoraSeleccionada(hora);
+                        setMensajeError('');
+                      }}
+                      style={({ pressed }) => [
+                        styles.slot,
+                        { minHeight: altoSlot },
+                        seleccionado && styles.slotSeleccionado,
+                        ocupado && styles.slotOcupado,
+                        pasado && !ocupado && styles.slotPasado,
+                        pressed && !deshabilitado && estilos.buttonPressed,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
+                      accessibilityLabel={`${hora}${ocupado ? ', ocupado' : pasado ? ', no disponible' : ', disponible'}`}
+                    >
+                      <Text
+                        style={[
+                          styles.slotText,
+                          { fontSize: slotText },
+                          seleccionado && styles.slotTextSeleccionado,
+                          ocupado && styles.slotTextOcupado,
+                          pasado && !ocupado && styles.slotTextPasado,
+                        ]}
+                      >
+                        {hora}
+                      </Text>
+                      {ocupado ? (
+                        <View style={styles.slotIcono}>
+                          <Ionicons name="lock-closed" size={9} color={colorOcupadoTexto} />
+                        </View>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           )}
         </View>
-      </Modal>
-    </>
-  );
-}
+
+        {mensajeError ? (
+          <Text accessibilityRole="alert" style={styles.mensajeError}>
+            {mensajeError}
+          </Text>
+        ) : null}
+
+        {ocultarBotonGuardar ? null : (
+          <Pressable
+            style={({ pressed }) => [
+              styles.confirmar,
+              compacta && styles.confirmarCompacto,
+              !puedeConfirmar && estilos.buttonPressed,
+              pressed && puedeConfirmar && estilos.buttonPressed,
+            ]}
+            onPress={() => void confirmar()}
+            disabled={!puedeConfirmar}
+            accessibilityRole="button"
+            accessibilityLabel="Guardar turno"
+            accessibilityState={{ disabled: !puedeConfirmar, busy: guardando }}
+          >
+            <Text style={[styles.confirmarTexto, compacta && styles.confirmarTextoCompacto]}>
+              {guardando ? 'Guardando...' : 'Guardar turno'}
+            </Text>
+          </Pressable>
+        )}
+      </>
+    );
+
+    return (
+      <>
+        <View style={[styles.card, compacta && styles.cardCompacto]}>
+          {titulo && !compacta ? <Text style={styles.titulo}>{titulo}</Text> : null}
+          {cuerpoAgenda}
+        </View>
+
+        <Modal
+          visible={turnoCreado !== null}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={cerrarAviso}
+        >
+          <View style={styles.avisoRaiz}>
+            <Pressable
+              style={styles.avisoFondo}
+              onPress={cerrarAviso}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar aviso"
+            />
+
+            {turnoCreado && (
+              <View style={styles.aviso}>
+                <View style={styles.avisoIcono}>
+                  <Ionicons name="checkmark" size={38} color="#fffefc" />
+                </View>
+
+                <Text style={styles.avisoTitulo}>¡Turno creado con éxito!</Text>
+                <Text style={styles.avisoSubtitulo}>
+                  Guardamos el turno de {turnoCreado.mascota}
+                  {turnoCreado.especie ? ` · ${turnoCreado.especie}` : ''}.
+                </Text>
+
+                <View style={styles.avisoDatos}>
+                  <View style={styles.avisoDato}>
+                    <Ionicons name="medical-outline" size={17} color="#0f3e17" />
+                    <Text style={styles.avisoDatoTexto}>{turnoCreado.tipo}</Text>
+                  </View>
+                  <View style={styles.avisoDato}>
+                    <Ionicons name="calendar-outline" size={17} color="#0f3e17" />
+                    <Text style={styles.avisoDatoTexto}>
+                      {new Date(`${turnoCreado.fecha}T12:00:00`).toLocaleDateString('es-AR', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                      })}
+                    </Text>
+                  </View>
+                  <View style={styles.avisoDato}>
+                    <Ionicons name="time-outline" size={17} color="#0f3e17" />
+                    <Text style={styles.avisoDatoTexto}>{turnoCreado.hora} hs</Text>
+                  </View>
+                  <View style={styles.avisoDato}>
+                    <Ionicons name="location-outline" size={17} color="#0f3e17" />
+                    <Text style={styles.avisoDatoTexto}>{turnoCreado.sede}</Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
+                  onPress={cerrarAviso}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar y ver mis turnos"
+                >
+                  <Text style={styles.avisoBotonTexto}>Listo</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </Modal>
+      </>
+    );
+  }
+)
 
 const styles = StyleSheet.create({
   card: {
@@ -759,9 +900,47 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: '#fffefc',
   },
+  cardCompacto: { paddingHorizontal: 0, paddingBottom: 0 },
+  titulo: {
+    color: '#0f3e17',
+    fontSize: 19,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   campoBloque: { marginBottom: 10 },
   filaCampos: { flexDirection: 'row', gap: 8 },
   columnaCampo: { flex: 1 },
+  mascotaFijaCampo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 52,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#f3f7f1',
+  },
+  mascotaFijaCampoCompacto: {
+    minHeight: 36,
+    gap: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  mascotaFijaIcono: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    backgroundColor: '#e4f1e0',
+  },
+  mascotaFijaIconoCompacto: { width: 22, height: 22, borderRadius: 7 },
+  mascotaFijaTexto: { flex: 1, color: '#1e3326', fontSize: 14, fontWeight: '600' },
+  mascotaFijaTextoCompacto: { fontSize: 13 },
   label: {
     marginBottom: 6,
     color: '#4d6154',
@@ -876,6 +1055,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   tiposFila: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  tiposFilaCompacto: { gap: 5, marginTop: 6, marginBottom: 6 },
   tipoOpcion: {
     flex: 1,
     alignItems: 'center',
@@ -885,6 +1065,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#fffefc',
   },
+  tipoOpcionCompacto: { paddingVertical: 6, borderRadius: 10 },
   tipoOpcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
   tipoTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
   tipoTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
@@ -895,9 +1076,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 8,
   },
+  monthRowCompacto: { marginTop: 6, marginBottom: 4 },
   monthButton: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center' },
   arrow: { color: '#0f3e17', fontSize: 26, fontWeight: '600' },
+  arrowCompacto: { fontSize: 21 },
   month: { color: '#263b32', fontSize: 15, fontWeight: 'bold', textTransform: 'capitalize' },
+  monthCompacto: { fontSize: 14 },
   calendar: { flexDirection: 'row', flexWrap: 'wrap' },
   weekday: {
     width: '14.2857%',
@@ -907,6 +1091,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  weekdayCompacto: { paddingVertical: 1, fontSize: 11 },
   day: {
     width: '14.2857%',
     height: 36,
@@ -959,6 +1144,8 @@ const styles = StyleSheet.create({
   legendText: { color: '#69746a', fontSize: 12, marginRight: 6 },
   timesSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#dfe8db' },
   timesTitle: { marginBottom: 9, color: '#263b32', fontSize: 13, fontWeight: '600' },
+  timesSectionCompacto: { marginTop: 6, paddingTop: 6 },
+  confirmarCompacto: { marginTop: 8, paddingVertical: 10 },
   sinHoras: {
     marginBottom: 9,
     color: '#8a6a4a',
@@ -993,6 +1180,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3e17',
   },
   confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
+  confirmarTextoCompacto: { fontSize: 14 },
   avisoRaiz: {
     flex: 1,
     alignItems: 'center',

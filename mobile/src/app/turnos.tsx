@@ -153,6 +153,7 @@ export default function TurnosScreen() {
 
   const renderTurno = (cita: CitaLista) => (
     <Pressable
+      key={cita.key}
       style={({ pressed }) => [
         estilos.cardTurno,
         cita.atendido && styles.tarjetaAtendida,
@@ -274,16 +275,30 @@ export default function TurnosScreen() {
         <View style={[styles.agendar, { height: altoAgendar }]}>
           <Pressable
             style={({ pressed }) => [styles.agendarBoton, pressed && estilos.buttonPressed]}
-            onPress={() => router.push('/nuevo-turno')}
+            onPress={() =>
+              router.push(
+                esAdmin
+                  ? { pathname: '/admin-turnos-activos', params: { sede: sedeSeleccionada } }
+                  : '/nuevo-turno'
+              )
+            }
             accessibilityRole="link"
-            accessibilityLabel="Agendar turno"
+            accessibilityLabel={esAdmin ? 'Atender pacientes' : 'Agendar turno'}
           >
             <View style={styles.agendarIcono}>
-              <Ionicons name="calendar-outline" size={22} color="#fffefc" />
+              <Ionicons
+                name={esAdmin ? 'medkit-outline' : 'calendar-outline'}
+                size={22}
+                color="#fffefc"
+              />
             </View>
             <View style={styles.agendarTexto}>
-              <Text style={styles.agendarTitulo}>Agendar turno</Text>
-              <Text style={styles.agendarSubtitulo}>Elegí fecha, hora y mascota</Text>
+              <Text style={styles.agendarTitulo}>
+                {esAdmin ? 'Atender pacientes' : 'Agendar turno'}
+              </Text>
+              <Text style={styles.agendarSubtitulo}>
+                {esAdmin ? 'Llegadas que esperan ser atendidas' : 'Elegí fecha, hora y mascota'}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#8aa38c" />
           </Pressable>
