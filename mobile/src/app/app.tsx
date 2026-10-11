@@ -46,6 +46,62 @@ type CitaLista = {
   guardado: TurnoGuardado;
 };
 
+// Turnos de ejemplo que se muestran al admin en "Proximas citas". Son datos
+// fijos, no vienen de la API: son solo para el primer sprint
+type TurnoEjemplo = {
+  nombre: string;
+  especie: string;
+  raza: string | null;
+  motivo: string;
+  hora: string;
+  diasDesdeHoy: number;
+};
+
+const turnosEjemplo: TurnoEjemplo[] = [
+  { nombre: 'Lola', especie: 'Perro', raza: 'Golden', motivo: 'Vacunas', hora: '09:30', diasDesdeHoy: 1 },
+  { nombre: 'Mora', especie: 'Gato', raza: null, motivo: 'Control de rutina', hora: '11:00', diasDesdeHoy: 2 },
+  { nombre: 'Tito', especie: 'Perro', raza: 'Pug', motivo: 'Desparasitación', hora: '16:30', diasDesdeHoy: 3 },
+];
+
+function fechaDeEjemplo(diasDesdeHoy: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + diasDesdeHoy);
+  return [
+    fecha.getFullYear(),
+    String(fecha.getMonth() + 1).padStart(2, '0'),
+    String(fecha.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
+  return turnosEjemplo.map((ejemplo, indice) => {
+    const fecha = fechaDeEjemplo(ejemplo.diasDesdeHoy);
+    return {
+      id: -1000 - indice,
+      key: `ejemplo-${indice}`,
+      mascota: ejemplo.nombre,
+      motivo: ejemplo.motivo,
+      fecha: formatearFechaTurno(fecha, ejemplo.hora),
+      guardado: {
+        id: -1000 - indice,
+        tipo: ejemplo.motivo,
+        sede,
+        fecha,
+        hora: ejemplo.hora,
+        llegadaEn: null,
+        mascotaId: -1000 - indice,
+        mascota: {
+          id: -1000 - indice,
+          nombre: ejemplo.nombre,
+          especie: ejemplo.especie,
+          raza: ejemplo.raza,
+          foto: null,
+        },
+      },
+    };
+  });
+}
+
 // Los accesos rapidos son los mismos para todos. El admin entra a Turnos y
 // desde ahi, con el boton de abajo, pasa a "Atender pacientes".
 const accesosRapidos = [
@@ -152,6 +208,8 @@ export default function InicioScreen() {
 
   const ahora = new Date();
   const citasVisibles: CitaLista[] = [
+    // El admin ve primero los 3 turnos de ejemplo, y despues los reales de la sede.
+    ...(esAdmin ? citasDeEjemplo(sedeSeleccionada) : []),
     ...turnosGuardados
       // El admin filtra por la sede que eligio arriba.
       .filter((turno) => turnoSiguePendiente(turno, ahora))
@@ -239,10 +297,9 @@ export default function InicioScreen() {
     </Pressable>
   );
 
-  // Se usan Pressable con router.push en vez de <Link asChild>: el Slot de
-// expo-router fusiona el style como objeto y destruye los estilos que son
-// funcion ({ pressed }) => [...], dejando la tarjeta sin fondo ni flex.
-const accesos = accesosRapidos;
+  const accesos = esAdmin
+    ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
+    : accesosRapidos;
 
   return (
     <AppDrawer title="VetPro">
@@ -263,7 +320,6 @@ const accesos = accesosRapidos;
           <View>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
-              <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
             </View>
 
             <View style={styles.accesos}>
@@ -508,12 +564,6 @@ const styles = {
     fontSize: 32,
     fontWeight: 'bold' as const,
     marginBottom: 6,
-    textAlign: 'center' as const,
-  },
-  saludoSubtexto: {
-    alignSelf: 'stretch' as const,
-    color: '#556b58',
-    fontSize: 15,
     textAlign: 'center' as const,
   },
   accesos: {
