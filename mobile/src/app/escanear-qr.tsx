@@ -6,7 +6,7 @@ import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { CHECK_IN_QR } from '@/lib/check-in';
+import { sedeDeCheckIn } from '@/lib/check-in';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 export default function EscanearQr() {
@@ -41,8 +41,9 @@ export default function EscanearQr() {
     setProcesando(true);
     setLlegadaRegistrada(false);
     try {
-      if (data !== CHECK_IN_QR) {
-        throw new Error('Este no es el código QR de llegada de VetPro.');
+      const sedeEscaneada = sedeDeCheckIn(data);
+      if (sedeEscaneada === null) {
+        throw new Error('Este no es un código QR de llegada de VetPro.');
       }
       const usuario = await obtenerUsuarioActual();
       if (!usuario) {
@@ -73,7 +74,7 @@ export default function EscanearQr() {
         throw new Error(message);
       }
       setLlegadaRegistrada(true);
-      setResultado('Tu llegada quedó registrada correctamente.');
+      setResultado(`Tu llegada en ${sedeEscaneada} quedó registrada correctamente.`);
     } catch (error) {
       setResultado(
         error instanceof TypeError

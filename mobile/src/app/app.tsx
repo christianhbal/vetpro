@@ -26,7 +26,7 @@ import {
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 import QRCode from 'react-native-qrcode-svg';
-import { CHECK_IN_QR } from '@/lib/check-in';
+import { checkInDeSede } from '@/lib/check-in';
 
 type Mascota = {
   id: number;
@@ -43,8 +43,98 @@ type CitaLista = {
   mascota: string;
   motivo: string;
   fecha: string;
+  dueno: string | null;
+  descripcion: string | null;
   guardado: TurnoGuardado;
 };
+
+// Turnos de ejemplo que se muestran al admin en "Proximas citas". Son datos
+// fijos, no vienen de la API: son solo para el primer sprint
+type TurnoEjemplo = {
+  dueno: string;
+  nombre: string;
+  especie: string;
+  raza: string | null;
+  motivo: string;
+  descripcion: string | null;
+  hora: string;
+  diasDesdeHoy: number;
+};
+
+const turnosEjemplo: TurnoEjemplo[] = [
+  {
+    dueno: 'Ana Gómez',
+    nombre: 'Lola',
+    especie: 'Perro',
+    raza: 'Golden',
+    motivo: 'Vacunas',
+    descripcion: 'Vacunación anual y control de peso.',
+    hora: '09:30',
+    diasDesdeHoy: 1,
+  },
+  {
+    dueno: 'Bruno Díaz',
+    nombre: 'Mora',
+    especie: 'Gato',
+    raza: null,
+    motivo: 'Control de rutina',
+    descripcion: null,
+    hora: '11:00',
+    diasDesdeHoy: 2,
+  },
+  {
+    dueno: 'Carla Ruiz',
+    nombre: 'Tito',
+    especie: 'Perro',
+    raza: 'Pug',
+    motivo: 'Desparasitación',
+    descripcion: 'Desparasitante interno y externo.',
+    hora: '16:30',
+    diasDesdeHoy: 3,
+  },
+];
+
+function fechaDeEjemplo(diasDesdeHoy: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + diasDesdeHoy);
+  return [
+    fecha.getFullYear(),
+    String(fecha.getMonth() + 1).padStart(2, '0'),
+    String(fecha.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
+  return turnosEjemplo.map((ejemplo, indice) => {
+    const fecha = fechaDeEjemplo(ejemplo.diasDesdeHoy);
+    return {
+      id: -1000 - indice,
+      key: `ejemplo-${indice}`,
+      mascota: ejemplo.nombre,
+      motivo: ejemplo.motivo,
+      fecha: formatearFechaTurno(fecha, ejemplo.hora),
+      dueno: ejemplo.dueno,
+      descripcion: ejemplo.descripcion,
+      guardado: {
+        id: -1000 - indice,
+        tipo: ejemplo.motivo,
+        sede,
+        fecha,
+        hora: ejemplo.hora,
+        llegadaEn: null,
+        descripcion: ejemplo.descripcion,
+        mascotaId: -1000 - indice,
+        mascota: {
+          id: -1000 - indice,
+          nombre: ejemplo.nombre,
+          especie: ejemplo.especie,
+          raza: ejemplo.raza,
+          foto: null,
+        },
+      },
+    };
+  });
+}
 
 // Los accesos rapidos son los mismos para todos. El admin entra a Turnos y
 // desde ahi, con el boton de abajo, pasa a "Atender pacientes".
@@ -66,7 +156,9 @@ export default function InicioScreen() {
   const [errorTurnos, setErrorTurnos] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
   const [nombreUsuario, setNombreUsuario] = useState('');
+  const [nombreCompleto, setNombreCompleto] = useState('');
   const [modalQr, setModalQr] = useState(false);
+  const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
   const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
 
   const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
@@ -94,6 +186,7 @@ export default function InicioScreen() {
       }
       setEsAdmin(usuario.esAdmin);
       setNombreUsuario(usuario.nombre.split(' ')[0]);
+      setNombreCompleto(usuario.nombre);
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
@@ -152,6 +245,8 @@ export default function InicioScreen() {
 
   const ahora = new Date();
   const citasVisibles: CitaLista[] = [
+    // El admin ve primero los 3 turnos de ejemplo, y despues los reales de la sede.
+    ...(esAdmin ? citasDeEjemplo(sedeSeleccionada) : []),
     ...turnosGuardados
       // El admin filtra por la sede que eligio arriba.
       .filter((turno) => turnoSiguePendiente(turno, ahora))
@@ -162,6 +257,8 @@ export default function InicioScreen() {
       mascota: turno.mascota.nombre,
       motivo: turno.tipo,
       fecha: formatearFechaTurno(turno.fecha, turno.hora),
+      dueno: nombreCompleto || null,
+      descripcion: turno.descripcion ?? null,
       guardado: turno,
       })),
   ];
@@ -239,10 +336,9 @@ export default function InicioScreen() {
     </Pressable>
   );
 
-  // Se usan Pressable con router.push en vez de <Link asChild>: el Slot de
-// expo-router fusiona el style como objeto y destruye los estilos que son
-// funcion ({ pressed }) => [...], dejando la tarjeta sin fondo ni flex.
-const accesos = accesosRapidos;
+  const accesos = esAdmin
+    ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
+    : accesosRapidos;
 
   return (
     <AppDrawer title="VetPro">
@@ -263,7 +359,6 @@ const accesos = accesosRapidos;
           <View>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
-              <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
             </View>
 
             <View style={styles.accesos}>
@@ -329,7 +424,10 @@ const accesos = accesosRapidos;
               <View style={styles.qrAdminBloque}>
                 <Pressable
                   style={({ pressed }) => [estilos.qrBoton, pressed && estilos.buttonPressed]}
-                  onPress={() => setModalQr(true)}
+                  onPress={() => {
+                    setSedeQr(sedeSeleccionada);
+                    setModalQr(true);
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={`Mostrar el código QR de llegada de ${sedeSeleccionada}`}
                 >
@@ -446,8 +544,23 @@ const accesos = accesosRapidos;
 
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
+              <Text style={estilos.modalText}>
+                Fecha:{' '}
+                {new Date(`${citaSeleccionada.guardado.fecha}T12:00:00`).toLocaleDateString(
+                  'es-AR',
+                  { weekday: 'long', day: 'numeric', month: 'long' }
+                )}
+              </Text>
+              <Text style={estilos.modalText}>Hora: {citaSeleccionada.guardado.hora}</Text>
               <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
-              <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
+              {citaSeleccionada.dueno ? (
+                <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>
+              ) : null}
+              {citaSeleccionada.descripcion ? (
+                <Text style={estilos.modalText}>
+                  Descripción: {citaSeleccionada.descripcion}
+                </Text>
+              ) : null}
             </View>
           )}
         </View>
@@ -485,8 +598,9 @@ const accesos = accesosRapidos;
 
             <View style={styles.qrAdminMarco}>
               <View style={styles.qrAdminSvg}>
-                <QRCode value={CHECK_IN_QR} size={220} />
+                <QRCode value={checkInDeSede(sedeQr)} size={220} />
               </View>
+              <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
           </View>
         </View>
@@ -508,12 +622,6 @@ const styles = {
     fontSize: 32,
     fontWeight: 'bold' as const,
     marginBottom: 6,
-    textAlign: 'center' as const,
-  },
-  saludoSubtexto: {
-    alignSelf: 'stretch' as const,
-    color: '#556b58',
-    fontSize: 15,
     textAlign: 'center' as const,
   },
   accesos: {
@@ -584,6 +692,12 @@ const styles = {
     alignSelf: 'center' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  qrAdminSede: {
+    marginTop: 12,
+    color: '#0f3e17',
+    fontSize: 18,
+    fontWeight: 'bold' as const,
   },
   turnPhotoPlaceholder: {
     width: 56,
