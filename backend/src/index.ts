@@ -34,6 +34,24 @@ function formatearFechaLarga(fecha: string): string {
   return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : fecha;
 }
 
+const SEDES_VALIDAS = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
+
+type Sede = (typeof SEDES_VALIDAS)[number];
+
+// Provisional: la direccion vive en el frontend (admin-sedes). Cuando exista el
+// modelo Sede, esto se reemplaza por una consulta a la base.
+const DIRECCIONES_SEDE: Record<string, string> = {
+  Recoleta: 'Av. Recoleta 1234',
+  'San Isidro': 'Av. Centenario 2450',
+  'Vicente López': 'Av. del Libertador 1580',
+};
+
+/** "Recoleta" -> "Recoleta (Av. Recoleta 1234)". */
+function sedeConDireccion(sede: string): string {
+  const direccion = DIRECCIONES_SEDE[sede];
+  return direccion ? `${sede} (${direccion})` : sede;
+}
+
 function isValidDateOnly(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -219,7 +237,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
             userId: turno.userId,
             turnoId: turno.id,
             title: 'Tu turno se acerca',
-            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${turno.sede}.`,
+            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sedeConDireccion(turno.sede)}.`,
           },
         });
       });
@@ -422,9 +440,6 @@ app.delete('/api/mascotas/:id', async (request, response) => {
 // -----------------------------------------------------------------------------
 
 const PREFIJO_CHECK_IN = 'vetpro://check-in';
-const SEDES_VALIDAS = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
-
-type Sede = (typeof SEDES_VALIDAS)[number];
 
 /**
  * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
@@ -537,7 +552,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
     });
     if (!turno) {
       return response.status(404).json({
-        message: `No tienes turnos para hoy en ${sede}.`,
+        message: `No tienes turnos para hoy en ${sedeConDireccion(sede)}.`,
       });
     }
 
