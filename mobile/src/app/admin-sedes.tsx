@@ -179,7 +179,7 @@ export default function AdminSedesScreen() {
                   onPress={guardar}
                   accessibilityRole="button"
                 >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Guardar</Text>
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Guardar cambios</Text>
                 </Pressable>
               </View>
 

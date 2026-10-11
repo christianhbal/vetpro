@@ -39,6 +39,78 @@ type TurnoAdministrado = {
 
 type HorarioOcupado = { fecha: string; hora: string };
 
+type TurnoEjemplo = {
+  dueno: string;
+  email: string;
+  mascota: string;
+  especie: string;
+  raza: string | null;
+  tipo: string;
+  hora: string;
+  diasDesdeHoy: number;
+};
+
+const turnosEjemplo: TurnoEjemplo[] = [
+  {
+    dueno: 'Ana Gómez',
+    email: 'ana@correo.com',
+    mascota: 'Lola',
+    especie: 'Perro',
+    raza: 'Golden',
+    tipo: 'Vacunas',
+    hora: '09:30',
+    diasDesdeHoy: 1,
+  },
+  {
+    dueno: 'Bruno Díaz',
+    email: 'bruno@correo.com',
+    mascota: 'Mora',
+    especie: 'Gato',
+    raza: null,
+    tipo: 'Control',
+    hora: '11:00',
+    diasDesdeHoy: 2,
+  },
+  {
+    dueno: 'Carla Ruiz',
+    email: 'carla@correo.com',
+    mascota: 'Tito',
+    especie: 'Perro',
+    raza: 'Pug',
+    tipo: 'Estética',
+    hora: '16:30',
+    diasDesdeHoy: 3,
+  },
+];
+
+function fechaDeEjemplo(diasDesdeHoy: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + diasDesdeHoy);
+  return [
+    fecha.getFullYear(),
+    String(fecha.getMonth() + 1).padStart(2, '0'),
+    String(fecha.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function turnosDeEjemplo(): TurnoAdministrado[] {
+  return turnosEjemplo.map((ejemplo, indice) => ({
+    id: -1000 - indice,
+    tipo: ejemplo.tipo,
+    sede: 'Recoleta',
+    fecha: fechaDeEjemplo(ejemplo.diasDesdeHoy),
+    hora: ejemplo.hora,
+    llegadaEn: null,
+    atendidoEn: null,
+    user: { nombre: ejemplo.dueno, email: ejemplo.email },
+    mascota: { nombre: ejemplo.mascota, especie: ejemplo.especie, raza: ejemplo.raza },
+  }));
+}
+
+function esTurnoEjemplo(turno: TurnoAdministrado): boolean {
+  return turno.id < 0;
+}
+
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
 function esHorarioOcupado(value: unknown): value is HorarioOcupado {
@@ -89,7 +161,6 @@ export default function AdminTurnosScreen() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [errorGuardado, setErrorGuardado] = useState('');
-  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState('');
@@ -185,7 +256,10 @@ export default function AdminTurnosScreen() {
     if (year && month) void cargarDisponibilidad(year, month, turno.sede);
   };
 
-  const turnosProximos = turnos.filter((turno) => turnoSiguePendiente(turno, new Date()));
+  const turnosProximos = [
+    ...turnosDeEjemplo(),
+    ...turnos.filter((turno) => turnoSiguePendiente(turno, new Date())),
+  ];
 
   const cancelarTurno = async () => {
     if (!seleccionado || cancelando) return;
@@ -209,7 +283,6 @@ export default function AdminTurnosScreen() {
 
       setConfirmarCancelacion(false);
       setSeleccionado(null);
-      setMostrarConfirmacion(false);
       await cargarTurnos();
     } catch (error) {
       setErrorCancelar(
@@ -224,6 +297,10 @@ export default function AdminTurnosScreen() {
   const guardarCambios = async () => {
     if (!seleccionado || guardando) return;
     setErrorGuardado('');
+    if (esTurnoEjemplo(seleccionado)) {
+      setSeleccionado(null);
+      return;
+    }
     setGuardando(true);
     try {
       const response = await fetch(
@@ -274,7 +351,6 @@ export default function AdminTurnosScreen() {
 
       setTurnos(listaActualizada);
       setSeleccionado(null);
-      setMostrarConfirmacion(true);
     } catch (requestError) {
       setErrorGuardado(
         requestError instanceof TypeError
@@ -540,36 +616,6 @@ export default function AdminTurnosScreen() {
               >
                 <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
                   {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={mostrarConfirmacion}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMostrarConfirmacion(false)}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setMostrarConfirmacion(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar mensaje"
-          />
-          <View style={estilos.modalCard} accessibilityRole="alert">
-            <Text style={estilos.modalTitle}>Turno modificado con éxito</Text>
-            <View style={estilos.modalActions}>
-              <Pressable
-                style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                onPress={() => setMostrarConfirmacion(false)}
-                accessibilityRole="button"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  Aceptar
                 </Text>
               </Pressable>
             </View>

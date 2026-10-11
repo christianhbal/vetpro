@@ -19,6 +19,7 @@ export type TurnoGuardado = {
   fecha: string;
   hora: string;
   llegadaEn: string | null;
+  descripcion: string | null;
   mascotaId: number;
   mascota: {
     id: number;

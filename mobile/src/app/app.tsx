@@ -43,24 +43,55 @@ type CitaLista = {
   mascota: string;
   motivo: string;
   fecha: string;
+  dueno: string | null;
+  descripcion: string | null;
   guardado: TurnoGuardado;
 };
 
 // Turnos de ejemplo que se muestran al admin en "Proximas citas". Son datos
 // fijos, no vienen de la API: son solo para el primer sprint
 type TurnoEjemplo = {
+  dueno: string;
   nombre: string;
   especie: string;
   raza: string | null;
   motivo: string;
+  descripcion: string | null;
   hora: string;
   diasDesdeHoy: number;
 };
 
 const turnosEjemplo: TurnoEjemplo[] = [
-  { nombre: 'Lola', especie: 'Perro', raza: 'Golden', motivo: 'Vacunas', hora: '09:30', diasDesdeHoy: 1 },
-  { nombre: 'Mora', especie: 'Gato', raza: null, motivo: 'Control de rutina', hora: '11:00', diasDesdeHoy: 2 },
-  { nombre: 'Tito', especie: 'Perro', raza: 'Pug', motivo: 'Desparasitación', hora: '16:30', diasDesdeHoy: 3 },
+  {
+    dueno: 'Ana Gómez',
+    nombre: 'Lola',
+    especie: 'Perro',
+    raza: 'Golden',
+    motivo: 'Vacunas',
+    descripcion: 'Vacunación anual y control de peso.',
+    hora: '09:30',
+    diasDesdeHoy: 1,
+  },
+  {
+    dueno: 'Bruno Díaz',
+    nombre: 'Mora',
+    especie: 'Gato',
+    raza: null,
+    motivo: 'Control de rutina',
+    descripcion: null,
+    hora: '11:00',
+    diasDesdeHoy: 2,
+  },
+  {
+    dueno: 'Carla Ruiz',
+    nombre: 'Tito',
+    especie: 'Perro',
+    raza: 'Pug',
+    motivo: 'Desparasitación',
+    descripcion: 'Desparasitante interno y externo.',
+    hora: '16:30',
+    diasDesdeHoy: 3,
+  },
 ];
 
 function fechaDeEjemplo(diasDesdeHoy: number): string {
@@ -82,6 +113,8 @@ function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
       mascota: ejemplo.nombre,
       motivo: ejemplo.motivo,
       fecha: formatearFechaTurno(fecha, ejemplo.hora),
+      dueno: ejemplo.dueno,
+      descripcion: ejemplo.descripcion,
       guardado: {
         id: -1000 - indice,
         tipo: ejemplo.motivo,
@@ -89,6 +122,7 @@ function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
         fecha,
         hora: ejemplo.hora,
         llegadaEn: null,
+        descripcion: ejemplo.descripcion,
         mascotaId: -1000 - indice,
         mascota: {
           id: -1000 - indice,
@@ -122,6 +156,7 @@ export default function InicioScreen() {
   const [errorTurnos, setErrorTurnos] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
   const [nombreUsuario, setNombreUsuario] = useState('');
+  const [nombreCompleto, setNombreCompleto] = useState('');
   const [modalQr, setModalQr] = useState(false);
   const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
 
@@ -150,6 +185,7 @@ export default function InicioScreen() {
       }
       setEsAdmin(usuario.esAdmin);
       setNombreUsuario(usuario.nombre.split(' ')[0]);
+      setNombreCompleto(usuario.nombre);
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
@@ -220,6 +256,8 @@ export default function InicioScreen() {
       mascota: turno.mascota.nombre,
       motivo: turno.tipo,
       fecha: formatearFechaTurno(turno.fecha, turno.hora),
+      dueno: nombreCompleto || null,
+      descripcion: turno.descripcion ?? null,
       guardado: turno,
       })),
   ];
@@ -502,8 +540,23 @@ export default function InicioScreen() {
 
               <Text style={estilos.modalTitle}>{citaSeleccionada.mascota}</Text>
               <Text style={estilos.modalText}>Motivo: {citaSeleccionada.motivo}</Text>
+              <Text style={estilos.modalText}>
+                Fecha:{' '}
+                {new Date(`${citaSeleccionada.guardado.fecha}T12:00:00`).toLocaleDateString(
+                  'es-AR',
+                  { weekday: 'long', day: 'numeric', month: 'long' }
+                )}
+              </Text>
+              <Text style={estilos.modalText}>Hora: {citaSeleccionada.guardado.hora}</Text>
               <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
-              <Text style={estilos.modalText}>Fecha: {citaSeleccionada.fecha}</Text>
+              {citaSeleccionada.dueno ? (
+                <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>
+              ) : null}
+              {citaSeleccionada.descripcion ? (
+                <Text style={estilos.modalText}>
+                  Descripción: {citaSeleccionada.descripcion}
+                </Text>
+              ) : null}
             </View>
           )}
         </View>
