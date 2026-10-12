@@ -3,6 +3,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,17 +13,75 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { estilos } from '@/lib/estilos';
 
+type Dia = {
+  clave: string;
+  corto: string;
+  largo: string;
+};
+
+const DIAS: Dia[] = [
+  { clave: 'lun', corto: 'L', largo: 'Lunes' },
+  { clave: 'mar', corto: 'M', largo: 'Martes' },
+  { clave: 'mie', corto: 'X', largo: 'Miércoles' },
+  { clave: 'jue', corto: 'J', largo: 'Jueves' },
+  { clave: 'vie', corto: 'V', largo: 'Viernes' },
+  { clave: 'sab', corto: 'S', largo: 'Sábado' },
+  { clave: 'dom', corto: 'D', largo: 'Domingo' },
+];
+
 type Sede = {
   id: number;
   nombre: string;
   direccion: string;
+  dias: string[];
+  horaDesde: string;
+  horaHasta: string;
 };
 
+const DIAS_SEMANA = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
+
 const sedes: Sede[] = [
-  { id: 1, nombre: 'Recoleta', direccion: 'Av. Recoleta 1234' },
-  { id: 2, nombre: 'San Isidro', direccion: 'Av. Centenario 2450' },
-  { id: 3, nombre: 'Vicente López', direccion: 'Av. del Libertador 1580' },
+  {
+    id: 1,
+    nombre: 'Recoleta',
+    direccion: 'Av. Recoleta 1234',
+    dias: ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'],
+    horaDesde: '09:00',
+    horaHasta: '18:00',
+  },
+  {
+    id: 2,
+    nombre: 'San Isidro',
+    direccion: 'Av. Centenario 2450',
+    dias: ['lun', 'mar', 'mie', 'jue', 'vie'],
+    horaDesde: '09:00',
+    horaHasta: '18:00',
+  },
+  {
+    id: 3,
+    nombre: 'Vicente López',
+    direccion: 'Av. del Libertador 1580',
+    dias: ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'],
+    horaDesde: '09:00',
+    horaHasta: '14:00',
+  },
 ];
+
+function esHoraValida(valor: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(valor.trim());
+}
+
+function horaComoMinutos(valor: string): number {
+  const [horas, minutos] = valor.split(':').map(Number);
+  return horas * 60 + minutos;
+}
+
+function resumenDias(dias: string[]): string {
+  const nombres = DIAS.filter((dia) => dias.includes(dia.clave)).map((dia) => dia.largo);
+  if (nombres.length === 0) return 'Sin días seleccionados';
+  if (nombres.length === 1) return nombres[0];
+  return `${nombres[0]} a ${nombres[nombres.length - 1]}`;
+}
 
 export default function AdminSedesScreen() {
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -30,12 +89,18 @@ export default function AdminSedesScreen() {
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
+  const [dias, setDias] = useState<string[]>([]);
+  const [horaDesde, setHoraDesde] = useState('');
+  const [horaHasta, setHoraHasta] = useState('');
   const [error, setError] = useState('');
 
   const abrirNueva = () => {
     setSedeEnEdicion(null);
     setNombre('');
     setDireccion('');
+    setDias([...DIAS_SEMANA]);
+    setHoraDesde('');
+    setHoraHasta('');
     setError('');
     setModalAbierto(true);
   };
@@ -44,11 +109,20 @@ export default function AdminSedesScreen() {
     setSedeEnEdicion(sede);
     setNombre(sede.nombre);
     setDireccion(sede.direccion);
+    setDias(sede.dias);
+    setHoraDesde(sede.horaDesde);
+    setHoraHasta(sede.horaHasta);
     setError('');
     setModalAbierto(true);
   };
 
   const cerrarEdicion = () => setModalAbierto(false);
+
+  const alternarDia = (clave: string) => {
+    setDias((actuales) =>
+      actuales.includes(clave) ? actuales.filter((dia) => dia !== clave) : [...actuales, clave]
+    );
+  };
 
   const guardar = () => {
     if (!nombre.trim() || !direccion.trim()) {
@@ -65,6 +139,18 @@ export default function AdminSedesScreen() {
     );
     if (duplicada) {
       setError(`Ya existe otra sede con el nombre ${nombre.trim()}.`);
+      return;
+    }
+    if (dias.length === 0) {
+      setError('Elegí al menos un día de atención.');
+      return;
+    }
+    if (!esHoraValida(horaDesde) || !esHoraValida(horaHasta)) {
+      setError('Los horarios usan el formato HH:mm, por ejemplo 09:30.');
+      return;
+    }
+    if (horaComoMinutos(horaHasta) <= horaComoMinutos(horaDesde)) {
+      setError('El horario de cierre tiene que ser posterior al de apertura.');
       return;
     }
 
@@ -97,6 +183,12 @@ export default function AdminSedesScreen() {
                 <View style={styles.sedeTexto}>
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.direccion}</Text>
+                  <View style={styles.horarioFila}>
+                    <Ionicons name="time-outline" size={14} color="#6b7d6d" />
+                    <Text style={styles.horarioTexto}>
+                      {resumenDias(item.dias)} · {item.horaDesde} a {item.horaHasta}
+                    </Text>
+                  </View>
                 </View>
                 <Ionicons name="create-outline" size={22} color="#0f3e17" />
               </View>
@@ -141,37 +233,94 @@ export default function AdminSedesScreen() {
                 <Ionicons name="close" size={24} color="#263b32" />
               </Pressable>
 
-              <Text style={estilos.modalTitle}>
-                {sedeEnEdicion === null ? 'Agregar sede' : `Editar ${sedeEnEdicion.nombre}`}
-              </Text>
-
-              <Text style={estilos.formLabel}>Nombre</Text>
-              <TextInput
-                style={estilos.formInput}
-                placeholder="Ej. Palermo"
-                placeholderTextColor="#7a8378"
-                value={nombre}
-                onChangeText={setNombre}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
-
-              <Text style={estilos.formLabel}>Dirección</Text>
-              <TextInput
-                style={estilos.formInput}
-                placeholder="Ej. Av. Corrientes 5000"
-                placeholderTextColor="#7a8378"
-                value={direccion}
-                onChangeText={setDireccion}
-                returnKeyType="done"
-                onSubmitEditing={guardar}
-              />
-
-              {error ? (
-                <Text style={styles.createError} accessibilityRole="alert">
-                  {error}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={estilos.modalTitle}>
+                  {sedeEnEdicion === null ? 'Agregar sede' : `Editar sede`}
                 </Text>
-              ) : null}
+
+                <Text style={estilos.formLabel}>Nombre</Text>
+                <TextInput
+                  style={estilos.formInput}
+                  placeholder="Ej. Palermo"
+                  placeholderTextColor="#7a8378"
+                  value={nombre}
+                  onChangeText={setNombre}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                />
+
+                <Text style={estilos.formLabel}>Dirección</Text>
+                <TextInput
+                  style={estilos.formInput}
+                  placeholder="Ej. Av. Corrientes 5000"
+                  placeholderTextColor="#7a8378"
+                  value={direccion}
+                  onChangeText={setDireccion}
+                  returnKeyType="next"
+                />
+
+                <Text style={estilos.formLabel}>Días de atención</Text>
+                <View style={styles.diasFila}>
+                  {DIAS.map((dia) => {
+                    const elegido = dias.includes(dia.clave);
+                    return (
+                      <Pressable
+                        key={dia.clave}
+                        style={({ pressed }) => [
+                          styles.diaChip,
+                          elegido && styles.diaChipElegido,
+                          pressed && estilos.buttonPressed,
+                        ]}
+                        onPress={() => alternarDia(dia.clave)}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={dia.largo}
+                        accessibilityState={{ checked: elegido }}
+                      >
+                        <Text style={[styles.diaTexto, elegido && styles.diaTextoElegido]}>
+                          {dia.corto}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={estilos.formLabel}>Horario de atención</Text>
+                <View style={styles.horariosInputs}>
+                  <View style={styles.horarioCampo}>
+                    <Text style={styles.horarioSubtitulo}>Abre</Text>
+                    <TextInput
+                      style={estilos.formInput}
+                      placeholder="09:00"
+                      placeholderTextColor="#7a8378"
+                      value={horaDesde}
+                      onChangeText={setHoraDesde}
+                      keyboardType="number-pad"
+                      maxLength={5}
+                      returnKeyType="next"
+                    />
+                  </View>
+                  <View style={styles.horarioCampo}>
+                    <Text style={styles.horarioSubtitulo}>Cierra</Text>
+                    <TextInput
+                      style={estilos.formInput}
+                      placeholder="18:00"
+                      placeholderTextColor="#7a8378"
+                      value={horaHasta}
+                      onChangeText={setHoraHasta}
+                      keyboardType="number-pad"
+                      maxLength={5}
+                      returnKeyType="done"
+                      onSubmitEditing={guardar}
+                    />
+                  </View>
+                </View>
+
+                {error ? (
+                  <Text style={styles.createError} accessibilityRole="alert">
+                    {error}
+                  </Text>
+                ) : null}
+              </ScrollView>
 
               <View style={estilos.modalActions}>
                 <Pressable
@@ -179,7 +328,7 @@ export default function AdminSedesScreen() {
                   onPress={guardar}
                   accessibilityRole="button"
                 >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Guardar cambios</Text>
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Guardar</Text>
                 </Pressable>
               </View>
 
@@ -267,6 +416,16 @@ const styles = StyleSheet.create({
   sedeTexto: {
     flex: 1,
   },
+  horarioFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  horarioTexto: {
+    color: '#6b7d6d',
+    fontSize: 13,
+  },
   agregarFila: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -284,11 +443,53 @@ const styles = StyleSheet.create({
   guardarBoton: {
     flex: 1,
   },
+  diasFila: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  diaChip: {
+    flex: 1,
+    aspectRatio: 1,
+    maxHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#fffefc',
+  },
+  diaChipElegido: {
+    borderColor: '#0f3e17',
+    backgroundColor: '#e8f3e4',
+  },
+  diaTexto: {
+    color: '#1e3326',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  diaTextoElegido: {
+    color: '#0f3e17',
+    fontWeight: 'bold',
+  },
+  horariosInputs: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  horarioCampo: {
+    flex: 1,
+  },
+  horarioSubtitulo: {
+    color: '#69746a',
+    fontSize: 12,
+    marginBottom: 4,
+  },
   createError: {
     color: '#a32828',
     fontSize: 13,
     lineHeight: 19,
-    marginTop: 10,
+    marginTop: 4,
+    marginBottom: 12,
   },
   eliminar: {
     alignItems: 'center',
