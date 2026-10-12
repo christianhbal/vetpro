@@ -222,9 +222,11 @@ export default function InicioScreen() {
   //_estimada_ las tarjetas se pasaban del borde.
   const [altoLista, setAltoLista] = useState(0);
   const altoListaReal = altoLista || (windowHeight - 64) * 0.52;
-  // De ese alto salen el titulo, los tres huecos y el padding de las tarjetas.
+  // De ese alto salen el titulo, los tres huecos y los paddings de la lista y de
+  // las tarjetas. Si se suma algo nuevo hay que descontarlo aca tambien, si no
+  // la ultima tarjeta se pasa del borde de la pantalla.
   const ladoFotoTarjeta = Math.round(
-    Math.max(38, Math.min(96, (altoListaReal - 68) / 4 - 26))
+    Math.max(38, Math.min(96, (altoListaReal - 78) / 4 - 26))
   );
 
   const cargarMascotas = useCallback(async () => {
@@ -588,7 +590,7 @@ const renderCita = (item: CitaLista) => {
           style={styles.portadaLista}
           onLayout={(evento) => setAltoLista(evento.nativeEvent.layout.height)}
         >
-          <Text style={styles.tituloSeccion}>Próximas Citas</Text>
+          <Text style={styles.tituloSeccion}>Próximos turnos</Text>
           {cargandoTurnos ? (
             <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
           ) : errorTurnos ? (
@@ -600,10 +602,7 @@ const renderCita = (item: CitaLista) => {
                 <Ionicons name="calendar-clear-outline" size={26} color="#0f3e17" />
               </View>
               <Text style={styles.sinCitasTitulo}>
-                No hay próximas citas en {sedeSeleccionada}
-              </Text>
-              <Text style={styles.sinCitasTexto}>
-                Para hoy no hay nada agendado en esa sede.
+                No hay próximos turnos en {sedeSeleccionada}
               </Text>
             </View>
           ) : (
@@ -796,6 +795,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     paddingHorizontal: 12,
     paddingTop: 4,
+    paddingBottom: 10,
   },
   tarjetasCitas: { flex: 1, gap: 8 },
 sinCitas: {
@@ -818,12 +818,6 @@ sinCitas: {
     backgroundColor: '#e4f1e0',
   },
   sinCitasTitulo: { color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
-  sinCitasTexto: {
-    marginTop: 3,
-    color: '#556b58',
-    fontSize: 13,
-    textAlign: 'center' as const,
-  },
 citaTarjeta: {
     flex: 1,
     flexShrink: 1,

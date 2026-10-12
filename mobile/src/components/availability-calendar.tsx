@@ -29,6 +29,10 @@ import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo'
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
+// Encabezado del calendario, de lunes a domingo. El miércoles va con "M" y no
+// con la "X" de siempre, asi que martes y miércoles muestran la misma letra.
+export const DIAS_SEMANA = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const;
+
 type TipoTurno = (typeof tiposTurno)[number];
 
 // El backend acepta turnos de lunes a sábado, entre las 10:00 y las 18:30,
@@ -713,7 +717,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         </View>
 
         <View style={styles.calendar}>
-          {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, index) => (
+          {DIAS_SEMANA.map((dia, index) => (
             <Text
               key={`weekday-${index}`}
               style={[styles.weekday, compacta && styles.weekdayCompacto]}

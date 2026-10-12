@@ -6,11 +6,15 @@ config({ path: path.resolve(__dirname, '..', '.env') });
 
 const prisma = new PrismaClient();
 
-// Tiene que ser la misma marca que usa bloquearJueves.ts.
+// Tiene que ser la misma marca que usa bloquearDias.ts.
 const MARCA = 'ocupado por el ejemplo';
 
 async function main(): Promise<void> {
-  const liberados = await prisma.turno.deleteMany({ where: { descripcion: MARCA } });
+  // Los que se borran son los que ocuparon la agenda, no los turnos de verdad ni
+  // los de historial del generador de ejemplos.
+  const liberados = await prisma.turno.deleteMany({
+    where: { descripcion: MARCA, ocultoEnAgenda: true },
+  });
   console.log(
     liberados.count > 0
       ? `Se liberaron ${liberados.count} horarios. Los turnos de ejemplo y los reales quedaron intactos.`
@@ -20,7 +24,7 @@ async function main(): Promise<void> {
 
 main()
   .catch((error: unknown) => {
-    console.error('No se pudieron liberar los jueves:', error);
+    console.error('No se pudieron liberar los dias bloqueados:', error);
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());

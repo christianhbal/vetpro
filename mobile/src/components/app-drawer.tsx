@@ -17,6 +17,7 @@ const menuItems = [
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
   { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
   { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
+  { label: 'Historial', href: '/historial', icon: 'time-outline' },
   { label: 'Perfil', href: '/perfil', icon: 'person-outline' },
 ] as const;
 

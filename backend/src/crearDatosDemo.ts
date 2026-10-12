@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { config } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import { HORARIOS } from './horarios';
 
 config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -29,11 +30,15 @@ function tieneDueno<T extends { userId: number | null }>(
   return mascota.userId !== null;
 }
 
-//   Vicente Lopez inicio del dia: la manana llena de turnos por venir, todavia
+//   San Isidro    inicio del dia: la manana llena de turnos por venir, todavia
 //                           no se atendio ninguno y llegaron los primeros.
 //   Recoleta      hora pico: la tarde llena de gente esperando en la sala.
-//   San Isidro    final del dia: se atendio todo, no queda ningun turno por
+//   Vicente Lopez final del dia: se atendio todo, no queda ningun turno por
 //                           delante y no hay nadie esperando.
+//
+// San Isidro no tiene completados a proposito: es la sede del comienzo del
+// dia. En el Historial igual aparecen turnos suyos, porque los dias fijos de
+// abajo (sabado y miercoles) se arman para las tres sedes.
 //
 // "llegan" es cuantos de los pendientes ya escanearon el QR. Es lo unico que
 // decide si el turno aparece en "Atender pacientes": sin llegada no hay nadie
@@ -53,8 +58,8 @@ const PERFILES: Record<
     llegan: number;
   }
 > = {
-  'Vicente López': {
-    // Nadie fue atendido todavia: la jornada arranca.
+  'San Isidro': {
+    // Comienzo del dia: nadie fue atendido todavia, la jornada arranca.
     completados: [],
     pendientes: [
       '10:00',
@@ -71,13 +76,13 @@ const PERFILES: Record<
     llegan: 2,
   },
   Recoleta: {
-    // Ya se atendio toda la manana y quedo la tarde llena.
+    // Hora pico: ya se atendio toda la manana y quedo la tarde llena.
     completados: ['10:00', '11:30', '13:00', '14:00', '15:00'],
     pendientes: ['16:30', '17:00', '17:30', '18:00', '18:30'],
     llegan: 3,
   },
-  'San Isidro': {
-    // Se termino la jornada entera: no queda nada por delante.
+  'Vicente López': {
+    // Final del dia: se termino la jornada entera, no queda nada por delante.
     completados: [
       '10:00',
       '11:00',
@@ -131,32 +136,59 @@ const DESCRIPCIONES: Record<Tipo, readonly string[]> = {
 
 const TIPOS: readonly Tipo[] = ['Control', 'Vacunas', 'Estética'];
 
+// Ademas de los turnos del dia, se crean algunos ATENDIDOS en el sabado y el
+// miercoles mas recientes. Llevan fecha fija, asi que no se mueven al cambiar la
+// semana: el Historial siempre tiene esos dias con contenido.
+//
+//   dia: getDay() -> 3 miercoles, 6 sabado
+//   porSede: cuantos turnos con descripcion se crean en cada sede
+const DIAS_FIJOS: { nombre: string; dia: number; porSede: number }[] = [
+  { nombre: 'sabado', dia: 6, porSede: 2 },
+  { nombre: 'miercoles', dia: 3, porSede: 2 },
+];
+
+// En los dias fijos no se usan horas fijas: el sabado mas reciente puede venir
+// ya lleno con los turnos del dia. Se buscan los primeros horarios libres de
+// cada sede, asi nunca hay doble reserva.
+/** El dia de la semana mas reciente que ya paso (no cuenta el de hoy). */
+function ultimoDiaDeLaSemana(diaSemana: number, desde: Date): Date {
+  const cursor = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
+  cursor.setDate(cursor.getDate() - 1);
+  while (cursor.getDay() !== diaSemana) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return cursor;
+}
+
 async function main(): Promise<void> {
-  const hoy = new Date();
+  const ahora = new Date();
+
+  // La veterinaria no atiende los domingos. Si hoy es domingo, los ejemplos van
+  // el sabado anterior: ponerlos en domingo seria inventar turnos en un dia
+  // cerrado, y el Historial los oculta.
+  const esHoyDomingo = ahora.getDay() === 0;
+  const diaEjemplos = esHoyDomingo
+    ? new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - 1)
+    : ahora;
 
   const anteriores = await prisma.turno.deleteMany({ where: { esDemo: true } });
   if (anteriores.count > 0) {
     console.log(`Se borraron ${anteriores.count} turnos de ejemplo previos.`);
   }
 
-  // Se reparten las mascotas que ya tienen foto para que las tarjetas no se
-  // vean todas con la misma imagen. Si no hay al menos dos con foto, se usan
-  // todas las que haya.
+  // Solo se usan mascotas CON foto: la tarjeta del historial muestra la foto
+  // para reconocer rapido al paciente, y una mascota sin foto deja el hueco de
+  // la huellita.
   const conFoto = await prisma.mascota.findMany({
     where: { foto: { not: null } },
     select: { id: true, userId: true, nombre: true },
     orderBy: { id: 'asc' },
   });
-  const candidatas = (
-    conFoto.length > 1
-      ? conFoto
-      : await prisma.mascota.findMany({
-          select: { id: true, userId: true, nombre: true },
-          orderBy: { id: 'asc' },
-        })
-  ).filter(tieneDueno);
+  const candidatas = conFoto.filter(tieneDueno);
   if (candidatas.length === 0) {
-    throw new Error('No hay mascotas con dueño en la base. Registra al menos una primero.');
+    throw new Error(
+      'No hay mascotas con dueño y foto en la base. Carga al menos una foto antes de generar los ejemplos.'
+    );
   }
 
   const ejemplos: {
@@ -189,7 +221,7 @@ async function main(): Promise<void> {
         tipo,
         sede,
         hora,
-        fecha: fechaComoValor(hoy),
+        fecha: fechaComoValor(diaEjemplos),
         minutosAtras: 5 + i * 6,
         llego: i < perfil.llegan,
         atendido: false,
@@ -205,7 +237,7 @@ async function main(): Promise<void> {
         tipo,
         sede,
         hora,
-        fecha: fechaComoValor(hoy),
+        fecha: fechaComoValor(diaEjemplos),
         minutosAtras: 40 + i * 25,
         llego: perfil.llegan > 0,
         atendido: true,
@@ -282,6 +314,89 @@ async function main(): Promise<void> {
     });
   }
 
+  // Turnos atendidos con fecha fija en el sabado y el miercoles mas recientes.
+  // Van todos con descripcion y con mascota con foto, asi que el Historial los
+  // muestra completos.
+  let indiceFijo = 0;
+  for (const diaFijo of DIAS_FIJOS) {
+    const fecha = fechaComoValor(ultimoDiaDeLaSemana(diaFijo.dia, ahora));
+
+    for (const sede of sedesVeterinaria) {
+      const usados = new Set<string>();
+
+      // Se leen los horarios que ya hay en esa fecha y esa sede (contando los
+      // turnos del dia recien creados) y se toman los primeros libres.
+      const yaOcupados = await prisma.turno.findMany({
+        where: { sede, fecha },
+        select: { hora: true },
+      });
+      const libres = HORARIOS.filter(
+        (hora) => !yaOcupados.some((turno) => turno.hora === hora)
+      );
+
+      for (let i = 0; i < Math.min(diaFijo.porSede, libres.length); i += 1) {
+        const hora = libres[i];
+
+        let mascota = candidatas[indiceFijo % candidatas.length];
+        for (
+          let salto = 0;
+          salto < candidatas.length && usados.has(mascota.nombre);
+          salto += 1
+        ) {
+          mascota = candidatas[(indiceFijo + salto + 1) % candidatas.length];
+        }
+        usados.add(mascota.nombre);
+        indiceFijo += 1;
+
+        const tipo = TIPOS[indiceFijo % TIPOS.length];
+        const turno = await prisma.turno.create({
+          data: {
+            tipo,
+            sede,
+            fecha,
+            hora,
+            // Sin llegada ni atendidoEn: estos turnos son solo historial. Si
+            // vinieran con llegada, "Atender pacientes" los contaria como
+            // gente en la sala (el endpoint incluye los esDemo sin mirar la
+            // fecha) y each sede se passes de 3.
+            llegadaEn: null,
+            // El Historial se guia por la descripcion, asi que estos turnos si
+            // aparecen ahi. La pantalla Turnos cuenta completados por
+            // atendidoEn, y San Isidro tiene que verse con cero porque es
+            // la sede del comienzo del dia.
+            atendidoEn: null,
+            descripcion: proximaDescripcion(tipo),
+            esDemo: true,
+            // Son historial, no agenda. Sin esto San Isidro aparecia con 14
+            // turnos siguientes en vez de 10, y con horas repetidas.
+            ocultoEnAgenda: true,
+            user: { connect: { id: mascota.userId } },
+            mascota: { connect: { id: mascota.id } },
+          },
+          include: {
+            user: { select: { nombre: true } },
+            mascota: { select: { nombre: true, foto: true } },
+          },
+        });
+
+        creados.push({
+          id: turno.id,
+          dueno: turno.user.nombre,
+          mascota: turno.mascota.nombre,
+          conFoto: Boolean(turno.mascota.foto),
+          sede: turno.sede,
+          fecha: turno.fecha,
+          hora: turno.hora,
+          llego: false,
+          // Ni llegada ni atendidoEn: solo historial. El Historial los muestra
+          // igual por la descripcion.
+          atendido: false,
+          conDescripcion: true,
+        });
+      }
+    }
+  }
+
   console.log(`\nSe crearon ${creados.length} turnos de ejemplo:\n`);
   for (const turno of creados) {
     const estado = turno.atendido
@@ -324,6 +439,20 @@ async function main(): Promise<void> {
     console.log('\nTodos los turnos tienen mascota con foto.');
   }
 
+  // El Historial solo muestra turnos con descripcion. Cada sede tiene al menos 4,
+  // pero en San Isidro no vienen de los completados del dia (que es cero a
+  // proposito): vienen de los dias fijos de sabado y miercoles.
+  console.log('\nTurnos con descripcion por sede (lo que ve el Historial):');
+  for (const sede of sedesVeterinaria) {
+    const deLaSede = creados.filter((turno) => turno.sede === sede);
+    const conNota = deLaSede.filter((turno) => turno.conDescripcion).length;
+    const deFijos = deLaSede.filter((turno) => turno.fecha !== fechaComoValor(diaEjemplos)).length;
+    const marca = conNota >= 4 ? '' : '   <-- MENOS DE 4';
+    console.log(
+      `  ${sede.padEnd(13)}${conNota}${marca}   (del dia: ${conNota - deFijos}, de sabado/miercoles: ${deFijos})`
+    );
+  }
+
   const porHorario = new Map<string, string[]>();
   for (const turno of creados) {
     const clave = `${turno.sede}|${turno.fecha}|${turno.hora}`;
@@ -345,6 +474,23 @@ async function main(): Promise<void> {
   const fechasDistintas = [...new Set(creados.map((turno) => turno.fecha))];
   if (fechasDistintas.length > 1) {
     console.log(`\nOjo: se crearon turnos en varios dias: ${fechasDistintas.join(', ')}`);
+  }
+
+  // Si los ejemplos quedaron en un domingo seria un turno inventado en un dia
+  // en que la veterinaria esta cerrada.
+  const enDomingo = [...new Set(fechasDistintas)].filter(
+    (fecha) => new Date(`${fecha}T12:00:00`).getDay() === 0
+  );
+  if (enDomingo.length > 0) {
+    console.log(`\nOjo: se crearon turnos en domingo: ${enDomingo.join(', ')}`);
+  }
+
+  if (esHoyDomingo) {
+    console.log(
+      `\nHoy es domingo, asi que los ejemplos se generaron del ` +
+        `${fechaComoValor(diaEjemplos)} (sabado). La pantalla de Turnos muestra el ` +
+        `dia de hoy y hoy no hay nada agendado.`
+    );
   }
 
   console.log('\nPara borrarlos: npm run db:demo:borrar');

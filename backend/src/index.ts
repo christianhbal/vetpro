@@ -23,6 +23,18 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+// La API nunca se cachea. Sin esto el navegador revalidaba con If-None-Match y
+// Express contestaba 304, o sea que la app seguia dibujando la respuesta vieja:
+// la pantalla Turnos mostraba los 15 turnos viejos aunque la base ya estuviera
+// filtrada. Sacar las cabeceras de revalidacion de la peticion es lo que corta
+// el 304; el Cache-Control solo evita que se guarde.
+app.use('/api', (request, response, next) => {
+  delete request.headers['if-none-match'];
+  delete request.headers['if-modified-since'];
+  response.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  next();
+});
+
 // Convierte el parametro :id a un entero positivo para Prisma.
 function parseId(value: string | undefined): number | null {
   const id = Number(value);
@@ -745,12 +757,19 @@ app.post('/api/admin/turnos', async (request, response) => {
 
 // GET /api/admin/turnos
 // Lista todos los turnos para su administración.
+// GET /api/admin/turnos
+// Por defecto no devuelve los turnos fuera de agenda (los dias completos y el
+// historial): son Hundreds de filas que solo ocupan un horario. El Historial los
+// necesita, asi que los pide con ?incluirOcultos=1.
 app.get('/api/admin/turnos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
 
+  const incluirOcultos = request.query.incluirOcultos === '1';
+
   try {
     const turnos = await prisma.turno.findMany({
+      where: incluirOcultos ? undefined : { ocultoEnAgenda: false },
       include: {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
@@ -786,6 +805,9 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
       where: {
         llegadaEn: { not: null },
         atendidoEn: null,
+        // Los turnos fuera de agenda (dias completos, historial) nunca estan
+        // esperando: solo ocupan un horario o son de dias pasados.
+        ocultoEnAgenda: false,
         OR: [{ fecha: fechaActual }, { esDemo: true }],
       },
       include: {

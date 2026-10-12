@@ -31,6 +31,8 @@ type TurnoLista = TurnoGuardado & {
   atendidoEn?: string | null;
   descripcion?: string | null;
   esDemo?: boolean;
+  /** Ocupa la agenda pero no se muestra en las listas de esta pantalla. */
+  ocultoEnAgenda?: boolean;
   user?: { nombre: string } | null;
 };
 
@@ -129,17 +131,24 @@ export default function TurnosScreen() {
     (turno) => esEjemploOHoy(turno) && turno.sede === sedeSeleccionada
   );
 
+  // Los turnos que solo ocupan la agenda (los dias completos) y los que son
+  // historial del Historial se filtran antes de armar las dos listas. Si no,
+  // cada sede aparece con 18 turnos siguientes en vez de los reales.
+  // Ojo: sale de enSedeSeleccionada, no de turnos. Filtrando desde turnos se
+  // perdia el filtro de sede y la lista mezclaba las tres sedes.
+  const enAgenda = enSedeSeleccionada.filter((turno) => !turno.ocultoEnAgenda);
+
   // Los pendientes van de menor a mayor: el proximo turno primero. Los completados
   // al reves, del mas reciente al mas antiguo, que es como se lee una lista de
   // lo que ya se atendio. El backend los manda en orden ascendente, asi que hay
   // que darle vuelta.
   const turnosPendientes = (
-    esAdmin ? enSedeSeleccionada.filter((t) => !t.atendidoEn) : turnos.filter(esEjemploOHoy)
+    esAdmin ? enAgenda.filter((t) => !t.atendidoEn) : turnos.filter(esEjemploOHoy)
   ).map(aCita);
 
   const segundoListado = (
     esAdmin
-      ? enSedeSeleccionada
+      ? enAgenda
           // Un turno con fecha futura no puede estar completado: si aparece
           // aca queda dando vueltas. No se muestra, y sigue estando en la
           // lista de los siguientes.
