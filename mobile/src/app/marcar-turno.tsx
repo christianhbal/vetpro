@@ -50,6 +50,8 @@ export default function MarcarTurnoScreen() {
   const [agendarSeguimiento, setAgendarSeguimiento] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  // Los avisos de "falta algo" salen en cartel, no escritos en la pantalla.
+  const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
   const [exito, setExito] = useState<{
     conSeguimiento: boolean;
     seguimiento: TurnoElegido | null;
@@ -90,13 +92,21 @@ const yaAtendido = params.atendido === 'true';
       return;
     }
     if (!descripcion.trim()) {
-      setError('Escribí una descripción de lo que pasó en el turno.');
+      // El boton siempre se puede apretar: si falta la descripcion sale el
+      // aviso, en vez de dejarlo apagado sin explicar por que.
+      setAviso({
+        titulo: 'Falta una descripción',
+        mensaje: 'Contá lo que pasó antes de completar el turno.',
+      });
       return;
     }
     // Si pidio seguimiento, la fecha y la hora tienen que estar elegidas antes
     // de completar el turno.
     if (agendarSeguimiento && agenda.current && !agenda.current.listo) {
-      setError('Elegí el tipo, la fecha y la hora del turno de seguimiento.');
+      setAviso({
+        titulo: 'Faltan datos para agendar',
+        mensaje: 'Elegí el tipo, fecha y la hora del nuevo turno.',
+      });
       return;
     }
 
@@ -182,7 +192,7 @@ const yaAtendido = params.atendido === 'true';
 
         <View style={styles.bloque}>
           <View style={styles.filaLabel}>
-            <Text style={styles.label}>¿Agendar un turno de seguimiento?</Text>
+            <Text style={styles.label}>¿Agendar un nuevo turno?</Text>
           </View>
           <View style={styles.opcionesSiNo}>
             <Pressable
@@ -256,14 +266,14 @@ const yaAtendido = params.atendido === 'true';
             guardando && estilos.buttonPressed,
           ]}
           onPress={() => void guardar()}
-          disabled={guardando || !descripcion.trim()}
+          disabled={guardando}
           accessibilityRole="button"
           accessibilityLabel={
             agendarSeguimiento
               ? 'Completar el turno y agendar el seguimiento'
               : 'Guardar atención del turno'
           }
-          accessibilityState={{ disabled: guardando || !descripcion.trim(), busy: guardando }}
+          accessibilityState={{ disabled: guardando, busy: guardando }}
         >
           <Text style={styles.guardarTexto}>
             {guardando ? 'Guardando...' : yaAtendido ? 'Actualizar atención' : 'Completar turno'}
@@ -335,6 +345,51 @@ const yaAtendido = params.atendido === 'true';
               </Pressable>
             </View>
           )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={aviso !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setAviso(null)}
+      >
+        <View style={styles.avisoRaiz}>
+          <Pressable
+            style={styles.avisoFondo}
+            onPress={() => setAviso(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar aviso"
+          />
+
+          <View style={[styles.aviso, styles.avisoFalta]}>
+            <Pressable
+              style={({ pressed }) => [styles.avisoCerrar, pressed && estilos.buttonPressed]}
+              onPress={() => setAviso(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar el aviso"
+            >
+              <Ionicons name="close" size={20} color="#556b58" />
+            </Pressable>
+
+            <View style={styles.avisoFaltaIcono}>
+              <Ionicons name="close" size={30} color="#a5690f" />
+            </View>
+
+            <Text style={styles.avisoTitulo}>{aviso?.titulo ?? ''}</Text>
+            <Text style={styles.avisoFaltaTexto}>{aviso?.mensaje ?? ''}</Text>
+
+            <Pressable
+              style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
+              onPress={() => setAviso(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar el aviso"
+            >
+              <Text style={styles.avisoBotonTexto}>Entendido</Text>
+            </Pressable>
+          </View>
         </View>
       </Modal>
     </AppDrawer>
@@ -475,4 +530,34 @@ const styles = {
     backgroundColor: '#0f3e17',
   },
   avisoBotonTexto: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' as const },
+  // Padding extra arriba para que la X de la esquina y la X de error no queden
+  // alineadas en la misma altura.
+  avisoFalta: { paddingTop: 48 },
+  avisoFaltaIcono: {
+    width: 54,
+    height: 54,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 14,
+    borderRadius: 27,
+    backgroundColor: '#f7e7cd',
+  },
+  avisoCerrar: {
+    position: 'absolute' as const,
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 16,
+    backgroundColor: '#eef4ea',
+  },
+  avisoFaltaTexto: {
+    marginTop: 6,
+    color: '#5c6b60',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center' as const,
+  },
 };

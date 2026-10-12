@@ -1,24 +1,26 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import type { DimensionValue } from 'react-native';
+import { toString } from 'qrcode';
+import type { DimensionValue, ImageSourcePropType } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
   descripcionEspecieMascota,
-  formatearFechaTurno,
   sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
@@ -44,98 +46,105 @@ type CitaLista = {
   motivo: string;
   fecha: string;
   dueno: string | null;
-  descripcion: string | null;
+  /** Foto local, para cuando no hay ninguna que venga de la API. */
+  fotoLocal?: ImageSourcePropType | null;
+  /** Foto que llega de la API como data URI. */
+  fotoUri?: string | null;
   guardado: TurnoGuardado;
 };
 
-// Turnos de ejemplo que se muestran al admin en "Proximas citas". Son datos
-// fijos, no vienen de la API: son solo para el primer sprint
-type TurnoEjemplo = {
+// Foto de respaldo si el backend no devuelve fotos: en la base puede haber
+// formatos (AVIF) que el empaquetador no acepta, asi que llegan por la API.
+const fotoRespaldo = require('@/assets/images/mascota-demo.jpg') as ImageSourcePropType;
+
+// Las 4 citas de la portada son fijas: no vienen de la API y no se mueven con
+// la fecha. Sirven para tener siempre algo que mostrar mientras la agenda real
+// no este conectada.
+type CitaEjemplo = {
   dueno: string;
   nombre: string;
   especie: string;
   raza: string | null;
   motivo: string;
-  descripcion: string | null;
   hora: string;
-  diasDesdeHoy: number;
 };
 
-const turnosEjemplo: TurnoEjemplo[] = [
+const citasEjemploDelDia: CitaEjemplo[] = [
   {
     dueno: 'Ana Gómez',
     nombre: 'Lola',
     especie: 'Perro',
     raza: 'Golden',
     motivo: 'Vacunas',
-    descripcion: 'Vacunación anual y control de peso.',
     hora: '09:30',
-    diasDesdeHoy: 1,
   },
   {
     dueno: 'Bruno Díaz',
     nombre: 'Mora',
     especie: 'Gato',
     raza: null,
-    motivo: 'Control de rutina',
-    descripcion: null,
+    motivo: 'Control',
     hora: '11:00',
-    diasDesdeHoy: 2,
   },
   {
     dueno: 'Carla Ruiz',
     nombre: 'Tito',
     especie: 'Perro',
     raza: 'Pug',
-    motivo: 'Desparasitación',
-    descripcion: 'Desparasitante interno y externo.',
-    hora: '16:30',
-    diasDesdeHoy: 3,
+    motivo: 'Vacunas',
+    hora: '14:30',
+  },
+  {
+    dueno: 'Diego Paz',
+    nombre: 'Nube',
+    especie: 'Gato',
+    raza: 'Siamés',
+    motivo: 'Estética',
+    hora: '17:00',
   },
 ];
 
-function fechaDeEjemplo(diasDesdeHoy: number): string {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() + diasDesdeHoy);
-  return [
-    fecha.getFullYear(),
-    String(fecha.getMonth() + 1).padStart(2, '0'),
-    String(fecha.getDate()).padStart(2, '0'),
-  ].join('-');
-}
-
+// San Isidro cerró la jornada: no queda nada por agendar, así que la lista
+// aparece vacía a propósito.
 function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
-  return turnosEjemplo.map((ejemplo, indice) => {
-    const fecha = fechaDeEjemplo(ejemplo.diasDesdeHoy);
-    return {
-      id: -1000 - indice,
-      key: `ejemplo-${indice}`,
-      mascota: ejemplo.nombre,
-      motivo: ejemplo.motivo,
-      fecha: formatearFechaTurno(fecha, ejemplo.hora),
-      dueno: ejemplo.dueno,
-      descripcion: ejemplo.descripcion,
-      guardado: {
-        id: -1000 - indice,
-        tipo: ejemplo.motivo,
-        sede,
-        fecha,
-        hora: ejemplo.hora,
-        llegadaEn: null,
-        descripcion: ejemplo.descripcion,
-        mascotaId: -1000 - indice,
-        mascota: {
-          id: -1000 - indice,
-          nombre: ejemplo.nombre,
-          especie: ejemplo.especie,
-          raza: ejemplo.raza,
-          foto: null,
-        },
-      },
-    };
-  });
-}
+  if (sede === 'San Isidro') return [];
 
+  const hoy = new Date();
+  const fecha = [
+    hoy.getFullYear(),
+    String(hoy.getMonth() + 1).padStart(2, '0'),
+    String(hoy.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  return citasEjemploDelDia.map((ejemplo, indice) => ({
+    id: -1000 - indice,
+    key: `ejemplo-${indice}`,
+    mascota: ejemplo.nombre,
+    motivo: ejemplo.motivo,
+    // Solo la hora: son citas del día, la fecha se selections arriba.
+    fecha: `${ejemplo.hora} hs`,
+    dueno: ejemplo.dueno,
+    guardado: {
+      id: -1000 - indice,
+      tipo: ejemplo.motivo,
+      sede,
+      fecha,
+      hora: ejemplo.hora,
+      llegadaEn: null,
+      // Todavia no fue atendido: la descripcion la carga el veterinario
+      // al completar el turno.
+      descripcion: null,
+      mascotaId: -1000 - indice,
+      mascota: {
+        id: -1000 - indice,
+        nombre: ejemplo.nombre,
+        especie: ejemplo.especie,
+        raza: ejemplo.raza,
+        foto: null,
+      },
+    },
+  }));
+}
 // Los accesos rapidos son los mismos para todos. El admin entra a Turnos y
 // desde ahi, con el boton de abajo, pasa a "Atender pacientes".
 const accesosRapidos = [
@@ -160,6 +169,39 @@ export default function InicioScreen() {
   const [modalQr, setModalQr] = useState(false);
   const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
   const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
+  const [fotosEjemplo, setFotosEjemplo] = useState<string[]>([]);
+
+  // Las fotos de las citas de ejemplo. Van por la API porque en la base hay
+  // formatos que el empaquetador de la app no sabe leer.
+  useEffect(() => {
+    let vigente = true;
+    void (async () => {
+      try {
+        const usuario = await obtenerUsuarioActual();
+        if (!usuario) return;
+        const response = await fetch(`${API_BASE_URL}/api/mascotas/fotos-ejemplo`, {
+          headers: { Authorization: `Bearer ${usuario.accessToken}` },
+        });
+        if (!response.ok) return;
+        const resultado: unknown = await response.json();
+        if (
+          vigente &&
+          typeof resultado === 'object' &&
+          resultado !== null &&
+          'fotos' in resultado &&
+          Array.isArray(resultado.fotos) &&
+          resultado.fotos.every((foto) => typeof foto === 'string')
+        ) {
+          setFotosEjemplo(resultado.fotos as string[]);
+        }
+      } catch {
+        // Si no llegan fotos, cada cita usa la de respaldo.
+      }
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, []);
 
   const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
     valor: nombre,
@@ -172,6 +214,17 @@ export default function InicioScreen() {
   const fotoModalSize = Math.max(
     0,
     Math.min(windowWidth * 0.82, windowHeight - 200, 640)
+  );
+
+  // Lado de la foto de las citas. Se mide el alto real de la lista con onLayout
+  // en vez de suponERlo: la lista es el 52% del area util (que ya no es toda la
+  // ventana, hay que descontar el encabezado del menu) y con la cuenta
+  //_estimada_ las tarjetas se pasaban del borde.
+  const [altoLista, setAltoLista] = useState(0);
+  const altoListaReal = altoLista || (windowHeight - 64) * 0.52;
+  // De ese alto salen el titulo, los tres huecos y el padding de las tarjetas.
+  const ladoFotoTarjeta = Math.round(
+    Math.max(38, Math.min(96, (altoListaReal - 68) / 4 - 26))
   );
 
   const cargarMascotas = useCallback(async () => {
@@ -243,25 +296,93 @@ export default function InicioScreen() {
     }, [cargarTurnos])
   );
 
-  const ahora = new Date();
-  const citasVisibles: CitaLista[] = [
-    // El admin ve primero los 3 turnos de ejemplo, y despues los reales de la sede.
-    ...(esAdmin ? citasDeEjemplo(sedeSeleccionada) : []),
-    ...turnosGuardados
-      // El admin filtra por la sede que eligio arriba.
-      .filter((turno) => turnoSiguePendiente(turno, ahora))
-      .filter((turno) => !esAdmin || turno.sede === sedeSeleccionada)
-      .map((turno) => ({
-      id: -turno.id,
-      key: `guardado-${turno.id}`,
-      mascota: turno.mascota.nombre,
-      motivo: turno.tipo,
-      fecha: formatearFechaTurno(turno.fecha, turno.hora),
-      dueno: nombreCompleto || null,
-      descripcion: turno.descripcion ?? null,
-      guardado: turno,
-      })),
-  ];
+// En la portada solo van 4 citas. La agenda completa esta en la pantalla de
+  // Turnos, asi que aca no hace falta verlas todas.
+  const COTAS_PROXIMAS = 4;
+
+  // Las 4 citas del admin son fijas, no vienen de la API. Un usuario normal ve
+  // sus turnos de verdad.
+  const citasVisibles: CitaLista[] = esAdmin
+    ? citasDeEjemplo(sedeSeleccionada).map((cita, indice) => ({
+        ...cita,
+        // Las fotos vienen de la API para poder usar cualquier formato que
+        // tenga la base. Si no hay, cae en la de respaldo.
+        fotoUri: fotosEjemplo[indice] ?? null,
+      }))
+    : turnosGuardados
+        .filter((turno) => turnoSiguePendiente(turno, new Date()))
+        .map((turno) => ({
+          id: -turno.id,
+          key: `guardado-${turno.id}`,
+          mascota: turno.mascota.nombre,
+          motivo: turno.tipo,
+          fecha: `${turno.hora} hs`,
+          dueno: nombreCompleto || null,
+          guardado: turno,
+        }))
+        .slice(0, COTAS_PROXIMAS);
+
+  const citasConFoto = citasVisibles.map((cita) => ({
+    ...cita,
+    fotoLocal: cita.fotoLocal ?? (cita.fotoUri ? null : fotoRespaldo),
+  }));
+// El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
+  // arma una hoja simple con el mismo valor que muestra el cartel.
+  const imprimirQr = async (sede: SedeVeterinaria) => {
+    // El SVG del QR se arma aca y no con un script de internet: antes la hoja
+    // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
+    const svgQr = await toString(checkInDeSede(sede), {
+      type: 'svg',
+      errorCorrectionLevel: 'M',
+      margin: 0,
+      width: 300,
+    });
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>QR ${sede}</title>
+<style>
+  body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
+  h1 { color: #0f3e17; }
+  svg { width: 300px; height: 300px; }
+</style></head>
+<body>
+  <h1>VetPro</h1>
+  <h2>Codigo QR de llegada</h2>
+  <p>Presentá este código para que los usuarios registren su llegada.</p>
+  <div>${svgQr}</div>
+  <h3 style="color: #0f3e17;">${sede}</h3>
+</body></html>`;
+
+    // expo-print es nativo y no existe en web: ahi se usa el dialogo del
+    // navegador. Antes salia "No se pudo abrir la impresion desde aca".
+    if (Platform.OS === 'web') {
+      try {
+        const ventana = window.open('', '_blank', 'width=520,height=760');
+        if (!ventana) {
+          setErrorTurnos('El navegador bloqueó la impresión. Permití las ventanas emergentes.');
+          return;
+        }
+        ventana.document.write(html);
+        ventana.document.close();
+        ventana.focus();
+        await new Promise((resolver) => setTimeout(resolver, 300));
+        ventana.print();
+      } catch (printError) {
+        console.error('No se pudo imprimir el QR en el navegador:', printError);
+        setErrorTurnos('No se pudo abrir la impresión desde acá.');
+      }
+      return;
+    }
+
+    try {
+      const Print = await import('expo-print');
+      const archivo = await Print.printToFileAsync({ html });
+      await Print.printAsync({ uri: archivo.uri });
+    } catch (printError) {
+      console.error('No se pudo imprimir el QR:', printError);
+      setErrorTurnos('No se pudo abrir la impresion desde aca.');
+    }
+  };
 
   const renderMascota = ({ item }: { item: Mascota }) => (
     <Pressable
@@ -305,36 +426,54 @@ export default function InicioScreen() {
     </Pressable>
   );
 
-  const renderCita = ({ item }: { item: CitaLista }) => (
+const renderCita = (item: CitaLista) => {
+  const foto =
+    item.fotoUri
+      ? { uri: item.fotoUri }
+      : (item.fotoLocal ??
+        (item.guardado.mascota.foto ? { uri: item.guardado.mascota.foto } : null));
+  return (
     <Pressable
-      style={({ pressed }) => [estilos.cardVertical, pressed && estilos.buttonPressed]}
+      key={item.key}
+      style={({ pressed }) => [
+        styles.citaTarjeta,
+        { minHeight: ladoFotoTarjeta + 22 },
+        pressed && estilos.buttonPressed,
+      ]}
       onPress={() => setCitaSeleccionada(item)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${item.mascota}`}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        {item.guardado.mascota.foto ? (
+      <View style={styles.citaFila}>
+        {foto ? (
           <Image
-            source={{ uri: item.guardado.mascota.foto }}
-            style={{ width: 56, height: 56, borderRadius: 10, backgroundColor: '#cfe7d3' }}
-            resizeMode="contain"
+            source={foto}
+            style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
+            resizeMode="cover"
             accessibilityLabel={`Foto de ${item.mascota}`}
           />
         ) : (
-          <View style={styles.turnPhotoPlaceholder}>
+          <View
+            style={[
+              styles.citaFotoVacia,
+              { width: ladoFotoTarjeta, height: ladoFotoTarjeta },
+            ]}
+          >
             <Ionicons name="paw-outline" size={26} color="#0f3e17" />
           </View>
         )}
-        <View style={{ flex: 1 }}>
-          <Text style={estilos.cardTitle}>
+        <View style={styles.citaTexto}>
+          <Text style={styles.citaTitulo} numberOfLines={1} ellipsizeMode="tail">
             {item.mascota} - {item.motivo}
           </Text>
-          <Text style={estilos.cardSubtitle}>{item.fecha}</Text>
-          <Text style={estilos.cardSubtitle}>Sede: {item.guardado.sede}</Text>
+          <Text style={styles.citaSubtitulo} numberOfLines={1} ellipsizeMode="tail">
+            {item.fecha}
+          </Text>
         </View>
       </View>
     </Pressable>
   );
+};
 
   const accesos = esAdmin
     ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
@@ -342,23 +481,11 @@ export default function InicioScreen() {
 
   return (
     <AppDrawer title="VetPro">
-      <FlatList
-        style={estilos.container}
-        data={citasVisibles}
-        keyExtractor={(item) => item.key}
-        renderItem={renderCita}
-        contentContainerStyle={estilos.listPadding}
-        ListEmptyComponent={
-          !cargandoTurnos && !errorTurnos ? (
-            <Text style={[estilos.cardSubtitle, { paddingHorizontal: 8, paddingBottom: 16 }]}>
-              No tienes próximas citas.
-            </Text>
-          ) : null
-        }
-        ListHeaderComponent={
-          <View>
+      <View style={styles.portada}>
+        <View style={styles.portadaEncabezado}>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
+              <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
             </View>
 
             <View style={styles.accesos}>
@@ -371,7 +498,7 @@ export default function InicioScreen() {
                   accessibilityLabel={`Ir a ${acceso.label}`}
                 >
                   <View style={styles.accesoIcono}>
-                    <Ionicons name={acceso.icon} size={20} color="#0f3e17" />
+                    <Ionicons name={acceso.icon} size={30} color="#0f3e17" />
                   </View>
                   <Text style={styles.accesoTexto} numberOfLines={2}>
                     {acceso.label}
@@ -390,6 +517,7 @@ export default function InicioScreen() {
                   seleccion={sedeSeleccionadaOpcion}
                   onSelect={(opcion) => setSedeSeleccionada(opcion.valor as SedeVeterinaria)}
                   compacto
+                  ocultarLabel
                   accessibilityLabel="Elegir sede de la veterinaria"
                 />
               </View>
@@ -423,7 +551,7 @@ export default function InicioScreen() {
             {esAdmin ? (
               <View style={styles.qrAdminBloque}>
                 <Pressable
-                  style={({ pressed }) => [estilos.qrBoton, pressed && estilos.buttonPressed]}
+                  style={({ pressed }) => [styles.qrBotonCompacto, pressed && estilos.buttonPressed]}
                   onPress={() => {
                     setSedeQr(sedeSeleccionada);
                     setModalQr(true);
@@ -432,8 +560,8 @@ export default function InicioScreen() {
                   accessibilityLabel={`Mostrar el código QR de llegada de ${sedeSeleccionada}`}
                 >
                   <View style={estilos.qrBotonFila}>
-                    <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
-                    <Text style={estilos.buttonTextPrimary}>QR de llegada</Text>
+                    <Ionicons name="qr-code-outline" size={22} color="#fffefc" />
+                    <Text style={estilos.buttonTextPrimary}>Ver QR de llegada</Text>
                   </View>
                 </Pressable>
               </View>
@@ -452,15 +580,39 @@ export default function InicioScreen() {
               </Link>
             )}
 
-            <Text style={estilos.sectionTitle}>Próximas Citas</Text>
-            {cargandoTurnos ? (
-              <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
-            ) : errorTurnos ? (
-              <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
-            ) : null}
           </View>
-        }
-        />
+
+        {/* Un View y no un FlatList: son 4 citas fijas sin scroll. El FlatList
+            sin flex media mal el alto y dejaba un hueco al final. */}
+        <View
+          style={styles.portadaLista}
+          onLayout={(evento) => setAltoLista(evento.nativeEvent.layout.height)}
+        >
+          <Text style={styles.tituloSeccion}>Próximas Citas</Text>
+          {cargandoTurnos ? (
+            <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
+          ) : errorTurnos ? (
+            <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
+          ) : null}
+          {citasConFoto.length === 0 && !cargandoTurnos && !errorTurnos ? (
+            <View style={styles.sinCitas}>
+              <View style={styles.sinCitasIcono}>
+                <Ionicons name="calendar-clear-outline" size={26} color="#0f3e17" />
+              </View>
+              <Text style={styles.sinCitasTitulo}>
+                No hay próximas citas en {sedeSeleccionada}
+              </Text>
+              <Text style={styles.sinCitasTexto}>
+                Para hoy no hay nada agendado en esa sede.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.tarjetasCitas}>
+              {citasConFoto.map(renderCita)}
+            </View>
+          )}
+        </View>
+      </View>
 
       <Modal
         visible={mascotaSeleccionada !== null}
@@ -556,11 +708,9 @@ export default function InicioScreen() {
               {citaSeleccionada.dueno ? (
                 <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>
               ) : null}
-              {citaSeleccionada.descripcion ? (
-                <Text style={estilos.modalText}>
-                  Descripción: {citaSeleccionada.descripcion}
-                </Text>
-              ) : null}
+              {/* Sin descripcion: son turnos proximos, todavia no fueron
+                  atendidos. La descripcion la carga el veterinario al completar
+                  el turno, en la pantalla de atencion. */}
             </View>
           )}
         </View>
@@ -602,6 +752,16 @@ export default function InicioScreen() {
               </View>
               <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
+
+            <Pressable
+              style={({ pressed }) => [estilos.addPetButton, pressed && estilos.buttonPressed]}
+              onPress={() => void imprimirQr(sedeQr)}
+              accessibilityRole="button"
+              accessibilityLabel={`Imprimir el código QR de ${sedeQr}`}
+            >
+              <Ionicons name="print-outline" size={19} color="#fffefc" />
+              <Text style={estilos.buttonTextPrimary}>Imprimir QR - {sedeQr}</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -609,52 +769,179 @@ export default function InicioScreen() {
   );
 }
 
-const styles = {
-  saludo: {
+// Con StyleSheet.create y no un objeto plano: asi React Native registra los
+// estilos y Fast Refresh no se queda con la version vieja cuando edito.
+const styles = StyleSheet.create({
+  // La portada entra entera en la pantalla: sin scroll.
+  // Se parte en dos: el encabezado toma el alto sobrante y la lista de citas
+  // toma solo el suyo, asi el alto no salta al cambiar de sede.
+  portada: { flex: 1, backgroundColor: '#fffefc' },
+  // Reparto fijo: el encabezado se lleva el 48% de la pantalla y la lista de
+  // citas el 52%, siempre. Asi el bloque de citas tiene el mismo peso en
+  // cualquier telefono y no queda un hueco gigante en el medio.
+  portadaEncabezado: {
+    flexBasis: '48%' as DimensionValue,
+    flexGrow: 1,
+    flexShrink: 1,
+    justifyContent: 'space-evenly' as const,
+    paddingHorizontal: 12,
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  // El alto de las tarjetas se reparte dentro de esta mitad: si el telefono es
+  // mas alto, las citas se agrandan en vez de dejar el espacio vacio arriba.
+  portadaLista: {
+    flexBasis: '52%' as DimensionValue,
+    flexGrow: 1,
+    flexShrink: 1,
+    paddingHorizontal: 12,
+    paddingTop: 4,
+  },
+  tarjetasCitas: { flex: 1, gap: 8 },
+sinCitas: {
+    alignItems: 'center' as const,
+    marginTop: 8,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dcecdc',
+    backgroundColor: '#f2f9f1',
+  },
+  sinCitasIcono: {
+    width: 52,
+    height: 52,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 10,
+    borderRadius: 26,
+    backgroundColor: '#e4f1e0',
+  },
+  sinCitasTitulo: { color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
+  sinCitasTexto: {
+    marginTop: 3,
+    color: '#556b58',
+    fontSize: 13,
+    textAlign: 'center' as const,
+  },
+citaTarjeta: {
+    flex: 1,
+    flexShrink: 1,
+    justifyContent: 'center' as const,
+    backgroundColor: '#e1f4df',
+    padding: 10,
+    borderRadius: 16,
+    borderColor: '#efeeeb',
+    borderWidth: 1,
+  },
+  citaFila: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 13,
+  },
+  // El lado de la foto y el alto minimo de la tarjeta los calcula la pantalla
+  // (ver ladoFotoTarjeta). Con flex solo se deformaban en telefonos chicos.
+  citaFoto: { width: 72, height: 72, borderRadius: 16, backgroundColor: '#cfe7d3' },
+  citaFotoVacia: {
+    width: 72,
+    height: 72,
+    borderRadius: 16,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: '#cfe7d3',
+  },
+  citaTexto: { flex: 1 },
+  citaTitulo: {
+    color: '#0f3e17',
+    fontSize: 17,
+    fontWeight: 'bold' as const,
+  },
+  citaSubtitulo: { marginTop: 3, color: '#4a6152', fontSize: 15 },
+  qrAdminBotonFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tituloSeccion: {
+    marginBottom: 10,
+    color: '#0f3e17',
+    fontSize: 22,
+    fontWeight: 'bold' as const,
+  },
+  qrBotonCompacto: {
+    backgroundColor: '#0f3e17',
+    paddingVertical: 15,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+  },
+  imprimirQr: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#0f3e17',
+    backgroundColor: '#f2f9f1',
+  },
+  imprimirQrTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+saludo: {
     width: '100%' as DimensionValue,
     alignItems: 'center' as const,
-    paddingTop: 12,
-    paddingBottom: 22,
+    paddingTop: 4,
+    paddingBottom: 10,
   },
   saludoTexto: {
     alignSelf: 'stretch' as const,
     color: '#0f3e17',
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold' as const,
-    marginBottom: 6,
+    marginBottom: 3,
+    textAlign: 'center' as const,
+  },
+  saludoSubtexto: {
+    alignSelf: 'stretch' as const,
+    color: '#556b58',
+    fontSize: 15,
     textAlign: 'center' as const,
   },
   accesos: {
     width: '100%' as DimensionValue,
     flexDirection: 'row' as const,
-    gap: 10,
+    gap: 16,
     marginBottom: 0,
   },
-  // Un poco mas abajo de los accesos rapidos y mas cerca del boton del QR.
-  bloqueSede: { marginTop: 18, marginBottom: 10 },
+  // Los espacios entre los bloques los pone space-evenly del encabezado.
+  bloqueSede: {},
   acceso: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     gap: 7,
-    paddingVertical: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: '#dcecdc',
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: '#f2f9f1',
   },
   accesoIcono: {
-    width: 42,
-    height: 42,
+    width: 50,
+    height: 50,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: '#e4f1e0',
   },
   accesoTexto: {
     color: '#1e3326',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600' as const,
     textAlign: 'center' as const,
   },
@@ -663,7 +950,7 @@ const styles = {
     paddingHorizontal: 8,
   },
   qrAdminBloque: {
-    marginVertical: 12,
+    marginVertical: 0,
   },
   // estilos.modalTitle no tiene textAlign, asi que el titulo se pegaba a la
   // izquierda mientras el subtitizado de abajo si iba centrado.
@@ -707,4 +994,4 @@ const styles = {
     borderRadius: 10,
     backgroundColor: '#cfe7d3',
   },
-};
+});

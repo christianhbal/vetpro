@@ -193,7 +193,7 @@ export default function TurnosScreen() {
         )}
         <View style={styles.turnoTexto}>
           <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {cita.atendido ? cita.mascota : `${cita.mascota} - ${cita.motivo}`}
+            {cita.mascota} - {cita.motivo}
           </Text>
           {cita.dueno ? (
             <Text style={styles.dueno} numberOfLines={1} ellipsizeMode="tail">
@@ -201,7 +201,7 @@ export default function TurnosScreen() {
             </Text>
           ) : null}
           <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {cita.fecha}
+            {cita.hora} hs
           </Text>
         </View>
 
@@ -275,7 +275,7 @@ export default function TurnosScreen() {
             esAdmin ? 'Turnos siguientes' : 'Turnos de hoy',
             turnosPendientes,
             esAdmin
-              ? `No hay turnos siguientes en ${sedeSeleccionada}.`
+              ? 'No hay ningún turno próximo en el día.'
               : 'No tenés turnos para hoy.'
           )}
           {seccionLista(

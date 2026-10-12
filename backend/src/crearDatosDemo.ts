@@ -29,12 +29,11 @@ function tieneDueno<T extends { userId: number | null }>(
   return mascota.userId !== null;
 }
 
-// Cada sede tiene un perfil distinto, para poder ver la app en situaciones
-// diferentes sin tener que esperar a que pase algo:
-//
-//   Recoleta      hora pico: la tarde llena de gente.
-//   San Isidro    casi lleno: una cola mas corta.
-//   Vicente Lopez aun no abrio: tiene agenda, pero todavia no llego nadie.
+//   Vicente Lopez inicio del dia: la manana llena de turnos por venir, todavia
+//                           no se atendio ninguno y llegaron los primeros.
+//   Recoleta      hora pico: la tarde llena de gente esperando en la sala.
+//   San Isidro    final del dia: se atendio todo, no queda ningun turno por
+//                           delante y no hay nadie esperando.
 //
 // "llegan" es cuantos de los pendientes ya escanearon el QR. Es lo unico que
 // decide si el turno aparece en "Atender pacientes": sin llegada no hay nadie
@@ -54,18 +53,8 @@ const PERFILES: Record<
     llegan: number;
   }
 > = {
-  Recoleta: {
-    // Ya se atendio toda la manana y queda la tarde entera.
-    completados: ['10:00', '11:30', '13:00', '14:00', '15:00'],
-    pendientes: ['16:30', '17:00', '17:30', '18:00', '18:30'],
-    llegan: 3,
-  },
-  'San Isidro': {
-    completados: ['10:30'],
-    pendientes: ['11:00', '12:00', '13:30', '15:00', '16:30', '17:30'],
-    llegan: 2,
-  },
   'Vicente López': {
+    // Nadie fue atendido todavia: la jornada arranca.
     completados: [],
     pendientes: [
       '10:00',
@@ -79,6 +68,29 @@ const PERFILES: Record<
       '14:30',
       '15:00',
     ],
+    llegan: 2,
+  },
+  Recoleta: {
+    // Ya se atendio toda la manana y quedo la tarde llena.
+    completados: ['10:00', '11:30', '13:00', '14:00', '15:00'],
+    pendientes: ['16:30', '17:00', '17:30', '18:00', '18:30'],
+    llegan: 3,
+  },
+  'San Isidro': {
+    // Se termino la jornada entera: no queda nada por delante.
+    completados: [
+      '10:00',
+      '11:00',
+      '12:00',
+      '13:00',
+      '14:00',
+      '15:00',
+      '16:00',
+      '17:00',
+      '18:00',
+      '18:30',
+    ],
+    pendientes: [],
     llegan: 0,
   },
 };
@@ -93,7 +105,9 @@ const DESCRIPCIONES: Record<Tipo, readonly string[]> = {
     'Revision de dientes y encias. Se recomienda continuar con la dieta habitual.',
     'Control post quirurgico. La herida cierra bien, sin signos de infeccion.',
     'Control de hidratacion y temperatura. Todo dentro de los parametros normales.',
-    'Revision de movilidad y reflejos. Se sugiere repetir el control en tres meses.',
+'Revision de movilidad y reflejos. Se sugiere repetir el control en tres meses.',
+    'Control de piel y orejas. Todo en orden, se sigue con la misma dieta.',
+    'Pesaje de control y revision de la denticion. Proxima vez en seis meses.',
   ],
   Vacunas: [
     'Se aplico la vacuna anual y la mascota quedo tranquila, sin reaccion.',
@@ -101,6 +115,8 @@ const DESCRIPCIONES: Record<Tipo, readonly string[]> = {
     'Se completo el esquema de vacunas. La proxima visita es en un año.',
     'Vacuna contra la leptospirosis aplicada. Sin efectos adversos.',
     'Desparasitacion trimestral junto con la vacuna. Vuelve en tres meses.',
+    'Vacuna anual aplicada sin reaccion. La mascota se fue tranquila.',
+    'Desparasitacion y vacuna al dia. Proxima dosis en tres meses.',
   ],
   'Estética': [
     'Baño y corte. Se dejo comentario sobre el pelo para la proxima visita.',
@@ -108,6 +124,8 @@ const DESCRIPCIONES: Record<Tipo, readonly string[]> = {
     'Corte de pelo y limpieza de dientes. Sin cambios en la piel.',
     'Baño medicado porque venia con una irritacion leve. Continua bien.',
     'Arrasado y corte de garras. Recomendamos repetir cada seis semanas.',
+    'Corte de pelo y limpieza de oidos. Sin irritacion en la piel.',
+    'Baño, corte y corte de unas. Todo listo para la proxima visita.',
   ],
 };
 
@@ -236,8 +254,10 @@ async function main(): Promise<void> {
         fecha: ejemplo.fecha,
         hora: ejemplo.hora,
         llegadaEn: ejemplo.llego ? llegada : null,
-        // Sin llegada no se puede haber atendido: nadie entro a la consulta.
-        atendidoEn: ejemplo.atendido && ejemplo.llego ? llegada : null,
+        // Sin llegada no hay nadie esperando, pero el turno puede estar atendido: en
+        // una sede que ya cerro la jornada la llegada queda vacia y el
+        // atendido sigue puesto.
+        atendidoEn: ejemplo.atendido ? llegada : null,
         descripcion: ejemplo.descripcion,
         esDemo: true,
         user: { connect: { id: mascota.userId } },
@@ -289,10 +309,21 @@ async function main(): Promise<void> {
     );
   }
 
-  // Chequeos. Todos los ejemplos son de hoy, asi que tienen que cumplirse dos
-// cosas: que no haya dos turnos a la misma hora en la misma sede (seria una
-  // doble reserva) y que en un mismo horario no se repita un nombre (las
-  // tarjetas se verian iguales).
+// Chequeos. Todos los ejemplos son de hoy y salen de las mascotas que ya hay
+  // en la base, asi que tienen que cumplirse tres cosas: que no haya dos turnos
+  // a la misma hora en la misma sede (seria una doble reserva), que en un mismo
+  // horario no se repita un nombre (las tarjetas se verian iguales) y que
+  // todas las mascotas tengan foto (si no, la tarjeta sale con la huellita).
+  const sinFoto = creados.filter((turno) => !turno.conFoto);
+  if (sinFoto.length > 0) {
+    console.log(`\nOjo: ${sinFoto.length} turnos quedaron con una mascota sin foto:`);
+    for (const turno of sinFoto) {
+      console.log(`  ${turno.sede} ${turno.fecha} ${turno.hora}  ${turno.mascota}`);
+    }
+  } else {
+    console.log('\nTodos los turnos tienen mascota con foto.');
+  }
+
   const porHorario = new Map<string, string[]>();
   for (const turno of creados) {
     const clave = `${turno.sede}|${turno.fecha}|${turno.hora}`;

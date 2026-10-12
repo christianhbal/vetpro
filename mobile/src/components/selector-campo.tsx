@@ -22,6 +22,8 @@ type SelectorCampoProps = {
   accessibilityLabel: string;
   /** Oculta el subtitulo y achica el campo, para las columnas angostas. */
   compacto?: boolean;
+  /** Saca el texto de arriba. Para cuando el valor ya se entiende solo. */
+  ocultarLabel?: boolean;
 };
 
 /**
@@ -39,14 +41,15 @@ export function SelectorCampo({
   vacio,
   accessibilityLabel,
   compacto = false,
+  ocultarLabel = false,
 }: SelectorCampoProps) {
   const [abierto, setAbierto] = useState(false);
 
   const activo = seleccion !== null;
 
   return (
-    <View style={styles.campoBloque}>
-      <Text style={styles.label}>{label}</Text>
+    <View style={[styles.campoBloque, ocultarLabel && styles.campoBloqueSinLabel]}>
+      {ocultarLabel ? null : <Text style={styles.label}>{label}</Text>}
 
       <Pressable
         style={({ pressed }) => [
@@ -203,6 +206,7 @@ export function SelectorCampo({
 
 const styles = StyleSheet.create({
   campoBloque: { marginBottom: 10 },
+  campoBloqueSinLabel: { marginBottom: 0 },
   label: {
     marginBottom: 6,
     color: '#4d6154',

@@ -728,14 +728,20 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const ocupados = ocupadosPorDia.get(value) ?? 0;
             const esPasado = value < hoyValor;
             const esDomingo = date.getDay() === 0;
-            const completo = ocupados >= horariosDisponibles.length;
-            const deshabilitado = esPasado || esDomingo || completo || cargando || Boolean(error);
+            const completos = ocupados >= horariosDisponibles.length;
+            // Un dia sin horarios igual se puede abrir para ver que esta lleno,
+            // asi que no cuenta como deshabilitado: solo se ve distinto.
+            const deshabilitado = esPasado || esDomingo || cargando || Boolean(error);
             const seleccionado = fechaSeleccionada === value;
             const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
             return (
               <Pressable
                 key={`day-${dia}`}
-                style={[styles.day, { height: altoDia }, seleccionado && styles.selectedDay]}
+                style={[
+                  styles.day,
+                  { height: altoDia },
+                  seleccionado && styles.selectedDay,
+                ]}
                 onPress={() => {
                   setFechaSeleccionada(value);
                   setHoraSeleccionada('');
@@ -744,7 +750,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 disabled={deshabilitado}
                 accessibilityRole="button"
                 accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                accessibilityLabel={`${dia} de ${nombreMes}${ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}${completo ? ', sin horarios' : ''}`}
+                accessibilityLabel={`${dia} de ${nombreMes}${completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}`}
               >
                 <Text
                   style={[
@@ -756,7 +762,12 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 >
                   {dia}
                 </Text>
-                {ocupados > 0 && !seleccionado ? <View style={styles.busyDot} /> : null}
+                {/* El puntito marca que el dia ya tiene horarios tomados. No va en
+                    los pasados ni en los domingos porque no se pueden agendar, ni en
+                    el que esta elegido porque el fondo oscuro ya lo dice. */}
+                {ocupados > 0 && !esPasado && !esDomingo && !seleccionado ? (
+                  <View style={styles.busyDot} />
+                ) : null}
               </Pressable>
             );
           })}
@@ -794,7 +805,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             <View>
               {!hayHorasLibres ? (
                 <Text style={styles.sinHoras}>
-                  No quedan horarios libres para esta fecha. Probá con otro día.
+                  No hay ningún horario libre para esta fecha. Probá con otro día.
                 </Text>
               ) : null}
               <View style={[styles.slotsGrid, { gap: gapSlot }]}>
@@ -1162,6 +1173,8 @@ const styles = StyleSheet.create({
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
   disabledText: { color: '#a0a69f' },
+  // Puntito de "este dia ya tiene horarios tomados". Solo se muestra en los dias
+// que todavia tienen alguna hora libre.
   busyDot: {
     position: 'absolute',
     bottom: 3,
