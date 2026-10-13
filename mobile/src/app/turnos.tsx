@@ -262,11 +262,7 @@ export default function TurnosScreen() {
   const renderTurno = (cita: CitaLista) => (
     <Pressable
       key={cita.key}
-      style={({ pressed }) => [
-        estilos.cardTurno,
-        cita.atendido && styles.tarjetaAtendida,
-        pressed && estilos.buttonPressed,
-      ]}
+      style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
       onPress={() => setCitaSeleccionada(cita)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${cita.mascota}`}
@@ -285,9 +281,20 @@ export default function TurnosScreen() {
           </View>
         )}
         <View style={styles.turnoTexto}>
-          <Text style={estilos.cardTituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {cita.mascota} - {cita.motivo}
-          </Text>
+          <View style={styles.turnoEncabezado}>
+            <Text
+              style={[estilos.cardTituloTurno, styles.turnoTitulo]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {cita.mascota} - {cita.motivo}
+            </Text>
+            {cita.atendido ? (
+              <View style={styles.selloAtendido}>
+                <Text style={styles.selloAtendidoTexto}>Atendido</Text>
+              </View>
+            ) : null}
+          </View>
           {cita.dueno ? (
             <Text style={styles.dueno} numberOfLines={1} ellipsizeMode="tail">
               {cita.dueno}
@@ -557,7 +564,21 @@ const styles = {
     borderRadius: 12,
     backgroundColor: '#e2f2e4',
   },
-  tarjetaAtendida: { borderColor: '#0f3e17', borderWidth: 2 },
+  selloAtendido: {
+    borderWidth: 1,
+    borderColor: '#0f3e17',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#e8f3e4',
+  },
+  selloAtendidoTexto: { color: '#0f3e17', fontSize: 11, fontWeight: '700' as const },
+  turnoEncabezado: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  turnoTitulo: { flexShrink: 1 },
   agendar: {
     paddingHorizontal: 15,
     paddingTop: 6,

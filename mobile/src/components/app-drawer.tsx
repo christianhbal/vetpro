@@ -15,8 +15,9 @@ import { obtenerUsuarioActual } from '@/lib/session';
 const menuItems = [
   { label: 'VetPro', href: '/app', icon: 'home-outline' },
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
-{ label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
+  { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
   { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
+  { label: 'Perfil', href: '/perfil', icon: 'person-outline' },
 ] as const;
 
 const adminMenuItems = [
