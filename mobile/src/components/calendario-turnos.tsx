@@ -25,9 +25,13 @@ function fechaComoValor(fecha: Date): string {
 export function CalendarioTurnos({
   turnos,
   valorHoy,
+  fechaSeleccionada,
+  onSelectFecha,
 }: {
   turnos: TurnoCalendario[];
   valorHoy: string;
+  fechaSeleccionada: string | null;
+  onSelectFecha: (valor: string) => void;
 }) {
   const hoy = new Date();
   const [mesVisible, setMesVisible] = useState(
@@ -36,7 +40,6 @@ export function CalendarioTurnos({
 
   const dias = useMemo(() => construirDias(mesVisible), [mesVisible]);
 
-  // Set de fechas con turno: evita un filter por celda en cada render.
   const fechasConTurno = useMemo(
     () => new Set(turnos.map((turno) => turno.fecha)),
     [turnos]
@@ -80,22 +83,43 @@ export function CalendarioTurnos({
         ))}
 
         {dias.map((dia, indice) => {
-          if (dia === null) return <View key={`vacia-${indice}`} style={styles.day} />;
+          if (dia === null) return <View key={`vacia-${indice}`} style={styles.dia} />;
 
           const fecha = new Date(mesVisible.getFullYear(), mesVisible.getMonth(), dia);
           const valor = fechaComoValor(fecha);
           const tieneTurno = fechasConTurno.has(valor);
           const esHoy = valor === valorHoy;
+          const esPasado = valor < valorHoy;
+          const seleccionado = valor === fechaSeleccionada;
 
           return (
-            <View
+            <Pressable
               key={`dia-${dia}`}
-              style={[styles.day, esHoy && styles.dayHoy]}
-              accessibilityLabel={`Día ${dia} de ${nombreMes}${tieneTurno ? ', tiene turno' : ''}`}
+              style={[
+                styles.dia,
+                esPasado && !seleccionado && styles.diaPasado,
+                esHoy && !seleccionado && styles.diaHoy,
+                seleccionado && styles.diaSeleccionado,
+              ]}
+              onPress={() => onSelectFecha(seleccionado ? '' : valor)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: seleccionado }}
+              accessibilityLabel={`Día ${dia} de ${nombreMes}${tieneTurno ? ', tiene turno' : ', sin turnos'}`}
             >
-              <Text style={[styles.dayText, esHoy && styles.dayTextHoy]}>{dia}</Text>
-              {tieneTurno ? <View style={styles.turnoDot} /> : null}
-            </View>
+              <Text
+                style={[
+                  styles.diaTexto,
+                  esHoy && styles.diaTextoHoy,
+                  esPasado && !seleccionado && styles.diaTextoPasado,
+                  seleccionado && styles.diaTextoSeleccionado,
+                ]}
+              >
+                {dia}
+              </Text>
+              {tieneTurno ? (
+                <View style={[styles.turnoDot, seleccionado && styles.turnoDotSeleccionado]} />
+              ) : null}
+            </Pressable>
           );
         })}
       </View>
@@ -112,7 +136,7 @@ const styles = StyleSheet.create({
   contenedor: {
     paddingHorizontal: 4,
     paddingBottom: 8,
-    marginBottom: 8,
+    marginBottom: 10,
     backgroundColor: '#f2f9f1',
     borderWidth: 1,
     borderColor: '#dcecdc',
@@ -139,26 +163,34 @@ const styles = StyleSheet.create({
   },
   grilla: { flexDirection: 'row', flexWrap: 'wrap' },
   weekday: {
-    width: '14.2857%',
+    width: `${100 / 7}%`,
     paddingVertical: 3,
     color: '#69746a',
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
   },
-  day: {
-    width: '14.2857%',
+  dia: {
+    width: `${100 / 7}%`,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
   },
-  dayHoy: {
+  diaHoy: {
     borderWidth: 1.5,
     borderColor: '#0f3e17',
   },
-  dayText: { color: '#263b32', fontSize: 13 },
-  dayTextHoy: { fontWeight: 'bold', color: '#0f3e17' },
+  diaPasado: {
+    backgroundColor: '#f7fbf6',
+  },
+  diaSeleccionado: {
+    backgroundColor: '#0f3e17',
+  },
+  diaTexto: { color: '#263b32', fontSize: 13 },
+  diaTextoHoy: { fontWeight: 'bold', color: '#0f3e17' },
+  diaTextoPasado: { color: '#a9b0a8' },
+  diaTextoSeleccionado: { color: '#fffefc', fontWeight: 'bold' },
   turnoDot: {
     position: 'absolute',
     bottom: 3,
@@ -180,4 +212,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#2f7a3f',
   },
   legendText: { color: '#69746a', fontSize: 11 },
+  turnoDotSeleccionado: { backgroundColor: '#fffefc' },
 });

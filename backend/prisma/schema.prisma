@@ -48,6 +48,7 @@ model Turno {
   atendidoEn    String?
   descripcion   String?
   esDemo        Boolean         @default(false)
+  ocultoEnAgenda Boolean        @default(false)
   recordatorioEnviadoEn String?
   userId        Int
   user          Usuario        @relation(fields: [userId], references: [id], onDelete: Cascade)

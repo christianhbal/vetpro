@@ -37,8 +37,7 @@ export default function RootLayout() {
       <Stack.Screen name="mascotas" />
       <Stack.Screen name="turnos" />
       <Stack.Screen name="perfil" />
-      <Stack.Screen name="editar-perfil" />
-      <Stack.Screen name="historial" />
+<Stack.Screen name="editar-perfil" />
       <Stack.Screen name="escanear-qr" />
       <Stack.Screen name="nueva-mascota" />
       <Stack.Screen name="nuevo-turno" />

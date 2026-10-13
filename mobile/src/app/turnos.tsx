@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,7 +12,6 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
-import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { CalendarioTurnos } from '@/components/calendario-turnos';
 import { estilos } from '@/lib/estilos';
 import {
@@ -57,13 +56,103 @@ function fechaComoValor(fecha: Date): string {
   ].join('-');
 }
 
+function fechaCorta(fecha: string): string {
+  const [, mes, dia] = fecha.split('-');
+  return `${dia}/${mes}`;
+}
+
+function fechaRelativa(dias: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + dias);
+  return fechaComoValor(fecha);
+}
+
+type EjemploPasado = {
+  dueno: string;
+  mascota: string;
+  especie: string;
+  raza: string | null;
+  tipo: string;
+  hora: string;
+  descripcion: string | null;
+  diasAtras: number;
+  sede: SedeVeterinaria;
+};
+
+const ejemplosPasados: EjemploPasado[] = [
+  {
+    dueno: 'Ana Gómez',
+    mascota: 'Lola',
+    especie: 'Perro',
+    raza: 'Golden',
+    tipo: 'Vacunas',
+    hora: '10:30',
+    descripcion: 'Vacunación anual. Quedó tranquila, sin reacción.',
+    diasAtras: 3,
+    sede: 'Recoleta',
+  },
+  {
+    dueno: 'Bruno Díaz',
+    mascota: 'Mora',
+    especie: 'Gato',
+    raza: null,
+    tipo: 'Control',
+    hora: '16:00',
+    descripcion: 'Control de rutina. Se recomienda continuar con la dieta habitual.',
+    diasAtras: 2,
+    sede: 'San Isidro',
+  },
+  {
+    dueno: 'Carla Ruiz',
+    mascota: 'Tito',
+    especie: 'Perro',
+    raza: 'Pug',
+    tipo: 'Estética',
+    hora: '11:30',
+    descripcion: 'Baño y corte. Todo listo para la próxima visita.',
+    diasAtras: 2,
+    sede: 'Recoleta',
+  },
+];
+
+// Turnos de ejemplo de días anteriores. Solo frontend: no vienen de la API y
+// no entran en la lista de próximos, sirven para que el calendario se vea poblado.
+function turnosEjemploPasados(): TurnoLista[] {
+  return ejemplosPasados.map((ejemplo, indice) => {
+    const fecha = fechaRelativa(-ejemplo.diasAtras);
+    return {
+      id: -2000 - indice,
+      tipo: ejemplo.tipo,
+      sede: ejemplo.sede,
+      fecha,
+      hora: ejemplo.hora,
+      llegadaEn: new Date(`${fecha}T${ejemplo.hora}:00`).toISOString(),
+      atendidoEn: new Date(`${fecha}T${ejemplo.hora}:00`).toISOString(),
+      descripcion: ejemplo.descripcion,
+      esDemo: true,
+      ocultoEnAgenda: false,
+      mascotaId: -2000 - indice,
+      user: { nombre: ejemplo.dueno },
+      mascota: {
+        id: -2000 - indice,
+        nombre: ejemplo.mascota,
+        especie: ejemplo.especie,
+        raza: ejemplo.raza,
+        foto: null,
+      },
+    };
+  });
+}
+
 export default function TurnosScreen() {
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
+  const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
-  const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
+  const [filtroSede, setFiltroSede] = useState<'Todas' | SedeVeterinaria>('Todas');
+  const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const { height: windowHeight } = useWindowDimensions();
 
   const cargarTurnos = useCallback(async () => {
@@ -91,6 +180,7 @@ export default function TurnosScreen() {
         return;
       }
       setTurnos(resultado);
+      setAhora(new Date());
     } catch (fetchError) {
       setError(apiUnreachableMessage(fetchError));
       setTurnos([]);
@@ -105,7 +195,8 @@ export default function TurnosScreen() {
     }, [cargarTurnos])
   );
 
-  const ahora = new Date();
+  // El momento se guarda al cargar los datos: es la referencia para saber que
+  // turnos ya pasaron su hora.
   const valorHoy = fechaComoValor(ahora);
 
   const aCita = (turno: TurnoLista): CitaLista => ({
@@ -121,58 +212,51 @@ export default function TurnosScreen() {
     guardado: turno,
   });
 
-// Los turnos de ejemplo flotan: se ven siempre, mas alla de la fecha de hoy,
-  // para poder mostrar la app en cualquier momento.
-  const esEjemploOHoy = (turno: TurnoLista) => turno.esDemo === true || turno.fecha === valorHoy;
-
-  // El admin mira una sola sede a la vez, y lo que le interesa son los turnos
-  // que todavia no atendio, mas alla del dia en que estamos.
-  const enSedeSeleccionada = turnos.filter(
-    (turno) => esEjemploOHoy(turno) && turno.sede === sedeSeleccionada
+  // Los que solo ocupan la agenda (dias completos) no se listan aca. Tampoco los
+  // que ya fueron atendidos. De los que quedan, entran los que la hora aun no
+  // venció; los de ejemplo flotan y se ven siempre.
+  const proximos = useMemo(
+    () =>
+      turnos.filter(
+        (turno) =>
+          !turno.ocultoEnAgenda &&
+          (turno.atendidoEn === null || turno.atendidoEn === undefined) &&
+          (turno.esDemo === true || turnoSiguePendiente(turno, ahora))
+      ),
+    [turnos, ahora]
   );
 
-  // Los turnos que solo ocupan la agenda (los dias completos) y los que son
-  // historial del Historial se filtran antes de armar las dos listas. Si no,
-  // cada sede aparece con 18 turnos siguientes en vez de los reales.
-  // Ojo: sale de enSedeSeleccionada, no de turnos. Filtrando desde turnos se
-  // perdia el filtro de sede y la lista mezclaba las tres sedes.
-  const enAgenda = enSedeSeleccionada.filter((turno) => !turno.ocultoEnAgenda);
+  // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
+  // haya pasado o el turno figure atendido. Los ejemplos de dias anteriores se
+  // suman para que el calendario se vea poblado.
+  const porDia = useMemo(
+    () => [...turnos.filter((turno) => !turno.ocultoEnAgenda), ...turnosEjemploPasados()],
+    [turnos]
+  );
 
-  // Los pendientes van de menor a mayor: el proximo turno primero. Los completados
-  // al reves, del mas reciente al mas antiguo, que es como se lee una lista de
-  // lo que ya se atendio. El backend los manda en orden ascendente, asi que hay
-  // que darle vuelta.
-  const turnosPendientes = (
-    esAdmin ? enAgenda.filter((t) => !t.atendidoEn) : turnos.filter(esEjemploOHoy)
-  ).map(aCita);
+  const sedesDisponibles = useMemo(() => {
+    const conTurnos = new Set(porDia.map((turno) => turno.sede));
+    return ['Todas', ...sedesVeterinaria.filter((sede) => conTurnos.has(sede))];
+  }, [porDia]);
 
-  const segundoListado = (
-    esAdmin
-      ? enAgenda
-          // Un turno con fecha futura no puede estar completado: si aparece
-          // aca queda dando vueltas. No se muestra, y sigue estando en la
-          // lista de los siguientes.
-          .filter((t) => t.atendidoEn && t.fecha <= valorHoy)
-          .sort((a, b) =>
-            a.fecha === b.fecha
-              ? b.hora.localeCompare(a.hora)
-              : b.fecha.localeCompare(a.fecha)
-          )
-      : turnos.filter((turno) => turno.fecha > valorHoy && turnoSiguePendiente(turno, ahora))
-  ).map(aCita);
+  const turnosDelDia = useMemo(() => {
+    const idsProximos = new Set(proximos.map((turno) => turno.id));
+    const origen = fechaSeleccionada === null ? turnos : porDia;
 
-  const tituloSegundo = esAdmin ? 'Turnos completados' : 'Turnos próximos';
+    return origen
+      .filter((turno) => filtroSede === 'Todas' || turno.sede === filtroSede)
+      .filter((turno) =>
+        fechaSeleccionada === null
+          ? idsProximos.has(turno.id)
+          : turno.fecha === fechaSeleccionada
+      )
+      .sort((a, b) =>
+        a.fecha === b.fecha
+          ? a.hora.localeCompare(b.hora)
+          : a.fecha.localeCompare(b.fecha)
+      );
+  }, [fechaSeleccionada, filtroSede, porDia, proximos, turnos]);
 
-  const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
-    valor: nombre,
-    titulo: nombre,
-  }));
-
-  const sedeSeleccionadaOpcion =
-    opcionesSede.find((opcion) => opcion.valor === sedeSeleccionada) ?? null;
-
-  // La fila de agendar ocupa ~10% de la pantalla; el resto se reparte en
-  // mitades iguales entre las dos listas.
   const altoAgendar = Math.max(74, Math.round(windowHeight * 0.1));
 
   const renderTurno = (cita: CitaLista) => (
@@ -210,7 +294,7 @@ export default function TurnosScreen() {
             </Text>
           ) : null}
           <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {cita.hora} hs
+            {fechaCorta(cita.guardado.fecha)} - {cita.hora} hs
           </Text>
         </View>
 
@@ -221,7 +305,20 @@ export default function TurnosScreen() {
 
   const encabezadoSeccion = (titulo: string, citas: CitaLista[]) => (
     <View style={styles.listaEncabezado}>
-      <Text style={[estilos.sectionTitleTurno, styles.tituloSeccion]}>{titulo}</Text>
+      <View style={styles.listaFila}>
+        <Text style={[estilos.sectionTitleTurno, styles.tituloSeccion]}>{titulo}</Text>
+        {fechaSeleccionada ? (
+          <Pressable
+            style={({ pressed }) => [estilos.cerrarCirculo, pressed && estilos.buttonPressed]}
+            onPress={() => setFechaSeleccionada(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Volver a todos los turnos próximos"
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={24} color="#263b32" />
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={[estilos.sectionSubtitleTurno, styles.subtituloSeccion]}>
         {citas.length === 1 ? '1 turno' : `${citas.length} turnos`}
       </Text>
@@ -241,13 +338,8 @@ export default function TurnosScreen() {
     return <>{citas.map(renderTurno)}</>;
   };
 
-  const seccionLista = (
-    titulo: string,
-    citas: CitaLista[],
-    vacio: string,
-    estiloContenedor?: object
-  ) => (
-    <View style={[styles.lista, estiloContenedor]}>
+  const seccionLista = (titulo: string, citas: CitaLista[], vacio: string) => (
+    <View style={styles.lista}>
       {encabezadoSeccion(titulo, citas)}
       <ScrollView
         nestedScrollEnabled
@@ -259,42 +351,69 @@ export default function TurnosScreen() {
     </View>
   );
 
+  const tituloLista = fechaSeleccionada
+    ? `Turnos del ${new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })}`
+    : 'Turnos próximos';
+
+  const vacioLista = fechaSeleccionada
+    ? 'Ese día no tenés turnos.'
+    : esAdmin
+      ? 'No hay turnos próximos agendados.'
+      : 'No tenés turnos próximos agendados.';
+
   return (
     <AppDrawer title="Turnos">
       <View style={styles.pantalla}>
-        {esAdmin ? (
+        <View style={styles.cabecera}>
           <View style={styles.bloqueSede}>
-            <SelectorCampo
-              label="Sede"
-              icono="location-outline"
-              placeholder="Elegí una sede"
-              opciones={opcionesSede}
-              seleccion={sedeSeleccionadaOpcion}
-              onSelect={(opcion) => setSedeSeleccionada(opcion.valor as SedeVeterinaria)}
-              compacto
-              accessibilityLabel="Elegir sede de la veterinaria"
-            />
+            <Text style={styles.labelSede}>Sede</Text>
+            <View style={styles.filaSedes}>
+              {sedesDisponibles.map((opcion) => {
+                const seleccionada = filtroSede === opcion;
+                return (
+                  <Pressable
+                    key={opcion}
+                    onPress={() => {
+                      setFiltroSede(opcion as 'Todas' | SedeVeterinaria);
+                      setCitaSeleccionada(null);
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityLabel={opcion}
+                    accessibilityState={{ selected: seleccionada }}
+                    style={({ pressed }) => [
+                      styles.sedeChip,
+                      seleccionada && styles.sedeChipActivo,
+                      pressed && estilos.buttonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.sedeTexto, seleccionada && styles.sedeTextoActivo]}>
+                      {opcion}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        ) : null}
+
+          <CalendarioTurnos
+            turnos={porDia.filter(
+              (turno) => filtroSede === 'Todas' || turno.sede === filtroSede
+            )}
+            valorHoy={valorHoy}
+            fechaSeleccionada={fechaSeleccionada}
+            onSelectFecha={(valor) => {
+              setFechaSeleccionada(valor === '' ? null : valor);
+              setCitaSeleccionada(null);
+            }}
+          />
+        </View>
 
         <View style={styles.listas}>
-          {!esAdmin ? <CalendarioTurnos turnos={turnos} valorHoy={valorHoy} /> : null}
-          
-{seccionLista(
-            esAdmin ? 'Turnos siguientes' : 'Turnos de hoy',
-            turnosPendientes,
-            esAdmin
-              ? 'No hay ningún turno próximo en el día.'
-              : 'No tenés turnos para hoy.'
-          )}
-          {seccionLista(
-            tituloSegundo,
-            segundoListado,
-            esAdmin
-              ? `Todavía no hay turnos completados en ${sedeSeleccionada}.`
-              : 'No tenés turnos próximos agendados.',
-            styles.listaInferior
-          )}
+          {seccionLista(tituloLista, turnosDelDia.map(aCita), vacioLista)}
         </View>
 
         <View style={[styles.agendar, { height: altoAgendar }]}>
@@ -302,9 +421,7 @@ export default function TurnosScreen() {
             style={({ pressed }) => [styles.agendarBoton, pressed && estilos.buttonPressed]}
             onPress={() =>
               router.push(
-                esAdmin
-                  ? { pathname: '/admin-turnos-activos', params: { sede: sedeSeleccionada } }
-                  : '/nuevo-turno'
+                esAdmin ? '/admin-turnos-activos' : '/nuevo-turno'
               )
             }
             accessibilityRole="link"
@@ -384,8 +501,24 @@ export default function TurnosScreen() {
 
 const styles = {
   pantalla: { flex: 1, backgroundColor: '#fffefc' },
-  bloqueSede: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
-  listas: { flex: 1, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 6 },
+  cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
+  bloqueSede: { marginBottom: 12 },
+  labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
+  filaSedes: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 },
+  sedeChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 16,
+    backgroundColor: '#fffefc',
+  },
+  sedeChipActivo: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
+  sedeTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
+  sedeTextoActivo: { color: '#0f3e17', fontWeight: 'bold' as const },
+  // El padding lateral tiene que ser el mismo que el de la cabecera para que la
+  // tarjeta de la lista quede del mismo ancho que el calendario de arriba.
+  listas: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
   lista: {
     flex: 1,
     marginBottom: 10,
@@ -395,9 +528,14 @@ const styles = {
     backgroundColor: '#f2f9f1',
     overflow: 'hidden' as const,
   },
-  listaInferior: { marginBottom: 0 },
   listaEncabezado: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 9 },
-  tituloSeccion: { marginTop: 0, marginBottom: 0 },
+  listaFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+  },
+  tituloSeccion: { marginTop: 0, marginBottom: 0, flex: 1 },
   subtituloSeccion: { marginBottom: 0 },
   listaContenido: { paddingHorizontal: 12, paddingBottom: 12 },
   cargandoLista: { paddingVertical: 20 },

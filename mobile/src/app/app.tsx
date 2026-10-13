@@ -151,7 +151,6 @@ const accesosRapidos = [
   { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
   { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
-  { label: 'Historial', href: '/historial', icon: 'time-outline' },
 ] as const;
 
 export default function InicioScreen() {

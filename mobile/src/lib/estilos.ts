@@ -1,5 +1,16 @@
 import { StyleSheet } from 'react-native';
 
+// Boton de cerrar en circulo. Vive aca y no en el StyleSheet porque el modal de
+// fotos lo necesita para posicionarse encima de la imagen.
+const cerrarCirculo = {
+  width: 40,
+  height: 40,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#fffefc',
+  borderRadius: 20,
+} as const;
+
 export const estilos = StyleSheet.create({
   container: {
     flex: 1,
@@ -140,18 +151,14 @@ export const estilos = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
   },
-  petPhotoClose: {
+petPhotoClose: {
     position: 'absolute',
     top: 12,
     right: 12,
     zIndex: 1,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fffefc',
-    borderRadius: 20,
+    ...cerrarCirculo,
   },
+  cerrarCirculo,
   petPhoto: {
     width: '100%',
     borderRadius: 8,
@@ -313,25 +320,6 @@ export const estilos = StyleSheet.create({
     color: '#fffefc',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  historialCard: {
-    backgroundColor: '#b1dbb8',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-    borderColor: '#efeeeb',
-    borderWidth: 1,
-  },
-  historialRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  historialFecha: {
-    fontSize: 13,
-    color: '#263b32',
-    fontWeight: '600',
   },
   qrBoton: {
     backgroundColor: '#0f3e17',
