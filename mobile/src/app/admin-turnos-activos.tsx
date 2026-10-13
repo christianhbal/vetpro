@@ -341,11 +341,13 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 64,
   },
+  // Mismo color que estilos.cardTurno (#d9f0da): la foto va con contain y no
+  // llena el cuadro.
   foto: {
     width: 46,
     height: 46,
     borderRadius: 12,
-    backgroundColor: '#e4f1e0',
+    backgroundColor: '#d9f0da',
   },
   fotoVacia: {
     width: 46,

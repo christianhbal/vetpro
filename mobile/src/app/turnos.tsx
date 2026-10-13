@@ -24,6 +24,10 @@ import {
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { useSedeSeleccionada } from '@/lib/sede';
+import {
+  turnosEjemploCliente,
+  type MascotaEjemplo,
+} from '@/lib/turnos-ejemplo';
 
 // La respuesta del admin trae turno ajeno y estado de atención; el usuario
 // normal solo ve los suyos.
@@ -68,6 +72,45 @@ function fechaRelativa(dias: number): string {
   return fechaComoValor(fecha);
 }
 
+// Dias que la veterinaria no atiende: domingo (0) y miercoles (3), que esta
+// completo. Un turno de ejemplo nunca puede caer en uno de estos.
+const DIAS_SIN_ATENCION = new Set([0, 3]);
+
+// La veterinaria atiende de lunes a sabado y los miercoles estan completos
+// (mismo criterio que el calendario de "Agendar turno"). Con un offset fijo de
+// dias de calendario el ejemplo caia en domingo o en miercoles segun el dia en
+// que se abria la app, y el calendario mostraba un dia cerrado con turno.
+function esDiaHabil(fecha: Date): boolean {
+  return !DIAS_SIN_ATENCION.has(fecha.getDay());
+}
+
+// Ultimo dia habil antes de hoy.
+function fechaHabilAnterior(): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - 1);
+  while (!esDiaHabil(fecha)) {
+    fecha.setDate(fecha.getDate() - 1);
+  }
+  return fechaComoValor(fecha);
+}
+
+
+
+// Ultimo dia habil de un dia de la semana dado, anterior a hoy. Por ejemplo el
+// 5 (viernes) devuelve el viernes previo, salteando domingo y miercoles.
+// Siempre cae en una fecha ya pasada: asi el turno sale con el sello "Atendido".
+function ultimoDiaDeSemana(diaSemana: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - 1);
+  while (fecha.getDay() !== diaSemana || !esDiaHabil(fecha)) {
+    fecha.setDate(fecha.getDate() - 1);
+  }
+  return fechaComoValor(fecha);
+}
+
+// Mascota del usuario: el tipo vive en lib/turnos-ejemplo, que es donde se
+// arman los ejemplos compartidos con la portada.
+
 type EjemploPasado = {
   dueno: string;
   mascota: string;
@@ -76,7 +119,12 @@ type EjemploPasado = {
   tipo: string;
   hora: string;
   descripcion: string | null;
-  diasAtras: number;
+  /** Dias de calendario hacia atras. Ignorado si se usa habilAnterior o diaDeSemana. */
+  diasAtras?: number;
+  /** Ancla el ejemplo en el ultimo dia habil antes de hoy. */
+  habilAnterior?: boolean;
+  /** Ancla el ejemplo en el ultimo dia habil de esa semana, anterior a hoy. */
+  diaDeSemana?: number;
   sede: SedeVeterinaria;
 };
 
@@ -89,7 +137,7 @@ const ejemplosPasados: EjemploPasado[] = [
     tipo: 'Vacunas',
     hora: '10:30',
     descripcion: 'Vacunación anual. Quedó tranquila, sin reacción.',
-    diasAtras: 3,
+    habilAnterior: true,
     sede: 'Recoleta',
   },
   {
@@ -114,13 +162,34 @@ const ejemplosPasados: EjemploPasado[] = [
     diasAtras: 2,
     sede: 'Recoleta',
   },
+  {
+    dueno: 'Diego Sosa',
+    mascota: 'Roco',
+    especie: 'Perro',
+    raza: 'Schnauzer',
+    tipo: 'Control',
+    hora: '11:00',
+    descripcion:
+      'Control postoperatorio. La herida se ve bien y no hay signos de infección. Continuar el antibiótico hasta completar la tanda.',
+    // Anclado al viernes: el viernes es el dia con mas agenda cerrada, asi que
+    // al abrir esa fecha se ve un turno atendido con su descripcion en la lista.
+    diaDeSemana: 5,
+    sede: 'Recoleta',
+  },
 ];
+
+// Ejemplos de la agenda del ADMIN: son de una agenda compartida (Lola, Mora,
+// Tito, Roco de otros clientes) y solo se ven si el usuario atiende.
 
 // Turnos de ejemplo de días anteriores. Solo frontend: no vienen de la API y
 // no entran en la lista de próximos, sirven para que el calendario se vea poblado.
 function turnosEjemploPasados(): TurnoLista[] {
   return ejemplosPasados.map((ejemplo, indice) => {
-    const fecha = fechaRelativa(-ejemplo.diasAtras);
+    const fecha = ejemplo.diaDeSemana !== undefined
+      ? ultimoDiaDeSemana(ejemplo.diaDeSemana)
+      : ejemplo.habilAnterior
+        ? fechaHabilAnterior()
+        : fechaRelativa(-(ejemplo.diasAtras ?? 1));
     return {
       id: -2000 - indice,
       tipo: ejemplo.tipo,
@@ -145,18 +214,20 @@ function turnosEjemploPasados(): TurnoLista[] {
   });
 }
 
+
 export default function TurnosScreen() {
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
+  const [mascotasPropias, setMascotasPropias] = useState<MascotaEjemplo[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
-  // Arranca en la sede de la portada, no en "Todas": antes se elegia la sede en
-  // la portada y al entrar a Turnos figuraba "Todas", como si no hubiera nada
-  // elegido. "Todas" sigue disponible para mirar la agenda completa.
+  // Arranca en "Todas": es lo que pide la pantalla, ver la agenda completa sin
+  // tener que tocar un filtro. Antes arrancaba en la sede de la portada
+  // (Recoleta por defecto) y el filtro de la lista sevia movido.
 const [sedeCompartida, setSedeCompartida] = useSedeSeleccionada();
-const [mostrarTodas, setMostrarTodas] = useState(false);
+const [mostrarTodas, setMostrarTodas] = useState(true);
 const filtroSede: 'Todas' | SedeVeterinaria = mostrarTodas ? 'Todas' : sedeCompartida;
 const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   if (valor === 'Todas') {
@@ -194,6 +265,24 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
         return;
       }
       setTurnos(resultado);
+
+      // Los ejemplos de la agenda del cliente se arman con sus mascotas. Si la
+      // consulta falla no se corta la pantalla: los turnos reales ya estan
+      // cargados y solo se pierde el relleno del calendario.
+      if (!usuario.esAdmin) {
+        try {
+          const responseMascotas = await fetch(
+            `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+          );
+          if (responseMascotas.ok) {
+            const datos = await responseMascotas.json();
+            if (Array.isArray(datos)) setMascotasPropias(datos);
+          }
+        } catch {
+          // Sin mascotas no hay ejemplos propios: la agenda real sigue igual.
+        }
+      }
+
       setAhora(new Date());
     } catch (fetchError) {
       setError(apiUnreachableMessage(fetchError));
@@ -226,26 +315,41 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     guardado: turno,
   });
 
+  // Turnos que se ven segun el rol.
+  //  - admin: la agenda completa de la veterinaria, tal cual la devuelve la API.
+  //  - cliente: SOLO los dos ejemplos por mascota, siempre en el dia de hoy.
+  // Los turnos que el cliente agendo durante las pruebas se acumulo en la base
+  // y llenaba la pantalla de datos viejos; por eso no se suman a los ejemplos.
+  const turnosVisibles = useMemo(
+    () => (esAdmin ? turnos : turnosEjemploCliente(mascotasPropias)),
+    [turnos, esAdmin, mascotasPropias]
+  );
+
   // Los que solo ocupan la agenda (dias completos) no se listan aca. Tampoco los
   // que ya fueron atendidos. De los que quedan, entran los que la hora aun no
   // venció; los de ejemplo flotan y se ven siempre.
   const proximos = useMemo(
     () =>
-      turnos.filter(
+      turnosVisibles.filter(
         (turno) =>
           !turno.ocultoEnAgenda &&
           (turno.atendidoEn === null || turno.atendidoEn === undefined) &&
           (turno.esDemo === true || turnoSiguePendiente(turno, ahora))
       ),
-    [turnos, ahora]
+    [turnosVisibles, ahora]
   );
 
   // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
-  // haya pasado o el turno figure atendido. Los ejemplos de dias anteriores se
-  // suman para que el calendario se vea poblado.
+  // haya pasado o el turno figure atendido. Los ejemplos se suman para que el
+  // calendario se vea poblado, pero cada rol ve los suyos:
+  //  - admin: la agenda compartida de la veterinaria (Lola, Mora, Tito, Roco).
+  //  - cliente: los ejemplos armados con SUS propias mascotas.
   const porDia = useMemo(
-    () => [...turnos.filter((turno) => !turno.ocultoEnAgenda), ...turnosEjemploPasados()],
-    [turnos]
+    () => [
+      ...turnosVisibles.filter((turno) => !turno.ocultoEnAgenda),
+      ...(esAdmin ? turnosEjemploPasados() : []),
+    ],
+    [turnosVisibles, esAdmin]
   );
 
   const sedesDisponibles = useMemo(() => {
@@ -255,7 +359,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
 
   const turnosDelDia = useMemo(() => {
     const idsProximos = new Set(proximos.map((turno) => turno.id));
-    const origen = fechaSeleccionada === null ? turnos : porDia;
+    const origen = fechaSeleccionada === null ? turnosVisibles : porDia;
 
     return origen
       .filter((turno) => filtroSede === 'Todas' || turno.sede === filtroSede)
@@ -274,7 +378,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           ? a.hora.localeCompare(b.hora)
           : a.fecha.localeCompare(b.fecha);
       });
-  }, [fechaSeleccionada, filtroSede, porDia, proximos, turnos]);
+  }, [fechaSeleccionada, filtroSede, porDia, proximos, turnosVisibles]);
 
   const altoAgendar = Math.max(74, Math.round(windowHeight * 0.1));
 
@@ -295,7 +399,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
             accessibilityLabel={`Foto de ${cita.mascota}`}
           />
         ) : (
-          <View style={styles.turnPhotoPlaceholder}>
+          <View style={styles.turnoFotoVacia}>
             <Ionicons name="paw-outline" size={26} color="#0f3e17" />
           </View>
         )}
@@ -308,7 +412,9 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
             >
               {cita.mascota} - {cita.motivo}
             </Text>
-            {cita.atendido ? (
+            {/* El sello "Atendido" es informacion del veterinario: marca en la agenda
+              que ya paso. Para el cliente es su propio turno y no aporta nada. */}
+            {cita.atendido && esAdmin ? (
               <View style={styles.selloAtendido}>
                 <Text style={styles.selloAtendidoTexto}>Atendido</Text>
               </View>
@@ -320,7 +426,13 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
             </Text>
           ) : null}
           <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {fechaCorta(cita.guardado.fecha)} - {cita.hora} hs
+            {/* La sede va al lado de la hora solo para el usuario normal: es el
+              unico que puede tener turnos en varias sedes y necesita saber a
+              cual tiene que presentarse. El admin ya tiene el filtro de sede
+              arriba de la lista y ve la agenda de una sola sede, asi que la
+              linea le repetia informacion. */}
+          {fechaCorta(cita.guardado.fecha)} - {cita.hora} hs
+          {esAdmin ? null : ` · ${cita.guardado.sede}`}
           </Text>
         </View>
 
@@ -580,7 +692,11 @@ const styles = {
     gap: 12,
     minHeight: 64,
   },
-  turnoFoto: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
+  // El fondo va en el placeholder de la foto vacia, no en la foto: con
+  // resizeMode="contain" la imagen no llena el cuadro y el sobrante se veia
+  // como un marco verde alrededor.
+  turnoFoto: { width: 56, height: 56, borderRadius: 12 },
+  turnoFotoVacia: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
   turnoTexto: { flex: 1 },
   dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
   turnPhotoPlaceholder: {

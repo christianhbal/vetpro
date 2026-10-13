@@ -30,6 +30,7 @@ import { obtenerUsuarioActual } from '@/lib/session';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
 import { useSedeSeleccionada } from '@/lib/sede';
+import { turnosEjemploCliente } from '@/lib/turnos-ejemplo';
 
 type Mascota = {
   id: number;
@@ -45,6 +46,8 @@ type Mascota = {
 type TurnoAgenda = TurnoGuardado & {
   atendidoEn?: string | null;
   user?: { nombre: string } | null;
+  /** Los turnos de relleno del cliente se arman en lib/turnos-ejemplo. */
+  esDemo?: boolean;
 };
 
 type CitaLista = {
@@ -140,30 +143,41 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
   // En la portada van 3 citas. La agenda completa esta en la pantalla de
   // Turnos, asi que aca no hace falta ver mas.
-  // La barra de arriba de la app no forma parte del reparto: el 55% se mide
-  // sobre la pantalla entera, no sobre lo que queda debajo de la barra. Se le
-  // descuenta ademas el padding del listado para que el titulo caiga justo en
-  // ese 55% y no un poco mas abajo.
+  // La barra de arriba de la app no forma parte del reparto: el porcentaje se
+  // mide sobre lo que queda debajo de la barra, no sobre la pantalla entera.
   const ALTO_BARRA = 64;
-  const altoEncabezadoPortada = Math.max(200, Math.round(windowHeight * 0.55) - ALTO_BARRA - 10);
+
+  // Las 3 tarjetas de "Proximos turnos" se anclan al pie de la pantalla y ocupan
+  // este porcentaje del alto util, en admin y en usuario. Sin un alto fijo cada
+  // tarjeta tiene flex: 1 y en una pantalla alta (iPhone 16 Pro Max) se estiraba
+  // hasta comerse mas de la mitad de la pantalla, con la foto diminuta en el
+  // medio. Se mide sobre windowHeight - ALTO_BARRA porque la barra del drawer no
+  // forma parte del area util. No se le resta el titulo de seccion: el 45% es el
+  // alto de las tarjetas, el titulo va justo encima.
+  const PROPORCION_TARJETAS = 0.45;
+  const altoZonaTurnos = Math.max(150, Math.round((windowHeight - ALTO_BARRA) * PROPORCION_TARJETAS));
 
   const COTAS_PROXIMAS = 3;
+  // Alto de UNA tarjeta de la franja inferior: la franja se reparte en 3 partes
+  // iguales, no se estira segun cuantos turnos haya. Con flex: 1, un cliente con
+  // 2 turnos veia 2 tarjetas que ocupaban toda la franja (cada una la mitad) y
+  // al agregar un tercero todo se encogia. Con el alto fijo, la franja guarda
+  // siempre el lugar de los 3 proximos y el turno que falta se ve como lugar
+  // libre, no como un turno estirado.
+  const altoCita = Math.max(
+    72,
+    Math.floor((altoZonaTurnos - 8 * (COTAS_PROXIMAS - 1)) / COTAS_PROXIMAS)
+  );
 
-  const [altoLista, setAltoLista] = useState(0);
   const [altoTarjetas, setAltoTarjetas] = useState(0);
-  const altoListaReal = altoLista || (windowHeight - 64) * 0.4;
   // El alto de la foto sale del alto real de la zona de tarjetas, que se mide
   // con onLayout. Calcularlo con porazos sobre el alto de la pantalla dejaba
   // las tarjetas 9px mas abajo del borde de la pantalla.
-  const altoZonaTarjetas = altoTarjetas || Math.max(120, altoListaReal - 82);
+  // El -34 es el aire que necesitan las dos lineas de texto del turno; sin el,
+  // en pantallas altas la foto crecia tanto que el nombre quedaba aplastado.
+  const altoZonaTarjetas = altoTarjetas || altoZonaTurnos;
   const ladoFotoTarjeta = Math.round(
-    Math.max(
-      44,
-      Math.min(
-        84,
-        (altoZonaTarjetas - 8 * (COTAS_PROXIMAS - 1)) / COTAS_PROXIMAS - 34
-      )
-    )
+    Math.max(44, Math.min(88, altoZonaTarjetas / COTAS_PROXIMAS - 26))
   );
 
   const cargarMascotas = useCallback(async () => {
@@ -244,16 +258,24 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // Los turnos que ya se atendieron no vuelven a salir. Antes no se filtraban y
   // la portada mostraba como "proximos" turnos que ya habian pasado por el
   // consultorio: por eso se veian dos a las 10 y dos a las 11.
-  const turnosPendientes = useMemo(
-    () =>
-      turnosGuardados
-        .filter((turno) => !turno.atendidoEn)
-        .filter((turno) => turnoSiguePendiente(turno, ahora))
-        .sort((a, b) =>
-          a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)
-        ),
-    [turnosGuardados, ahora]
-  );
+  //
+  // El admin ve la agenda real de la veterinaria. El cliente ve los mismos
+  // ejemplos que la pantalla de Turnos, armados con sus propias mascotas: son
+  // los unicos datos que esa pantalla muestra, asi que la portada tiene que
+  // mostrar los mismos y no los turnos sueltos que quedaron de las pruebas.
+  const turnosPendientes = useMemo(() => {
+    const base = esAdmin ? turnosGuardados : turnosEjemploCliente(mascotas);
+    return base
+      .filter((turno) => !turno.atendidoEn)
+      // Los ejemplos de relleno se muestran siempre, como en la pantalla de
+      // Turnos. Si no, a la tarde ya no queda ninguno: los 4 de hoy se generan
+      // entre las 10:00 y las 11:30 y a las 17:00 turnoSiguePendiente los
+      // daba por vencidos, asi que "Proximos turnos" salia vacio.
+      .filter((turno) => turno.esDemo === true || turnoSiguePendiente(turno, ahora))
+      .sort((a, b) =>
+        a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)
+      );
+  }, [turnosGuardados, mascotas, esAdmin, ahora]);
 
   // El admin ve los turnos de verdad de la sede que esta mirando, y un cliente
   // los suyos. Antes el admin veia nombres de ejemplo fijos (Lola, Mora, Tito,
@@ -301,7 +323,12 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   return (
     <Pressable
       key={item.key}
-      style={({ pressed }) => [estilos.cardTurno, styles.citaTarjeta, pressed && estilos.buttonPressed]}
+      style={({ pressed }) => [
+        estilos.cardTurno,
+        styles.citaTarjeta,
+        { height: altoCita, flexGrow: 0, flexShrink: 0 },
+        pressed && estilos.buttonPressed,
+      ]}
       onPress={() => setCitaSeleccionada(item)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${item.mascota}`}
@@ -311,7 +338,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           <Image
             source={foto}
             style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
-            resizeMode="cover"
+            resizeMode="contain"
             accessibilityLabel={`Foto de ${item.mascota}`}
           />
         ) : (
@@ -321,7 +348,13 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
               { width: ladoFotoTarjeta, height: ladoFotoTarjeta },
             ]}
           >
-            <Ionicons name="paw-outline" size={26} color="#0f3e17" />
+            {/* La huella se escala con el lado de la foto: fijo en 26 llenaba
+                todo el cuadro de 56 y se veía disproportionado al achicarlo. */}
+            <Ionicons
+              name="paw-outline"
+              size={Math.round(ladoFotoTarjeta * 0.42)}
+              color="#0f3e17"
+            />
           </View>
         )}
         <View style={styles.citaTexto}>
@@ -420,7 +453,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           <Image
             source={{ uri: item.foto }}
             style={styles.mascotaFoto}
-            resizeMode="cover"
+            resizeMode="contain"
             accessibilityLabel={`Vista previa de ${item.nombre}`}
           />
         ) : (
@@ -439,7 +472,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   return (
     <AppDrawer title="VetPro">
       <View style={styles.portada}>
-        <View style={[styles.portadaEncabezado, { height: altoEncabezadoPortada }]}>
+        <View style={styles.portadaEncabezado}>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
               <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
@@ -469,7 +502,12 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
                 Mascotas" y un hueco grande antes del boton de QR. Este separador
                 va FUERA de la fila de accesos: adentro le robaba ancho a las
                 cajas y "Notificaciones" se partia a mitad de palabra. */}
-            <View style={styles.empujeEncabezado} />
+            {/* El empuje elástico solo va en la portada de usuario, que tiene el
+                carrusel de mascotas abajo para consumirlo. En el admin no hay
+                carrusel: el separador se convertia en un hueco enorme entre los
+                accesos y la sede y el encabezado quedaba amontonado contra el
+                techo de la pantalla. */}
+            {esAdmin ? null : <View style={styles.empujeEncabezado} />}
 
             {esAdmin ? (
               <View style={styles.bloqueSede}>
@@ -546,20 +584,34 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
           </View>
 
-        {/* Un View y no un FlatList: son 4 citas fijas sin scroll. El FlatList
-            sin flex media mal el alto y dejaba un hueco al final. */}
-        <View
-          style={styles.portadaLista}
-          onLayout={(evento) => setAltoLista(evento.nativeEvent.layout.height)}
-        >
+        {/* Un View y no un FlatList: son 3 citas fijas sin scroll. El FlatList
+            sin flex media mal el alto y dejaba un hueco al final.
+            La lista se ancla al fondo con justifyContent para que las 3
+            tarjetas ocupen siempre la ultima franja de la pantalla y el aire
+            sobrante quede entre el encabezado y el titulo, no repartido entre
+            las tarjetas. */}
+        <View style={styles.portadaLista}>
+          {/* Absorbe el aire sobrante con tope: sin maxHeight, en pantallas
+              muy altas el hueco entre el encabezado y el titulo crecia sin
+              limite. El limite deja una banda de respiracion razonable y el
+              resto lo toma la franja de las tarjetas, que queda al pie. */}
+          <View style={styles.huecoLista} />
           <Text style={styles.tituloSeccion}>Próximos turnos</Text>
           {cargandoTurnos ? (
             <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
           ) : errorTurnos ? (
             <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
           ) : null}
+          {/* Sin turnos la franja mantiene el alto: si el aviso encogiera a su
+              altura, "Proximos turnos" bajaria y al cargar el primero la
+              pantalla daria un salto. */}
           {citasVisibles.length === 0 && !cargandoTurnos && !errorTurnos ? (
-            <View style={styles.sinCitas}>
+            <View
+              style={[
+                styles.sinCitas,
+                { height: altoZonaTurnos, flexGrow: 0, flexShrink: 0 },
+              ]}
+            >
               <View style={styles.sinCitasIcono}>
 <Ionicons name="calendar-clear-outline" size={18} color="#0f3e17" />
    </View>
@@ -568,7 +620,20 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
    </Text>
             </View>
           ) : (
-            <View style={styles.tarjetasCitas} onLayout={(e) => setAltoTarjetas(e.nativeEvent.layout.height)}>
+            <View
+              style={[
+                styles.tarjetasCitas,
+                {
+                  height: altoZonaTurnos,
+                  // flexGrow/flexShrink en vez de flex: 0. El atajo flex
+                  // expande a flexBasis: 0 y eso le gana al height, dejando las
+                  // tarjetas aplastadas contra el borde inferior.
+                  flexGrow: 0,
+                  flexShrink: 0,
+                },
+              ]}
+              onLayout={(e) => setAltoTarjetas(e.nativeEvent.layout.height)}
+            >
               {citasVisibles.map(renderCita)}
             </View>
           )}
@@ -744,17 +809,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
+    // Los accesos llevan su propio marginBottom, pero el separador elastico
+    // (flex: 1) solo existe en la portada de usuario. Sin este minHeight el
+    // admin queda pegado al borde inferior del encabezado.
+    minHeight: 4,
   },
+  // Sin justifyContent: el espaciador huecoLista (flex: 1) ya empuja el titulo
+  // y las tarjetas al pie. Con flex-end y un hijo flex: 1 los dos se pelean.
   portadaLista: {
     flex: 1,
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 10,
   },
-  tarjetasCitas: { flex: 1, gap: 8 },
+  // El alto lo fija altoZonaTurnos desde el JSX con flexGrow/flexShrink
+  // explicitos. OJO: no usar el atajo `flex: 0` ni `flex: 1` aca, porque ambos
+  // expanden a flexBasis: 0%, que le gana al height y deja la zona de tarjetas
+  // aplastada contra el pie de la pantalla.
+  tarjetasCitas: { gap: 8 },
+  // Espaciador entre el encabezado y el titulo, con tope: sin maxHeight se
+  // come todo el aire y deja un hueco enorme; sin tope las tarjetas quedan
+  // pegadas al encabezado. 34 es una banda de respiracion razonable.
+  huecoLista: { flex: 1, maxHeight: 34 },
 sinCitas: {
    flexDirection: 'row' as const,
    alignItems: 'center' as const,
+   alignSelf: 'stretch' as const,
    gap: 10,
    paddingVertical: 12,
    paddingHorizontal: 14,
@@ -772,9 +852,9 @@ sinCitas: {
    backgroundColor: '#e4f1e0',
    },
   sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
+  // La altura la pone altoCita en el JSX (1/3 de la franja), no flex: 1: con
+  // flex la tarjeta se estira hasta llenar la franja y deforma el reparto.
   citaTarjeta: {
-    flex: 1,
-    flexShrink: 1,
     justifyContent: 'center' as const,
     marginBottom: 0,
   },
@@ -783,7 +863,14 @@ sinCitas: {
     alignItems: 'center' as const,
     gap: 13,
   },
-  citaFoto: { borderRadius: 14, backgroundColor: '#cfe7d3' },
+  // Sin backgroundColor: la foto va con resizeMode="contain", asi que no
+  // siempre llena el cuadro. Con fondo, las fotos apaisadas dejaban barras
+  // verdes a los lados y las verticales arriba y abajo, y el cuadrado se leia
+  // como un marco. Sin fondo el sobrante es transparente y se ve el verde de la
+  // tarjeta, que es lo unico que hay que ver ahi.
+  citaFoto: { borderRadius: 14 },
+  // El estado sin foto si lleva fondo: no hay imagen que lo ocupe y sin el
+  // cuadro el icono queda flotando sobre la tarjeta.
   citaFotoVacia: {
     borderRadius: 14,
     alignItems: 'center' as const,
@@ -880,7 +967,7 @@ saludo: {
     fontWeight: '600' as const,
     textAlign: 'center' as const,
   },
-  bloqueSede: {},
+  bloqueSede: { marginTop: 4 },
   // El alto va en la lista y no en la card: con el alto fijo y el overflow
   // hidden en la card, una raza larga que hacia dos lineas la cortaba.
   listaMascotas: { height: ALTO_CARD_MASCOTA, marginBottom: 0 },
@@ -903,7 +990,9 @@ saludo: {
    justifyContent: 'center' as const,
    borderRadius: 10,
    overflow: 'hidden' as const,
-   backgroundColor: '#cfe7d3',
+   // Mismo color que mascotaCard: la foto va con contain y no llena el marco,
+   // asi que con otro color se veia el contraste alrededor de la imagen.
+   backgroundColor: '#e1f4df',
   },
   mascotaFoto: { width: '100%', height: '100%' },
   mascotaNombre: {
@@ -928,8 +1017,11 @@ saludo: {
   // Sin el margen vertical de estilos.qrBoton: el de abajo empujaba todo el
   // bloque hacia arriba y dejaba los accesos pegados a "Tus Mascotas".
   botonQrPortada: { marginVertical: 0, marginTop: 14 },
+  // 10 de separation con la sede de arriba: el bloque de QR pegado al selector
+  // se leia como un solo control y no se distinguia donde terminaba uno.
   qrAdminBloque: {
     marginVertical: 0,
+    marginTop: 10,
   },
   // estilos.modalTitle no tiene textAlign, asi que el titulo se pegaba a la
   // izquierda mientras el subtitizado de abajo si iba centrado.

@@ -14,6 +14,10 @@ const prisma = new PrismaClient();
 const port = Number(process.env.PORT || 3000);
 const MIN_PASSWORD_LENGTH = 8;
 const APPOINTMENT_REMINDER_WINDOW_MS = 60 * 60 * 1000;
+// Titulo del recordatorio de proximidad. Va en una constante porque se usa al
+// crearlo y tambien al filtrar la lista: si el texto cambia en un solo lado,
+// el filtro deja de pegar con lo guardado.
+const TITULO_RECORDATORIO_TURNO = 'Tu turno se acerca';
 
 // No arrancamos el servidor si PORT no es un puerto valido.
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -222,11 +226,23 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
     where: { fecha: { gte: fechaActual }, recordatorioEnviadoEn: null },
     include: {
       mascota: { select: { nombre: true } },
+      // La relacion se llama user, no usuario. El rol se filtra en el where: el
+      // recordatorio es para el dueno del turno, que es el que tiene que
+      // presentarse. Un admin tambien puede tener turnos propios en la tabla,
+      // pero no es cliente: atiende, no espera. Sin este filtro el admin
+      // recibia "Tu turno se acerca".
+      user: { select: { role: true } },
     },
   });
   const ahora = Date.now();
 
   for (const turno of turnos) {
+    // Los admins no reciben recordatorios de proximity. Se saltea antes de
+    // tocar recordatorioEnviadoEn para no marcar el turno como notificado: si
+    // un admin tomara el turno de un cliente mas adelante, el recordatorio
+    // tendria que salir igual.
+    if (turno.user.role === 'ADMIN') continue;
+
     const inicioTurno = new Date(`${turno.fecha}T${turno.hora}:00`).getTime();
     const tiempoRestante = inicioTurno - ahora;
     if (tiempoRestante <= 0 || tiempoRestante > APPOINTMENT_REMINDER_WINDOW_MS) continue;
@@ -248,7 +264,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
           data: {
             userId: turno.userId,
             turnoId: turno.id,
-            title: 'Tu turno se acerca',
+            title: TITULO_RECORDATORIO_TURNO,
             message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sedeConDireccion(turno.sede)}.`,
           },
         });
@@ -1149,14 +1165,23 @@ app.get('/api/notifications', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
 
+  // El recordatorio de "¿tu turno se acerca?" es para el dueno del turno, que
+  // es el que tiene que presentarse. Un admin atiende, no espera, asi que no
+  // le sirve de nada. Se filtran los que ya quedaron guardados antes de que
+  // existiera el filtro al crear el recordatorio.
+  const where = {
+    userId: user.id,
+    ...(user.role === 'ADMIN' ? { title: { not: TITULO_RECORDATORIO_TURNO } } : {}),
+  };
+
   try {
     const [items, unreadCount] = await Promise.all([
       prisma.notification.findMany({
-        where: { userId: user.id },
+        where,
         orderBy: { createdAt: 'desc' },
         take: 100,
       }),
-      prisma.notification.count({ where: { userId: user.id, readAt: null } }),
+      prisma.notification.count({ where: { ...where, readAt: null } }),
     ]);
     return response.json({ items, unreadCount });
   } catch (error) {

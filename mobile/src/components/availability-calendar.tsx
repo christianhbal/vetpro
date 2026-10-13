@@ -46,6 +46,10 @@ const horariosDisponibles = Array.from({ length: 18 }, (_value, index) => {
 const colorOcupadoFondo = '#f2ddcd';
 const colorOcupadoBorde = '#d3a179';
 const colorOcupadoTexto = '#7d4322';
+// Dia de la semana (getDay) que la veterinaria tiene completo: no se atiende
+// ningun turno. El domingo (0) ya venia bloqueado; este es aparte porque el
+// miercoles se puede ABRIR para ver que esta lleno, solo que no se puede agendar.
+const DIA_BLOQUEADO = 3;
 
 type HorarioOcupado = { fecha: string; hora: string };
 
@@ -413,12 +417,23 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         !(fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos)
     );
 
+    // El dia bloqueado se puede abrir pero no tiene ningun horario bookeable.
+    // Sin esto, abrir el miercoles dejaba los slots habilitados y el boton de
+    // guardar activo: el error saltaria recien al confirmar, en el servidor.
+    const seleccionBloqueada =
+      fechaSeleccionada !== '' &&
+      new Date(`${fechaSeleccionada}T12:00:00`).getDay() === DIA_BLOQUEADO;
+
     const confirmar = useCallback(async (): Promise<boolean> => {
       if (guardando) return false;
       setMensajeError('');
 
       const mascotaAUsar = mascotaIdFija ?? mascotaId;
 
+      if (seleccionBloqueada) {
+        setMensajeError('Los miércoles están completos y no se atienden turnos.');
+        return false;
+      }
       if (mascotaAUsar === null || !mascotaSeleccionada) {
         setMensajeError('Elegí la mascota del turno.');
         return false;
@@ -525,6 +540,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       fechaSeleccionada,
       guardando,
       horaSeleccionada,
+      seleccionBloqueada,
       hoyValor,
       mascotas,
       mascotaId,
@@ -547,6 +563,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       !guardando &&
       !cargando &&
       !error &&
+      !seleccionBloqueada &&
       mascotaSeleccionada !== null &&
       tipo !== '' &&
       fechaSeleccionada !== '' &&
@@ -560,7 +577,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     // La pantalla de atencion guarda el turno de seguimiento con su propio
     // boton, asi que le prestamos el guardado y le decimos si esta completo.
     const elegido: TurnoElegido | null =
-      tipo !== '' && fechaSeleccionada !== '' && horaSeleccionada !== ''
+      tipo !== '' &&
+      fechaSeleccionada !== '' &&
+      horaSeleccionada !== '' &&
+      !seleccionBloqueada
         ? { tipo, fecha: fechaSeleccionada, hora: horaSeleccionada, sede }
         : null;
     useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar, elegido }));
@@ -733,6 +753,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const ocupados = ocupadosPorDia.get(value) ?? 0;
             const esPasado = value < hoyValor;
             const esDomingo = date.getDay() === 0;
+            // Los miercoles la veterinaria esta completa: no se atienden turnos.
+            // NO va en `deshabilitado`: el dia se puede abrir para ver que esta
+            // lleno, pero adentro no hay ningun horario bookeable.
+            const esDiaBloqueado = date.getDay() === DIA_BLOQUEADO;
             const completos = ocupados >= horariosDisponibles.length;
             // Un dia sin horarios igual se puede abrir para ver que esta lleno,
             // asi que no cuenta como deshabilitado: solo se ve distinto.
@@ -755,7 +779,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 disabled={deshabilitado}
                 accessibilityRole="button"
                 accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                accessibilityLabel={`${dia} de ${nombreMes}${completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}`}
+                accessibilityLabel={`${dia} de ${nombreMes}${esDiaBloqueado ? ', sin turnos, día completo' : completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}`}
               >
                 <Text
                   style={[
@@ -769,8 +793,13 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 </Text>
                 {/* El puntito marca que el dia ya tiene horarios tomados. No va en
                     los pasados ni en los domingos porque no se pueden agendar, ni en
-                    el que esta elegido porque el fondo oscuro ya lo dice. */}
-                {ocupados > 0 && !esPasado && !esDomingo && !seleccionado ? (
+                    el que esta elegido porque el fondo oscuro ya lo dice.
+                    Los miercoles llevan puntito rojo: el dia se puede abrir pero
+                    esta completo, y el verde de "tiene turno" los confundiria
+                    con un dia con disponibilidad. */}
+                {esDiaBloqueado && !esPasado && !seleccionado ? (
+                  <View style={styles.bloqueoDot} />
+                ) : ocupados > 0 && !esPasado && !esDomingo && !seleccionado ? (
                   <View style={styles.busyDot} />
                 ) : null}
               </Pressable>
@@ -784,6 +813,8 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             <Text style={styles.legendText}>Libre</Text>
             <View style={styles.legendOcupado} />
             <Text style={styles.legendText}>Ocupado</Text>
+            <View style={styles.legendCompleto} />
+            <Text style={styles.legendText}>Completo</Text>
             <View style={styles.legendPasado} />
             <Text style={styles.legendText}>Pasado</Text>
           </View>
@@ -808,14 +839,19 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             <Text style={estilos.cardSubtitle}>Elegí una fecha para ver los horarios.</Text>
           ) : (
             <View>
-              {!hayHorasLibres ? (
+              {seleccionBloqueada ? (
+                <Text style={styles.sinHoras}>
+                  Los miércoles están completos y no se atienden turnos. Probá con
+                  otro día.
+                </Text>
+              ) : !hayHorasLibres ? (
                 <Text style={styles.sinHoras}>
                   No hay ningún horario libre para esta fecha. Probá con otro día.
                 </Text>
               ) : null}
               <View style={[styles.slotsGrid, { gap: gapSlot }]}>
                 {horariosDisponibles.map((hora) => {
-                  const ocupado = ocupadosDia.has(hora);
+                  const ocupado = ocupadosDia.has(hora) || seleccionBloqueada;
                   const pasado =
                     fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos;
                   const deshabilitado = ocupado || pasado || guardando;
@@ -1187,6 +1223,27 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
     backgroundColor: colorOcupadoBorde,
+  },
+  // Puntito de "dia completo, no se puede agendar". Rojo a proposito: el verde
+  // del busyDot significa "tiene turno pero igual hay lugar", y el miercoles
+  // no hay lugar de ningun tipo.
+  bloqueoDot: {
+    position: 'absolute',
+    bottom: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#c0392b',
+  },
+  // Casilla de la leyenda para el dia completo (miercoles). Mismo rojo que el
+  // puntito del calendario, asi se leen como la misma señal.
+  legendCompleto: {
+    width: 15,
+    height: 15,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#c0392b',
+    backgroundColor: '#f6d9d5',
   },
   legend: {
     flexDirection: 'row',

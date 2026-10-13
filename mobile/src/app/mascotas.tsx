@@ -3,10 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Modal,
   Pressable,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
@@ -29,15 +27,9 @@ type Mascota = {
 
 export default function MascotasScreen() {
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
-  const [mascotaSeleccionada, setMascotaSeleccionada] = useState<Mascota | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const { bottom } = useSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const fotoModalSize = Math.max(
-    0,
-    Math.min(windowWidth * 0.82, windowHeight - 200, 640)
-  );
 
   const pie = useMemo(
     () => [estilos.actionFooter, { paddingBottom: bottom + 24 }],
@@ -117,9 +109,20 @@ export default function MascotasScreen() {
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [estilos.cardVertical, pressed && estilos.buttonPressed]}
-              onPress={() => setMascotaSeleccionada(item)}
+              onPress={() =>
+                router.push({
+                  pathname: '/mascota-detalle',
+                  params: {
+                    id: String(item.id),
+                    nombre: item.nombre,
+                    especie: item.especie,
+                    raza: item.raza ?? '',
+                    edad: item.edad === null ? '' : String(item.edad),
+                  },
+                })
+              }
               accessibilityRole="button"
-              accessibilityLabel={`Ver foto de ${item.nombre}`}
+              accessibilityLabel={`Ver historial de ${item.nombre}`}
             >
               <View style={styles.fila}>
                 {item.foto ? (
@@ -130,7 +133,7 @@ export default function MascotasScreen() {
                     accessibilityLabel={`Foto de ${item.nombre}`}
                   />
                 ) : (
-                  <View style={[styles.foto, styles.fotoVacio]}>
+                  <View style={[styles.foto, styles.fotoSinFoto]}>
                     <Ionicons name="paw-outline" size={28} color="#69806a" />
                   </View>
                 )}
@@ -142,6 +145,7 @@ export default function MascotasScreen() {
                     {descripcionMascota(item)}
                   </Text>
                 </View>
+                <Ionicons name="chevron-forward" size={20} color="#263b32" />
               </View>
             </Pressable>
           )}
@@ -159,48 +163,6 @@ export default function MascotasScreen() {
           </Link>
         </View>
       </View>
-
-      <Modal
-        visible={mascotaSeleccionada !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setMascotaSeleccionada(null)}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setMascotaSeleccionada(null)}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar foto"
-          />
-          {mascotaSeleccionada && (
-            <View style={estilos.petPhotoCard}>
-              <Pressable
-                style={({ pressed }) => [estilos.petPhotoClose, pressed && estilos.buttonPressed]}
-                onPress={() => setMascotaSeleccionada(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar foto"
-              >
-                <Ionicons name="close" size={24} color="#263b32" />
-              </Pressable>
-              {mascotaSeleccionada.foto ? (
-                <Image
-                  source={{ uri: mascotaSeleccionada.foto }}
-                  style={[estilos.petPhoto, { width: fotoModalSize, height: fotoModalSize }]}
-                  resizeMode="contain"
-                  accessibilityLabel={`Foto de ${mascotaSeleccionada.nombre}`}
-                />
-              ) : (
-                <Ionicons name="paw-outline" size={88} color="#69806a" />
-              )}
-              <Text style={estilos.cardTitle}>{mascotaSeleccionada.nombre}</Text>
-              <Text style={estilos.cardSubtitle}>{descripcionMascota(mascotaSeleccionada)}</Text>
-            </View>
-          )}
-        </View>
-      </Modal>
     </AppDrawer>
   );
 }
@@ -212,7 +174,10 @@ const styles = {
     gap: 14,
     minHeight: 64,
   },
-  foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
+  // Mismo color que estilos.cardVertical: la foto va con contain y no llena el
+  // cuadro, asi que con otro color se veia el contraste alrededor de la imagen.
+  foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#b1dbb8' },
+  fotoSinFoto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
   fotoVacio: { alignItems: 'center' as const, justifyContent: 'center' as const },
   texto: { flex: 1 },
 };

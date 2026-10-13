@@ -35,6 +35,20 @@ function esAviso(value: unknown): value is Aviso {
   );
 }
 
+// Filtra por fecha de creacion. `createdAt` viene de SQLite con CURRENT_TIMESTAMP
+// ("AAAA-MM-DD HH:MM:SS", en UTC) y no como ISO, asi que se reemplaza el espacio
+// por una "T" y se le anexa la Z: sin eso Safari y Hermes lo parsean como hora
+// local y el filtro correria el dia de cada cliente.
+function avisosUltimosDias(avisos: Aviso[], dias: number): Aviso[] {
+  const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
+  return avisos.filter((aviso) => {
+    const fecha = Date.parse(`${aviso.createdAt.replace(' ', 'T')}Z`);
+    // Si la fecha no se puede parsear, el aviso se muestra: mejor un aviso de
+    // mas que esconder uno sin motivo.
+    return !Number.isFinite(fecha) || fecha >= limite;
+  });
+}
+
 function mensajeApi(resultado: unknown): string | null {
   if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
     return null;
@@ -87,7 +101,11 @@ export default function NotificacionesScreen() {
         setAvisos([]);
         return;
       }
-      setAvisos(result.items);
+      // El usuario normal solo ve los avisos de los ultimos 2 dias. La API
+      // devuelve hasta 100 y la base tiene avisos de hace meses, asi que la
+      // pantalla aparecia llena de cosas viejas. El admin ve todo, que es quien
+      // tiene que revisar el historico.
+      setAvisos(usuario.esAdmin ? result.items : avisosUltimosDias(result.items, 2));
     } catch (requestError) {
       setError(apiUnreachableMessage(requestError));
       setAvisos([]);

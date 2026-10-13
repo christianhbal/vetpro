@@ -193,7 +193,7 @@ export default function NuevaMascota() {
                   <Image
                     source={{ uri: foto }}
                     style={styles.foto}
-                    resizeMode="cover"
+                    resizeMode="contain"
                     accessibilityLabel="Foto elegida"
                   />
                   <Pressable

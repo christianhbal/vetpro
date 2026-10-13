@@ -776,7 +776,7 @@ const styles = {
     gap: 12,
     minHeight: 64,
   },
-  turnoFoto: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
+  turnoFoto: { width: 56, height: 56, borderRadius: 12 },
   turnoTexto: { flex: 1 },
   dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
   turnPhotoPlaceholder: {
