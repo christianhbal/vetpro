@@ -184,7 +184,6 @@ export default function AdminSedesScreen() {
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.direccion}</Text>
                   <View style={styles.horarioFila}>
-                    <Ionicons name="time-outline" size={14} color="#6b7d6d" />
                     <Text style={styles.horarioTexto}>
                       {resumenDias(item.dias)} · {item.horaDesde} a {item.horaHasta}
                     </Text>

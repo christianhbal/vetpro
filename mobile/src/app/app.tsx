@@ -145,13 +145,6 @@ function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
     },
   }));
 }
-// Los accesos rapidos son los mismos para todos. El admin entra a Turnos y
-// desde ahi, con el boton de abajo, pasa a "Atender pacientes".
-const accesosRapidos = [
-  { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
-  { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
-  { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
-] as const;
 
 export default function InicioScreen() {
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
@@ -215,10 +208,6 @@ export default function InicioScreen() {
     Math.min(windowWidth * 0.82, windowHeight - 200, 640)
   );
 
-  // Lado de la foto de las citas. Se mide el alto real de la lista con onLayout
-  // en vez de suponERlo: la lista es el 52% del area util (que ya no es toda la
-  // ventana, hay que descontar el encabezado del menu) y con la cuenta
-  //_estimada_ las tarjetas se pasaban del borde.
   const [altoLista, setAltoLista] = useState(0);
   const altoListaReal = altoLista || (windowHeight - 64) * 0.52;
   // De ese alto salen el titulo, los tres huecos y los paddings de la lista y de
@@ -386,42 +375,28 @@ export default function InicioScreen() {
   };
 
   const renderMascota = ({ item }: { item: Mascota }) => (
-    <Pressable
-      style={({ pressed }) => [estilos.cardHorizontal, pressed && estilos.buttonPressed]}
-      onPress={() => setMascotaSeleccionada(item)}
-      accessibilityRole="button"
-      accessibilityLabel={`Ver foto de ${item.nombre}`}
-    >
-      {item.foto ? (
-        <Image
-          source={{ uri: item.foto }}
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 10,
-            marginBottom: 8,
-            backgroundColor: '#cfe7d3',
-          }}
-          resizeMode="contain"
-          accessibilityLabel={`Vista previa de ${item.nombre}`}
-        />
-      ) : (
-        <View
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 10,
-            marginBottom: 8,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#cfe7d3',
-          }}
-        >
-          <Ionicons name="paw-outline" size={28} color="#0f3e17" />
-        </View>
-      )}
-      <Text style={estilos.cardTitle}>{item.nombre}</Text>
-      <Text style={estilos.cardSubtitle}>
+<Pressable
+   style={({ pressed }) => [styles.mascotaCard, pressed && estilos.buttonPressed]}
+   onPress={() => setMascotaSeleccionada(item)}
+   accessibilityRole="button"
+   accessibilityLabel={`Ver foto de ${item.nombre}`}
+   >
+   {item.foto ? (
+   <Image
+   source={{ uri: item.foto }}
+   style={styles.mascotaFoto}
+   resizeMode="contain"
+   accessibilityLabel={`Vista previa de ${item.nombre}`}
+   />
+   ) : (
+   <View style={styles.mascotaFoto}>
+   <Ionicons name="paw-outline" size={26} color="#0f3e17" />
+   </View>
+   )}
+      <Text style={estilos.cardTitle} numberOfLines={1} ellipsizeMode="tail">
+        {item.nombre}
+      </Text>
+      <Text style={estilos.cardSubtitle} numberOfLines={1} ellipsizeMode="tail">
         {descripcionEspecieMascota(item.especie, item.raza)}
       </Text>
     </Pressable>
@@ -450,7 +425,7 @@ const renderCita = (item: CitaLista) => {
           <Image
             source={foto}
             style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
-            resizeMode="cover"
+            resizeMode="contain"
             accessibilityLabel={`Foto de ${item.mascota}`}
           />
         ) : (
@@ -476,36 +451,13 @@ const renderCita = (item: CitaLista) => {
   );
 };
 
-  const accesos = esAdmin
-    ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
-    : accesosRapidos;
-
   return (
     <AppDrawer title="VetPro">
       <View style={styles.portada}>
         <View style={styles.portadaEncabezado}>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
-              <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
-            </View>
-
-            <View style={styles.accesos}>
-              {accesos.map((acceso) => (
-                <Pressable
-                  key={acceso.href}
-                  style={({ pressed }) => [styles.acceso, pressed && estilos.buttonPressed]}
-                  onPress={() => router.push(acceso.href)}
-                  accessibilityRole="link"
-                  accessibilityLabel={`Ir a ${acceso.label}`}
-                >
-                  <View style={styles.accesoIcono}>
-                    <Ionicons name={acceso.icon} size={30} color="#0f3e17" />
-                  </View>
-                  <Text style={styles.accesoTexto} numberOfLines={2}>
-                    {acceso.label}
-                  </Text>
-                </Pressable>
-              ))}
+              <Text style={styles.saludoSubtexto}>Bienvenido de nuevo</Text>
             </View>
 
             {esAdmin ? (
@@ -526,14 +478,14 @@ const renderCita = (item: CitaLista) => {
 
             {esAdmin ? null : (
               <>
-                <Text style={estilos.sectionTitle}>Tus Mascotas</Text>
+                <Text style={styles.tituloSeccion}>Tus Mascotas</Text>
                 <FlatList
                   horizontal
                   data={mascotas}
                   keyExtractor={(item) => String(item.id)}
                   renderItem={renderMascota}
                   showsHorizontalScrollIndicator={false}
-                  style={estilos.horizontalList}
+                  style={[estilos.horizontalList, styles.listaMascotas]}
                   contentContainerStyle={estilos.horizontalListContent}
                   ListEmptyComponent={
                     <View style={styles.mascotasVacias}>
@@ -598,11 +550,11 @@ const renderCita = (item: CitaLista) => {
           {citasConFoto.length === 0 && !cargandoTurnos && !errorTurnos ? (
             <View style={styles.sinCitas}>
               <View style={styles.sinCitasIcono}>
-                <Ionicons name="calendar-clear-outline" size={26} color="#0f3e17" />
-              </View>
-              <Text style={styles.sinCitasTitulo}>
-                No hay próximos turnos en {sedeSeleccionada}
-              </Text>
+<Ionicons name="calendar-clear-outline" size={18} color="#0f3e17" />
+   </View>
+   <Text style={styles.sinCitasTitulo}>
+   No hay turnos programados
+   </Text>
             </View>
           ) : (
             <View style={styles.tarjetasCitas}>
@@ -767,56 +719,53 @@ const renderCita = (item: CitaLista) => {
   );
 }
 
-// Con StyleSheet.create y no un objeto plano: asi React Native registra los
-// estilos y Fast Refresh no se queda con la version vieja cuando edito.
+
 const styles = StyleSheet.create({
-  // La portada entra entera en la pantalla: sin scroll.
-  // Se parte en dos: el encabezado toma el alto sobrante y la lista de citas
-  // toma solo el suyo, asi el alto no salta al cambiar de sede.
+
   portada: { flex: 1, backgroundColor: '#fffefc' },
-  // Reparto fijo: el encabezado se lleva el 48% de la pantalla y la lista de
-  // citas el 52%, siempre. Asi el bloque de citas tiene el mismo peso en
-  // cualquier telefono y no queda un hueco gigante en el medio.
+
+// El encabezado toma solo el alto de lo que tiene arriba: antes reservaba el
+  // 48% de la pantalla y al admin, que no muestra las mascotas, le quedaba un
+  // hueco fijo entre el boton de QR y "Proximos turnos".
   portadaEncabezado: {
-    flexBasis: '48%' as DimensionValue,
-    flexGrow: 1,
-    flexShrink: 1,
-    justifyContent: 'space-evenly' as const,
-    paddingHorizontal: 12,
-    paddingTop: 2,
-    paddingBottom: 2,
-  },
-  // El alto de las tarjetas se reparte dentro de esta mitad: si el telefono es
-  // mas alto, las citas se agrandan en vez de dejar el espacio vacio arriba.
+   flexGrow: 0,
+   flexShrink: 0,
+   justifyContent: 'flex-start' as const,
+   gap: 10,
+   paddingHorizontal: 12,
+   paddingTop: 12,
+   paddingBottom: 2,
+   },
+// El encabezado ya no reserva alto: la lista toma lo que sobre de la pantalla.
   portadaLista: {
-    flexBasis: '52%' as DimensionValue,
-    flexGrow: 1,
-    flexShrink: 1,
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 10,
-  },
+   flexBasis: '52%' as DimensionValue,
+   flexGrow: 1,
+   flexShrink: 1,
+   paddingHorizontal: 12,
+   paddingTop: 16,
+   paddingBottom: 10,
+   },
   tarjetasCitas: { flex: 1, gap: 8 },
 sinCitas: {
-    alignItems: 'center' as const,
-    marginTop: 8,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#dcecdc',
-    backgroundColor: '#f2f9f1',
-  },
+   flexDirection: 'row' as const,
+   alignItems: 'center' as const,
+   gap: 10,
+   paddingVertical: 12,
+   paddingHorizontal: 14,
+   borderRadius: 12,
+   borderWidth: 1,
+   borderColor: '#dcecdc',
+   backgroundColor: '#f2f9f1',
+   },
   sinCitasIcono: {
-    width: 52,
-    height: 52,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginBottom: 10,
-    borderRadius: 26,
-    backgroundColor: '#e4f1e0',
-  },
-  sinCitasTitulo: { color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
+   width: 34,
+   height: 34,
+   alignItems: 'center' as const,
+   justifyContent: 'center' as const,
+   borderRadius: 17,
+   backgroundColor: '#e4f1e0',
+   },
+  sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
 citaTarjeta: {
     flex: 1,
     flexShrink: 1,
@@ -833,8 +782,6 @@ citaTarjeta: {
     alignItems: 'center' as const,
     gap: 13,
   },
-  // El lado de la foto y el alto minimo de la tarjeta los calcula la pantalla
-  // (ver ladoFotoTarjeta). Con flex solo se deformaban en telefonos chicos.
   citaFoto: { width: 72, height: 72, borderRadius: 16, backgroundColor: '#cfe7d3' },
   citaFotoVacia: {
     width: 72,
@@ -886,57 +833,44 @@ citaTarjeta: {
 saludo: {
     width: '100%' as DimensionValue,
     alignItems: 'center' as const,
-    paddingTop: 4,
-    paddingBottom: 10,
+    marginVertical: 20,
   },
   saludoTexto: {
-    alignSelf: 'stretch' as const,
-    color: '#0f3e17',
-    fontSize: 28,
-    fontWeight: 'bold' as const,
-    marginBottom: 3,
-    textAlign: 'center' as const,
-  },
+   alignSelf: 'stretch' as const,
+   color: '#0f3e17',
+   fontSize: 32,
+   fontWeight: 'bold' as const,
+   marginBottom: 6,
+   textAlign: 'center' as const,
+   },
   saludoSubtexto: {
-    alignSelf: 'stretch' as const,
-    color: '#556b58',
-    fontSize: 15,
-    textAlign: 'center' as const,
-  },
-  accesos: {
-    width: '100%' as DimensionValue,
-    flexDirection: 'row' as const,
-    gap: 16,
-    marginBottom: 0,
-  },
-  // Los espacios entre los bloques los pone space-evenly del encabezado.
+   alignSelf: 'stretch' as const,
+   color: '#556b58',
+   fontSize: 16,
+   textAlign: 'center' as const,
+   },
   bloqueSede: {},
-  acceso: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    gap: 7,
-    paddingVertical: 13,
-    paddingHorizontal: 6,
-    borderWidth: 1,
-    borderColor: '#dcecdc',
-    borderRadius: 18,
-    backgroundColor: '#f2f9f1',
+  // El alto va en la lista y no en la card: con el alto fijo y el overflow
+  // hidden en la card, una raza larga que hacia dos lineas la cortaba.
+  listaMascotas: { height: 124 },
+  mascotaCard: {
+   backgroundColor: '#e1f4df',
+   padding: 10,
+   borderRadius: 12,
+   width: 100,
+   justifyContent: 'center' as const,
+   alignItems: 'center' as const,
+   borderColor: '#efeeeb',
+   borderWidth: 1,
   },
-  accesoIcono: {
-    width: 50,
-    height: 50,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: 16,
-    backgroundColor: '#e4f1e0',
-  },
-  accesoTexto: {
-    color: '#1e3326',
-    fontSize: 13,
-    fontWeight: '600' as const,
-    textAlign: 'center' as const,
+  mascotaFoto: {
+   width: 52,
+   height: 52,
+   borderRadius: 10,
+   marginBottom: 8,
+   alignItems: 'center' as const,
+   justifyContent: 'center' as const,
+   backgroundColor: '#cfe7d3',
   },
   mascotasVacias: {
     paddingVertical: 16,
@@ -954,9 +888,6 @@ saludo: {
     textAlign: 'center' as const,
     marginBottom: 16,
   },
-  // El SVG de react-native-qrcode-svg mide su propio ancho, y eso descuadra el
-  // centrado. Lo meto en una caja cuadrada de tamano fijo: el SVG tiene asi
-  // un contenedor con medidas Certain, y el centro es geometrico.
   qrAdminMarco: {
     alignSelf: 'stretch' as const,
     width: '100%' as DimensionValue,

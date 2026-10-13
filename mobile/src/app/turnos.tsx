@@ -272,7 +272,7 @@ export default function TurnosScreen() {
           <Image
             source={{ uri: cita.guardado.mascota.foto }}
             style={styles.turnoFoto}
-            resizeMode="cover"
+            resizeMode="contain"
             accessibilityLabel={`Foto de ${cita.mascota}`}
           />
         ) : (

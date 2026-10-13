@@ -126,7 +126,7 @@ export default function MascotasScreen() {
                   <Image
                     source={{ uri: item.foto }}
                     style={styles.foto}
-                    resizeMode="cover"
+                    resizeMode="contain"
                     accessibilityLabel={`Foto de ${item.nombre}`}
                   />
                 ) : (

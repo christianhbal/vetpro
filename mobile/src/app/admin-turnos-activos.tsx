@@ -229,7 +229,7 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
                 <Image
                   source={{ uri: item.mascota.foto }}
                   style={styles.foto}
-                  resizeMode="cover"
+                  resizeMode="contain"
                   accessibilityLabel={`Foto de ${item.mascota.nombre}`}
                 />
               ) : (
