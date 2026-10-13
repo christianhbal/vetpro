@@ -72,12 +72,21 @@ export default function MarcarTurnoScreen() {
 // tener una nota cargada y aun asi no estar atendido.
 const yaAtendido = params.atendido === 'true';
 
+  // Volver a la lista de pacientes tiene que conservar la sede: sin pasarla, la
+  // pantalla caia siempre en Recoleta y el veterinario atendia en una sede y
+  // volvia a ver los pacientes de otra.
+  const sedeDeOrigen = esSedeVeterinaria(params.sede) ? params.sede : 'Recoleta';
+  const esperaDeLaSede = {
+    pathname: '/admin-turnos-activos',
+    params: { sede: sedeDeOrigen },
+  } as const;
+
   const volver = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-    router.replace('/admin-turnos-activos');
+    router.replace(esperaDeLaSede);
   };
 
 // OJO: todavia no se escribe nada en la base. Esta pantalla se esta probando
@@ -145,7 +154,7 @@ const yaAtendido = params.atendido === 'true';
     if (guardando) return;
     setError('');
     setDescripcion('');
-    router.replace('/admin-turnos-activos');
+    router.replace(esperaDeLaSede);
   };
 
   const restantes = MAX_DESCRIPCION - descripcion.trim().length;
@@ -299,12 +308,12 @@ const yaAtendido = params.atendido === 'true';
         animationType="fade"
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={() => router.replace('/admin-turnos-activos')}
+        onRequestClose={() => router.replace(esperaDeLaSede)}
       >
         <View style={styles.avisoRaiz}>
           <Pressable
             style={styles.avisoFondo}
-            onPress={() => router.replace('/admin-turnos-activos')}
+            onPress={() => router.replace(esperaDeLaSede)}
             accessibilityRole="button"
             accessibilityLabel="Cerrar aviso"
           />
@@ -337,7 +346,7 @@ const yaAtendido = params.atendido === 'true';
 
               <Pressable
                 style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
-                onPress={() => router.replace('/admin-turnos-activos')}
+                onPress={() => router.replace(esperaDeLaSede)}
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar y volver a los pacientes que esperan"
               >

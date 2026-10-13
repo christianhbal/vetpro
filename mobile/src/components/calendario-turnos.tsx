@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-
-const DIAS_SEMANA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+import { DIAS_SEMANA } from '@/lib/datos';
 
 type TurnoCalendario = { fecha: string };
 
@@ -134,8 +133,10 @@ export function CalendarioTurnos({
 
 const styles = StyleSheet.create({
   contenedor: {
-    paddingHorizontal: 4,
-    paddingBottom: 8,
+    // Antes 4: las celdas quedaban pegadas al borde y entre si, y los numeros
+    // se leian amontonados.
+    paddingHorizontal: 10,
+    paddingBottom: 10,
     marginBottom: 10,
     backgroundColor: '#f2f9f1',
     borderWidth: 1,
@@ -161,21 +162,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textTransform: 'capitalize',
   },
-  grilla: { flexDirection: 'row', flexWrap: 'wrap' },
+  // Las celdas ocupan 13% en vez de 1/7 exacto: con 100/7 quedaban pegadas unas
+  // a otras y los dias con fondo formaban una banda corrida. Con space-between
+  // la fila reparte el aire sobrante.
+  grilla: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   weekday: {
-    width: `${100 / 7}%`,
-    paddingVertical: 3,
+    width: '13%',
+    paddingVertical: 5,
     color: '#69746a',
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
   },
   dia: {
-    width: `${100 / 7}%`,
-    height: 32,
+    width: '13%',
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 19,
   },
   diaHoy: {
     borderWidth: 1.5,
@@ -193,24 +197,31 @@ const styles = StyleSheet.create({
   diaTextoSeleccionado: { color: '#fffefc', fontWeight: 'bold' },
   turnoDot: {
     position: 'absolute',
-    bottom: 3,
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#2f7a3f',
-  },
-  legend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingTop: 4,
-  },
-  legendPunto: {
+    bottom: 4,
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#2f7a3f',
   },
-  legendText: { color: '#69746a', fontSize: 11 },
+  // La leyenda va como una pila centrada: antes era un punto suelto pegado al
+  // borde y a cinco pixeles del texto, y se leia como un error de maquetado.
+  legend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 7,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#e4f1e0',
+  },
+  legendPunto: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#2f7a3f',
+  },
+  legendText: { color: '#3d5546', fontSize: 11, fontWeight: '600' },
   turnoDotSeleccionado: { backgroundColor: '#fffefc' },
 });

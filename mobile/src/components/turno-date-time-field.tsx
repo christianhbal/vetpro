@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { DIAS_SEMANA } from '@/lib/datos';
 
 type Props = {
   tipo: 'fecha' | 'hora';
@@ -165,7 +166,7 @@ export default function TurnoDateTimeField({
                   </Pressable>
                 </View>
                 <View style={styles.calendar}>
-                  {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, index) => (
+                  {DIAS_SEMANA.map((dia, index) => (
                     <Text key={`semana-${index}`} style={styles.weekday}>{dia}</Text>
                   ))}
                   {dias.map((dia, index) => {

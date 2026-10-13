@@ -20,6 +20,7 @@ import { useFocusEffect } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   descripcionEspecieMascota,
+  DIAS_SEMANA,
   sedesVeterinaria,
   type SedeVeterinaria,
 } from '@/lib/datos';
@@ -29,9 +30,9 @@ import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo'
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
-// Encabezado del calendario, de lunes a domingo. El miércoles va con "M" y no
-// con la "X" de siempre, asi que martes y miércoles muestran la misma letra.
-export const DIAS_SEMANA = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const;
+// El encabezado de dias vive en lib/datos para que los tres calendarios
+// muestren las mismas letras. Antes cada uno tenia su copia y al cambiar el
+// miércoles se olvidó uno.
 
 type TipoTurno = (typeof tiposTurno)[number];
 

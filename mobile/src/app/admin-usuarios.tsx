@@ -299,7 +299,7 @@ export default function AdminUsuariosScreen() {
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.email}</Text>
                   <Text style={estilos.cardSubtitle}>
-                    {item.role === 'ADMIN' ? 'Veterinario' : 'Usuario normal'}
+                    {item.role === 'ADMIN' ? 'Veterinario' : 'Dueño de mascota'}
                     {item.id === miId ? ' · Tú' : ''}
                   </Text>
                 </View>

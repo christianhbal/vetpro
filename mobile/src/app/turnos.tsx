@@ -23,6 +23,7 @@ import {
 } from '@/lib/datos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { useSedeSeleccionada } from '@/lib/sede';
 
 // La respuesta del admin trae turno ajeno y estado de atención; el usuario
 // normal solo ve los suyos.
@@ -151,7 +152,20 @@ export default function TurnosScreen() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
-  const [filtroSede, setFiltroSede] = useState<'Todas' | SedeVeterinaria>('Todas');
+  // Arranca en la sede de la portada, no en "Todas": antes se elegia la sede en
+  // la portada y al entrar a Turnos figuraba "Todas", como si no hubiera nada
+  // elegido. "Todas" sigue disponible para mirar la agenda completa.
+const [sedeCompartida, setSedeCompartida] = useSedeSeleccionada();
+const [mostrarTodas, setMostrarTodas] = useState(false);
+const filtroSede: 'Todas' | SedeVeterinaria = mostrarTodas ? 'Todas' : sedeCompartida;
+const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
+  if (valor === 'Todas') {
+    setMostrarTodas(true);
+    return;
+  }
+  setMostrarTodas(false);
+  setSedeCompartida(valor);
+};
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const { height: windowHeight } = useWindowDimensions();
 
@@ -250,11 +264,16 @@ export default function TurnosScreen() {
           ? idsProximos.has(turno.id)
           : turno.fecha === fechaSeleccionada
       )
-      .sort((a, b) =>
-        a.fecha === b.fecha
+      // Los atendidos van al final. Lo primero que se ve es lo que falta
+      // atender, que es lo que interesa; dentro de cada grupo, por hora.
+      .sort((a, b) => {
+        const atendidoA = a.atendidoEn !== null && a.atendidoEn !== undefined;
+        const atendidoB = b.atendidoEn !== null && b.atendidoEn !== undefined;
+        if (atendidoA !== atendidoB) return atendidoA ? 1 : -1;
+        return a.fecha === b.fecha
           ? a.hora.localeCompare(b.hora)
-          : a.fecha.localeCompare(b.fecha)
-      );
+          : a.fecha.localeCompare(b.fecha);
+      });
   }, [fechaSeleccionada, filtroSede, porDia, proximos, turnos]);
 
   const altoAgendar = Math.max(74, Math.round(windowHeight * 0.1));
@@ -428,7 +447,15 @@ export default function TurnosScreen() {
             style={({ pressed }) => [styles.agendarBoton, pressed && estilos.buttonPressed]}
             onPress={() =>
               router.push(
-                esAdmin ? '/admin-turnos-activos' : '/nuevo-turno'
+                esAdmin
+                ? // Sin el parametro la pantalla caia siempre en Recoleta: al
+                  // cambiar de sede aqui, "Atender pacientes" no cambiaba.
+                  // Con "Todas" no hay una sede real todavia, asi que no se pasa
+                  // ninguna y la pantalla usa su valor por defecto.
+                  filtroSede === 'Todas'
+                  ? '/admin-turnos-activos'
+                  : { pathname: '/admin-turnos-activos', params: { sede: filtroSede } }
+                : '/nuevo-turno'
               )
             }
             accessibilityRole="link"

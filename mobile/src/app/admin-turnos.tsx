@@ -1,29 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Image,
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { CalendarioTurnos } from '@/components/calendario-turnos';
 import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
   descripcionEspecieMascota,
   esSedeVeterinaria,
-  formatearFechaTurno,
   sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { useSedeSeleccionada } from '@/lib/sede';
 
 type TurnoAdministrado = {
   id: number;
@@ -33,59 +33,25 @@ type TurnoAdministrado = {
   hora: string;
   llegadaEn: string | null;
   atendidoEn: string | null;
+  descripcion?: string | null;
+  esDemo?: boolean;
+  /** Ocupa la agenda pero no se lista: dias completos y turnos de historia. */
+  ocultoEnAgenda?: boolean;
   user: { nombre: string; email: string };
-  mascota: { nombre: string; especie: string; raza: string | null };
+  mascota: {
+    id: number;
+    nombre: string;
+    especie: string;
+    raza: string | null;
+    foto?: string | null;
+  };
 };
 
 type HorarioOcupado = { fecha: string; hora: string };
 
-type TurnoEjemplo = {
-  dueno: string;
-  email: string;
-  mascota: string;
-  especie: string;
-  raza: string | null;
-  tipo: string;
-  hora: string;
-  diasDesdeHoy: number;
-};
+const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
-const turnosEjemplo: TurnoEjemplo[] = [
-  {
-    dueno: 'Ana Gómez',
-    email: 'ana@correo.com',
-    mascota: 'Lola',
-    especie: 'Perro',
-    raza: 'Golden',
-    tipo: 'Vacunas',
-    hora: '09:30',
-    diasDesdeHoy: 1,
-  },
-  {
-    dueno: 'Bruno Díaz',
-    email: 'bruno@correo.com',
-    mascota: 'Mora',
-    especie: 'Gato',
-    raza: null,
-    tipo: 'Control',
-    hora: '11:00',
-    diasDesdeHoy: 2,
-  },
-  {
-    dueno: 'Carla Ruiz',
-    email: 'carla@correo.com',
-    mascota: 'Tito',
-    especie: 'Perro',
-    raza: 'Pug',
-    tipo: 'Estética',
-    hora: '16:30',
-    diasDesdeHoy: 3,
-  },
-];
-
-function fechaDeEjemplo(diasDesdeHoy: number): string {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() + diasDesdeHoy);
+function fechaComoValor(fecha: Date): string {
   return [
     fecha.getFullYear(),
     String(fecha.getMonth() + 1).padStart(2, '0'),
@@ -93,25 +59,10 @@ function fechaDeEjemplo(diasDesdeHoy: number): string {
   ].join('-');
 }
 
-function turnosDeEjemplo(): TurnoAdministrado[] {
-  return turnosEjemplo.map((ejemplo, indice) => ({
-    id: -1000 - indice,
-    tipo: ejemplo.tipo,
-    sede: 'Recoleta',
-    fecha: fechaDeEjemplo(ejemplo.diasDesdeHoy),
-    hora: ejemplo.hora,
-    llegadaEn: null,
-    atendidoEn: null,
-    user: { nombre: ejemplo.dueno, email: ejemplo.email },
-    mascota: { nombre: ejemplo.mascota, especie: ejemplo.especie, raza: ejemplo.raza },
-  }));
+function fechaCorta(fecha: string): string {
+  const [, mes, dia] = fecha.split('-');
+  return `${dia}/${mes}`;
 }
-
-function esTurnoEjemplo(turno: TurnoAdministrado): boolean {
-  return turno.id < 0;
-}
-
-const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
 function esHorarioOcupado(value: unknown): value is HorarioOcupado {
   if (typeof value !== 'object' || value === null) return false;
@@ -151,6 +102,8 @@ function esTurnoAdministrado(value: unknown): value is TurnoAdministrado {
 export default function AdminTurnosScreen() {
   const router = useRouter();
   const [turnos, setTurnos] = useState<TurnoAdministrado[]>([]);
+  const [ahora, setAhora] = useState(() => new Date());
+  const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<TurnoAdministrado | null>(null);
   const [tipo, setTipo] = useState('Control');
   const [sede, setSede] = useState<SedeVeterinaria>('Recoleta');
@@ -167,6 +120,20 @@ export default function AdminTurnosScreen() {
   const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
+
+  // La sede arranca en la que se esta mirando en la portada y en Turnos, y si se
+  // elige una aca queda elegida en las tres pantallas.
+  const [sedeFiltro, setSedeFiltro] = useSedeSeleccionada();
+  const [mostrarTodas, setMostrarTodas] = useState(false);
+  const filtroSede: 'Todas' | SedeVeterinaria = mostrarTodas ? 'Todas' : sedeFiltro;
+  const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
+    if (valor === 'Todas') {
+      setMostrarTodas(true);
+      return;
+    }
+    setMostrarTodas(false);
+    setSedeFiltro(valor);
+  };
 
   const cargarTurnos = useCallback(async () => {
     setCargando(true);
@@ -193,6 +160,7 @@ export default function AdminTurnosScreen() {
         return;
       }
       setTurnos(result);
+      setAhora(new Date());
     } catch (fetchError) {
       setError(apiUnreachableMessage(fetchError));
       setTurnos([]);
@@ -256,10 +224,30 @@ export default function AdminTurnosScreen() {
     if (year && month) void cargarDisponibilidad(year, month, turno.sede);
   };
 
-  const turnosProximos = [
-    ...turnosDeEjemplo(),
-    ...turnos.filter((turno) => turnoSiguePendiente(turno, new Date())),
-  ];
+  const valorHoy = fechaComoValor(ahora);
+
+  // Aca se modifican los turnos que todavia novene: los que ya pasaron la hora o
+  // ya fueron atendidos no se tocan, y los que solo ocupan la agenda (dias
+  // completos) tampoco. Los de ejemplo flotan y se ven siempre.
+  const aModificar = useMemo(
+    () =>
+      turnos.filter(
+        (turno) =>
+          !turno.ocultoEnAgenda &&
+          turno.atendidoEn === null &&
+          (turno.esDemo === true || turnoSiguePendiente(turno, ahora))
+      ),
+    [turnos, ahora]
+  );
+
+  const turnosDelDia = useMemo(() => {
+    return aModificar
+      .filter((turno) => filtroSede === 'Todas' || turno.sede === filtroSede)
+      .filter((turno) => (fechaSeleccionada === null ? true : turno.fecha === fechaSeleccionada))
+      .sort((a, b) =>
+        a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)
+      );
+  }, [aModificar, fechaSeleccionada, filtroSede]);
 
   const cancelarTurno = async () => {
     if (!seleccionado || cancelando) return;
@@ -276,7 +264,12 @@ export default function AdminTurnosScreen() {
         setConfirmarCancelacion(false);
         return;
       }
-      if (typeof result !== 'object' || result === null || !('cancelado' in result) || result.cancelado !== true) {
+      if (
+        typeof result !== 'object' ||
+        result === null ||
+        !('cancelado' in result) ||
+        result.cancelado !== true
+      ) {
         setErrorCancelar('La API no confirmó la cancelación del turno.');
         return;
       }
@@ -284,9 +277,11 @@ export default function AdminTurnosScreen() {
       setConfirmarCancelacion(false);
       setSeleccionado(null);
       await cargarTurnos();
-    } catch (error) {
+    } catch (requestError) {
       setErrorCancelar(
-        error instanceof TypeError ? apiUnreachableMessage(error) : 'No se pudo cancelar el turno.'
+        requestError instanceof TypeError
+          ? apiUnreachableMessage(requestError)
+          : 'No se pudo cancelar el turno.'
       );
       setConfirmarCancelacion(false);
     } finally {
@@ -297,10 +292,6 @@ export default function AdminTurnosScreen() {
   const guardarCambios = async () => {
     if (!seleccionado || guardando) return;
     setErrorGuardado('');
-    if (esTurnoEjemplo(seleccionado)) {
-      setSeleccionado(null);
-      return;
-    }
     setGuardando(true);
     try {
       const response = await fetch(
@@ -337,9 +328,7 @@ export default function AdminTurnosScreen() {
       ) {
         throw new Error(mensajeApi(listaActualizada) ?? 'No se pudo confirmar el turno actualizado.');
       }
-      const turnoActualizado = listaActualizada.find(
-        (turno) => turno.id === seleccionado.id
-      );
+      const turnoActualizado = listaActualizada.find((turno) => turno.id === seleccionado.id);
       if (
         !turnoActualizado ||
         turnoActualizado.sede !== sede ||
@@ -350,6 +339,7 @@ export default function AdminTurnosScreen() {
       }
 
       setTurnos(listaActualizada);
+      setAhora(new Date());
       setSeleccionado(null);
     } catch (requestError) {
       setErrorGuardado(
@@ -364,50 +354,164 @@ export default function AdminTurnosScreen() {
     }
   };
 
-  return (
-    <AppDrawer title="Modificar turnos">
-      <FlatList
-        style={estilos.container}
-        data={turnosProximos}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={estilos.listPadding}
-        ListEmptyComponent={
-          <View style={{ paddingVertical: 18 }}>
-            {cargando ? (
-              <ActivityIndicator color="#0f3e17" />
-            ) : (
-              <Text style={estilos.cardSubtitle}>
-                {error ||
-                  (turnos.length > 0
-                    ? 'No hay turnos próximos para modificar.'
-                    : 'No hay turnos registrados.')}
-              </Text>
-            )}
+  const renderTurno = (turno: TurnoAdministrado) => (
+    <Pressable
+      key={String(turno.id)}
+      style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
+      onPress={() => abrirEdicion(turno)}
+      accessibilityRole="button"
+      accessibilityLabel={`Modificar turno de ${turno.mascota.nombre}`}
+    >
+      <View style={styles.turnoFila}>
+        {turno.mascota.foto ? (
+          <Image
+            source={{ uri: turno.mascota.foto }}
+            style={styles.turnoFoto}
+            resizeMode="contain"
+            accessibilityLabel={`Foto de ${turno.mascota.nombre}`}
+          />
+        ) : (
+          <View style={styles.turnPhotoPlaceholder}>
+            <Ionicons name="paw-outline" size={26} color="#0f3e17" />
           </View>
-        }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [estilos.cardVertical, pressed && { opacity: 0.75 }]}
-            onPress={() => abrirEdicion(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`Modificar turno de ${item.mascota.nombre}`}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={estilos.cardTitle}>{item.mascota.nombre}</Text>
-                <Text style={estilos.cardSubtitle}>{formatearFechaTurno(item.fecha, item.hora)}</Text>
-                <Text style={styles.ownerName}>{item.user.nombre}</Text>
-              </View>
-              <Ionicons name="create-outline" size={22} color="#0f3e17" />
-            </View>
-          </Pressable>
         )}
-      />
+        <View style={styles.turnoTexto}>
+          <Text
+            style={[estilos.cardTituloTurno, styles.turnoTitulo]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {turno.mascota.nombre} - {turno.tipo}
+          </Text>
+          <Text style={styles.dueno} numberOfLines={1} ellipsizeMode="tail">
+            {turno.user.nombre}
+          </Text>
+          <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
+            {fechaCorta(turno.fecha)} - {turno.hora} hs
+            {/* La sede se repite en cada tarjeta y ya se sabe por el filtro de
+                arriba. Solo se muestra cuando la vista es "Todas", que es el
+                único caso en que aporta algo. */}
+            {filtroSede === 'Todas' ? ` - ${turno.sede}` : ''}
+          </Text>
+        </View>
+
+        <Ionicons name="create-outline" size={20} color="#8aa38c" />
+      </View>
+    </Pressable>
+  );
+
+  const cuerpoLista = () => {
+    if (cargando) {
+      return <ActivityIndicator color="#2f7a3f" style={styles.cargandoLista} />;
+    }
+    if (error) {
+      return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{error}</Text>;
+    }
+    if (turnosDelDia.length === 0) {
+      return (
+        <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>
+          {fechaSeleccionada
+            ? 'Ese día no tiene turnos para modificar.'
+            : 'No hay turnos próximos para modificar.'}
+        </Text>
+      );
+    }
+    return <>{turnosDelDia.map(renderTurno)}</>;
+  };
+
+  const tituloLista = fechaSeleccionada
+    ? `Turnos del ${new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })}`
+    : 'Turnos a modificar';
+
+  return (
+    <AppDrawer title="Administrar turnos">
+      <View style={styles.pantalla}>
+        <View style={styles.cabecera}>
+          <View style={styles.bloqueSede}>
+            <Text style={styles.labelSede}>Sede</Text>
+            <View style={styles.filaSedes}>
+              {['Todas', ...sedesVeterinaria].map((opcion) => {
+                const seleccionada = filtroSede === opcion;
+                return (
+                  <Pressable
+                    key={opcion}
+                    onPress={() => {
+                      setFiltroSede(opcion as 'Todas' | SedeVeterinaria);
+                      setSeleccionado(null);
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityLabel={opcion}
+                    accessibilityState={{ selected: seleccionada }}
+                    style={({ pressed }) => [
+                      styles.sedeChip,
+                      seleccionada && styles.sedeChipActivo,
+                      pressed && estilos.buttonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.sedeTexto, seleccionada && styles.sedeTextoActivo]}>
+                      {opcion}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <CalendarioTurnos
+            turnos={aModificar.filter(
+              (turno) => filtroSede === 'Todas' || turno.sede === filtroSede
+            )}
+            valorHoy={valorHoy}
+            fechaSeleccionada={fechaSeleccionada}
+            onSelectFecha={(valor) => {
+              setFechaSeleccionada(valor === '' ? null : valor);
+              setSeleccionado(null);
+            }}
+          />
+        </View>
+
+        <View style={styles.listas}>
+          <View style={styles.lista}>
+            <View style={styles.listaEncabezado}>
+              <View style={styles.listaFila}>
+                <Text style={[estilos.sectionTitleTurno, styles.tituloSeccion]}>{tituloLista}</Text>
+                {fechaSeleccionada ? (
+                  <Pressable
+                    style={({ pressed }) => [estilos.cerrarCirculo, pressed && estilos.buttonPressed]}
+                    onPress={() => setFechaSeleccionada(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Volver a todos los turnos a modificar"
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close" size={24} color="#263b32" />
+                  </Pressable>
+                ) : null}
+              </View>
+              <Text style={[estilos.sectionSubtitleTurno, styles.subtituloSeccion]}>
+                {turnosDelDia.length === 1 ? '1 turno' : `${turnosDelDia.length} turnos`}
+              </Text>
+            </View>
+            <ScrollView
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              contentContainerStyle={styles.listaContenido}
+            >
+              {cuerpoLista()}
+            </ScrollView>
+          </View>
+        </View>
+      </View>
 
       <Modal
         visible={seleccionado !== null}
         transparent
         animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={() => setSeleccionado(null)}
       >
         <View style={estilos.petModalRoot}>
@@ -428,141 +532,140 @@ export default function AdminTurnosScreen() {
                 <Ionicons name="close" size={24} color="#263b32" />
               </Pressable>
               <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={estilos.modalTitle}>Modificar turno</Text>
-              <Text style={estilos.modalTitle}>{seleccionado.mascota.nombre}</Text>
-              <Text style={estilos.modalText}>
-                Tipo de mascota:{' '}
-                {descripcionEspecieMascota(
-                  seleccionado.mascota.especie,
-                  seleccionado.mascota.raza
-                )}
-              </Text>
-              <Text style={styles.ownerName}>{seleccionado.user.nombre}</Text>
-              <Text style={estilos.modalText}>{seleccionado.user.email}</Text>
-              <Text style={styles.label}>Tipo de turno</Text>
-              <View style={styles.filaOpciones}>
-                {tiposTurno.map((opcion) => {
-                  const seleccionado = tipo === opcion;
-                  return (
-                    <Pressable
-                      key={opcion}
-                      onPress={() => setTipo(opcion)}
-                      accessibilityRole="radio"
-                      accessibilityLabel={opcion}
-                      accessibilityState={{ selected: seleccionado }}
-                      style={({ pressed }) => [
-                        styles.opcion,
-                        seleccionado && styles.opcionSeleccionada,
-                        pressed && estilos.buttonPressed,
-                      ]}
-                    >
-                      <Text
-                        style={[styles.opcionTexto, seleccionado && styles.opcionTextoSeleccionado]}
+                <Text style={estilos.modalTitle}>Modificar turno</Text>
+                <Text style={styles.modalNombreMascota}>{seleccionado.mascota.nombre}</Text>
+                <Text style={estilos.modalText}>
+                  Tipo de mascota:{' '}
+                  {descripcionEspecieMascota(
+                    seleccionado.mascota.especie,
+                    seleccionado.mascota.raza
+                  )}
+                </Text>
+                <Text style={estilos.modalText}>Dueño: {seleccionado.user.nombre}</Text>
+                <Text style={styles.label}>Tipo de turno</Text>
+                <View style={styles.filaOpciones}>
+                  {tiposTurno.map((opcion) => {
+                    const elegida = tipo === opcion;
+                    return (
+                      <Pressable
+                        key={opcion}
+                        onPress={() => setTipo(opcion)}
+                        accessibilityRole="radio"
+                        accessibilityLabel={opcion}
+                        accessibilityState={{ selected: elegida }}
+                        style={({ pressed }) => [
+                          styles.opcion,
+                          elegida && styles.opcionSeleccionada,
+                          pressed && estilos.buttonPressed,
+                        ]}
                       >
-                        {opcion}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                        <Text
+                          style={[styles.opcionTexto, elegida && styles.opcionTextoSeleccionado]}
+                        >
+                          {opcion}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
-              <Text style={styles.label}>Sede</Text>
-              <View style={styles.filaOpciones}>
-                {sedesVeterinaria.map((opcion) => {
-                  const seleccionada = sede === opcion;
-                  return (
-                    <Pressable
-                      key={opcion}
-                      onPress={() => {
-                        if (opcion === sede) return;
-                        setSede(opcion);
-                        const [year, month] = fecha.split('-').map(Number);
-                        if (year && month) void cargarDisponibilidad(year, month, opcion);
-                      }}
-                      accessibilityRole="radio"
-                      accessibilityLabel={opcion}
-                      accessibilityState={{ selected: seleccionada }}
-                      style={({ pressed }) => [
-                        styles.opcion,
-                        seleccionada && styles.opcionSeleccionada,
-                        pressed && estilos.buttonPressed,
-                      ]}
-                    >
-                      <Text
-                        style={[styles.opcionTexto, seleccionada && styles.opcionTextoSeleccionado]}
+                <Text style={styles.label}>Sede</Text>
+                <View style={styles.filaOpciones}>
+                  {sedesVeterinaria.map((opcion) => {
+                    const elegida = sede === opcion;
+                    return (
+                      <Pressable
+                        key={opcion}
+                        onPress={() => {
+                          if (opcion === sede) return;
+                          setSede(opcion);
+                          const [year, month] = fecha.split('-').map(Number);
+                          if (year && month) void cargarDisponibilidad(year, month, opcion);
+                        }}
+                        accessibilityRole="radio"
+                        accessibilityLabel={opcion}
+                        accessibilityState={{ selected: elegida }}
+                        style={({ pressed }) => [
+                          styles.opcion,
+                          elegida && styles.opcionSeleccionada,
+                          pressed && estilos.buttonPressed,
+                        ]}
                       >
-                        {opcion}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                        <Text
+                          style={[styles.opcionTexto, elegida && styles.opcionTextoSeleccionado]}
+                        >
+                          {opcion}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
-              <View style={styles.bloqueCampo}>
-                <TurnoDateTimeField
-                  tipo="fecha"
-                  valor={fecha}
-                  onChange={(valor) => {
-                    setFecha(valor);
-                    setHora('');
-                  }}
-                  onMonthChange={(year, month) => void cargarDisponibilidad(year, month, sede)}
-                />
-              </View>
+                <View style={styles.bloqueCampo}>
+                  <TurnoDateTimeField
+                    tipo="fecha"
+                    valor={fecha}
+                    onChange={(valor) => {
+                      setFecha(valor);
+                      setHora('');
+                    }}
+                    onMonthChange={(year, month) => void cargarDisponibilidad(year, month, sede)}
+                  />
+                </View>
 
-              <View style={styles.bloqueCampo}>
-                <TurnoDateTimeField
-                  tipo="hora"
-                  valor={hora}
-                  onChange={setHora}
-                  fechaSeleccionadaValor={fecha}
-                  horariosOcupados={horariosOcupados}
-                  cargandoDisponibilidad={cargandoDisponibilidad}
-                  errorDisponibilidad={errorDisponibilidad}
-                />
-              </View>
-              {errorGuardado ? (
-                <Text style={styles.saveError} accessibilityRole="alert">
-                  {errorGuardado}
-                </Text>
-              ) : null}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.confirmar,
-                  pressed && estilos.buttonPressed,
-                ]}
-                onPress={() => void guardarCambios()}
-                disabled={guardando}
-                accessibilityRole="button"
-                accessibilityState={{ busy: guardando }}
-              >
-                <Text style={styles.confirmarTexto}>
-                  {guardando ? 'Guardando...' : 'Guardar cambios'}
-                </Text>
-              </Pressable>
-
-              {seleccionado.llegadaEn || seleccionado.atendidoEn ? (
-                <Text style={styles.cancelarBloqueado}>
-                  {seleccionado.atendidoEn
-                    ? 'Este turno ya fue atendido y no se puede cancelar.'
-                    : 'Este paciente ya se presentó y no se puede cancelar.'}
-                </Text>
-              ) : (
+                <View style={styles.bloqueCampo}>
+                  <TurnoDateTimeField
+                    tipo="hora"
+                    valor={hora}
+                    onChange={setHora}
+                    fechaSeleccionadaValor={fecha}
+                    horariosOcupados={horariosOcupados}
+                    cargandoDisponibilidad={cargandoDisponibilidad}
+                    errorDisponibilidad={errorDisponibilidad}
+                  />
+                </View>
+                {errorGuardado ? (
+                  <Text style={styles.saveError} accessibilityRole="alert">
+                    {errorGuardado}
+                  </Text>
+                ) : null}
                 <Pressable
-                  style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
-                  onPress={() => setConfirmarCancelacion(true)}
-                  disabled={cancelando}
+                  style={({ pressed }) => [
+                    styles.confirmar,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                  onPress={() => void guardarCambios()}
+                  disabled={guardando}
                   accessibilityRole="button"
-                  accessibilityLabel={`Cancelar el turno de ${seleccionado.mascota.nombre}`}
+                  accessibilityState={{ busy: guardando }}
                 >
-                  <Text style={styles.cancelarTexto}>Cancelar turno</Text>
+                  <Text style={styles.confirmarTexto}>
+                    {guardando ? 'Guardando...' : 'Guardar cambios'}
+                  </Text>
                 </Pressable>
-              )}
-              {errorCancelar ? (
-                <Text style={styles.saveError} accessibilityRole="alert">
-                  {errorCancelar}
-                </Text>
-              ) : null}
+
+                {seleccionado.llegadaEn || seleccionado.atendidoEn ? (
+                  <Text style={styles.cancelarBloqueado}>
+                    {seleccionado.atendidoEn
+                      ? 'Este turno ya fue atendido y no se puede cancelar.'
+                      : 'Este paciente ya se presentó y no se puede cancelar.'}
+                  </Text>
+                ) : (
+                  <Pressable
+                    style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
+                    onPress={() => setConfirmarCancelacion(true)}
+                    disabled={cancelando}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Cancelar el turno de ${seleccionado.mascota.nombre}`}
+                  >
+                    <Text style={styles.cancelarTexto}>Cancelar turno</Text>
+                  </Pressable>
+                )}
+                {errorCancelar ? (
+                  <Text style={styles.saveError} accessibilityRole="alert">
+                    {errorCancelar}
+                  </Text>
+                ) : null}
               </ScrollView>
             </View>
           ) : null}
@@ -626,29 +729,78 @@ export default function AdminTurnosScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  ownerName: {
-    color: '#0f3e17',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 4,
+const styles = {
+  pantalla: { flex: 1, backgroundColor: '#fffefc' },
+  cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
+  bloqueSede: { marginBottom: 12 },
+  labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
+  filaSedes: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 },
+  sedeChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 16,
+    backgroundColor: '#fffefc',
   },
-  saveError: {
-    color: '#a32828',
-    fontSize: 14,
-    lineHeight: 20,    marginTop: 10,
+  sedeChipActivo: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
+  sedeTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
+  sedeTextoActivo: { color: '#0f3e17', fontWeight: 'bold' as const },
+  // El padding lateral tiene que ser el mismo que el de la cabecera para que la
+  // tarjeta de la lista quede del mismo ancho que el calendario de arriba.
+  listas: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12 },
+  lista: {
+    flex: 1,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#dcecdc',
+    borderRadius: 16,
+    backgroundColor: '#f2f9f1',
+    overflow: 'hidden' as const,
   },
+  listaEncabezado: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 9 },
+  listaFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+  },
+  tituloSeccion: { marginTop: 0, marginBottom: 0, flex: 1 },
+  subtituloSeccion: { marginBottom: 0 },
+  listaContenido: { paddingHorizontal: 12, paddingBottom: 12 },
+  cargandoLista: { paddingVertical: 20 },
+  notaVacia: { paddingBottom: 8 },
+  turnoFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    minHeight: 64,
+  },
+  turnoFoto: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
+  turnoTexto: { flex: 1 },
+  dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  turnPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 12,
+    backgroundColor: '#e2f2e4',
+  },
+  turnoTitulo: { flexShrink: 1 },
+  modalNombreMascota: { color: '#0f3e17', fontSize: 20, fontWeight: 'bold' as const, marginTop: 2 },
+  saveError: { color: '#a32828', fontSize: 14, lineHeight: 20, marginTop: 10 },
   label: {
     color: '#4d6154',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     marginTop: 12,
     marginBottom: 6,
   },
-  filaOpciones: { flexDirection: 'row', gap: 6, marginBottom: 4 },
+  filaOpciones: { flexDirection: 'row' as const, gap: 6, marginBottom: 4 },
   opcion: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'center' as const,
     paddingVertical: 11,
     borderWidth: 1.5,
     borderColor: '#cfdcc9',
@@ -656,11 +808,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffefc',
   },
   opcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
-  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
+  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
+  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
   bloqueCampo: { marginTop: 12 },
   cancelar: {
-    alignItems: 'center',
+    alignItems: 'center' as const,
     marginTop: 12,
     paddingVertical: 13,
     borderWidth: 1.5,
@@ -668,24 +820,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#f7ede6',
   },
-  cancelarTexto: {
-    color: '#8a5324',
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  cancelarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
   cancelarBloqueado: {
     marginTop: 14,
     color: '#69746a',
     fontSize: 13,
     lineHeight: 19,
-    textAlign: 'center',
+    textAlign: 'center' as const,
   },
   confirmar: {
-    alignItems: 'center',
+    alignItems: 'center' as const,
     marginTop: 16,
     paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
-});
+  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
+};

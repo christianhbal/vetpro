@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -29,6 +29,7 @@ import {
 import { obtenerUsuarioActual } from '@/lib/session';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
+import { useSedeSeleccionada } from '@/lib/sede';
 
 type Mascota = {
   id: number;
@@ -39,112 +40,65 @@ type Mascota = {
   foto: string | null;
 };
 
+// La agenda del admin trae el turno con su dueño y su estado de atención; los
+// turnos del propio usuario vienen mas pelados.
+type TurnoAgenda = TurnoGuardado & {
+  atendidoEn?: string | null;
+  user?: { nombre: string } | null;
+};
+
 type CitaLista = {
   id: number;
   key: string;
   mascota: string;
   motivo: string;
-  fecha: string;
+  /** "Hoy - 11:30 hs" o "13/10 - 09:00 hs". */
+  cuando: string;
+  /** Tercera linea: el dueño en la agenda del admin, la sede para el cliente. */
+  detalle: string | null;
   dueno: string | null;
   /** Foto local, para cuando no hay ninguna que venga de la API. */
   fotoLocal?: ImageSourcePropType | null;
   /** Foto que llega de la API como data URI. */
   fotoUri?: string | null;
-  guardado: TurnoGuardado;
+  guardado: TurnoAgenda;
 };
+
+
+/**
+ * "Hoy", "Mañana" o "13/10". Antes la tarjeta showed solo la hora y dos turnos
+ * de dias distintos a las 10 parecian el mismo, uno repetido.
+ */
+function fechaRelativaCorta(fecha: string, ahora: Date): string {
+  const [year, month, day] = fecha.split('-').map(Number);
+  if (!year || !month || !day) return fecha;
+  const dias = Math.round(
+    (new Date(year, month - 1, day).getTime() -
+      new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime()) /
+      86400000
+  );
+  if (dias === 0) return 'Hoy';
+  if (dias === 1) return 'Mañana';
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
+// Alto de la tarjeta de "Tus Mascotas". La lista y la tarjeta usan el mismo
+// numero: si difieren, el texto se pisa con la foto o sobra aire abajo.
+const ALTO_CARD_MASCOTA = 132;
 
 // Foto de respaldo si el backend no devuelve fotos: en la base puede haber
 // formatos (AVIF) que el empaquetador no acepta, asi que llegan por la API.
 const fotoRespaldo = require('@/assets/images/mascota-demo.jpg') as ImageSourcePropType;
 
-// Las 4 citas de la portada son fijas: no vienen de la API y no se mueven con
-// la fecha. Sirven para tener siempre algo que mostrar mientras la agenda real
-// no este conectada.
-type CitaEjemplo = {
-  dueno: string;
-  nombre: string;
-  especie: string;
-  raza: string | null;
-  motivo: string;
-  hora: string;
-};
-
-const citasEjemploDelDia: CitaEjemplo[] = [
-  {
-    dueno: 'Ana Gómez',
-    nombre: 'Lola',
-    especie: 'Perro',
-    raza: 'Golden',
-    motivo: 'Vacunas',
-    hora: '09:30',
-  },
-  {
-    dueno: 'Bruno Díaz',
-    nombre: 'Mora',
-    especie: 'Gato',
-    raza: null,
-    motivo: 'Control',
-    hora: '11:00',
-  },
-  {
-    dueno: 'Carla Ruiz',
-    nombre: 'Tito',
-    especie: 'Perro',
-    raza: 'Pug',
-    motivo: 'Vacunas',
-    hora: '14:30',
-  },
-  {
-    dueno: 'Diego Paz',
-    nombre: 'Nube',
-    especie: 'Gato',
-    raza: 'Siamés',
-    motivo: 'Estética',
-    hora: '17:00',
-  },
-];
-
-// San Isidro cerró la jornada: no queda nada por agendar, así que la lista
-// aparece vacía a propósito.
-function citasDeEjemplo(sede: SedeVeterinaria): CitaLista[] {
-  if (sede === 'San Isidro') return [];
-
-  const hoy = new Date();
-  const fecha = [
-    hoy.getFullYear(),
-    String(hoy.getMonth() + 1).padStart(2, '0'),
-    String(hoy.getDate()).padStart(2, '0'),
-  ].join('-');
-
-  return citasEjemploDelDia.map((ejemplo, indice) => ({
-    id: -1000 - indice,
-    key: `ejemplo-${indice}`,
-    mascota: ejemplo.nombre,
-    motivo: ejemplo.motivo,
-    // Solo la hora: son citas del día, la fecha se selections arriba.
-    fecha: `${ejemplo.hora} hs`,
-    dueno: ejemplo.dueno,
-    guardado: {
-      id: -1000 - indice,
-      tipo: ejemplo.motivo,
-      sede,
-      fecha,
-      hora: ejemplo.hora,
-      llegadaEn: null,
-      // Todavia no fue atendido: la descripcion la carga el veterinario
-      // al completar el turno.
-      descripcion: null,
-      mascotaId: -1000 - indice,
-      mascota: {
-        id: -1000 - indice,
-        nombre: ejemplo.nombre,
-        especie: ejemplo.especie,
-        raza: ejemplo.raza,
-        foto: null,
-      },
-    },
-  }));
-}
+// Los accesos rapidos de la portada. El admin no ve "Mascotas" porque es la
+// agenda de la veterinaria, no la de una persona. "Historial" ya no esta: la
+// pantalla se saco del proyecto.
+const accesosRapidos = [
+  { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
+  { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
+  { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
+  { label: 'Perfil', href: '/perfil', icon: 'person-outline' },
+] as const;
 
 export default function InicioScreen() {
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
@@ -152,7 +106,10 @@ export default function InicioScreen() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
   const [cargandoMascotas, setCargandoMascotas] = useState(true);
   const [errorMascotas, setErrorMascotas] = useState('');
-  const [turnosGuardados, setTurnosGuardados] = useState<TurnoGuardado[]>([]);
+  const [turnosGuardados, setTurnosGuardados] = useState<TurnoAgenda[]>([]);
+  // El momento se guarda al cargar los datos: es la referencia para saber que
+  // turnos ya pasaron su hora.
+  const [ahora, setAhora] = useState(() => new Date());
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
@@ -160,40 +117,13 @@ export default function InicioScreen() {
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [modalQr, setModalQr] = useState(false);
   const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
-  const [sedeSeleccionada, setSedeSeleccionada] = useState<SedeVeterinaria>('Recoleta');
-  const [fotosEjemplo, setFotosEjemplo] = useState<string[]>([]);
+  // La sede es la misma que en la pantalla de Turnos: el hook la guarda en el
+  // dispositivo, asi no hay que elegirla de nuevo en cada pantalla.
+const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
-  // Las fotos de las citas de ejemplo. Van por la API porque en la base hay
-  // formatos que el empaquetador de la app no sabe leer.
-  useEffect(() => {
-    let vigente = true;
-    void (async () => {
-      try {
-        const usuario = await obtenerUsuarioActual();
-        if (!usuario) return;
-        const response = await fetch(`${API_BASE_URL}/api/mascotas/fotos-ejemplo`, {
-          headers: { Authorization: `Bearer ${usuario.accessToken}` },
-        });
-        if (!response.ok) return;
-        const resultado: unknown = await response.json();
-        if (
-          vigente &&
-          typeof resultado === 'object' &&
-          resultado !== null &&
-          'fotos' in resultado &&
-          Array.isArray(resultado.fotos) &&
-          resultado.fotos.every((foto) => typeof foto === 'string')
-        ) {
-          setFotosEjemplo(resultado.fotos as string[]);
-        }
-      } catch {
-        // Si no llegan fotos, cada cita usa la de respaldo.
-      }
-    })();
-    return () => {
-      vigente = false;
-    };
-  }, []);
+  const accesos = esAdmin
+    ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
+    : accesosRapidos;
 
   const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
     valor: nombre,
@@ -208,13 +138,32 @@ export default function InicioScreen() {
     Math.min(windowWidth * 0.82, windowHeight - 200, 640)
   );
 
+  // En la portada van 3 citas. La agenda completa esta en la pantalla de
+  // Turnos, asi que aca no hace falta ver mas.
+  // La barra de arriba de la app no forma parte del reparto: el 55% se mide
+  // sobre la pantalla entera, no sobre lo que queda debajo de la barra. Se le
+  // descuenta ademas el padding del listado para que el titulo caiga justo en
+  // ese 55% y no un poco mas abajo.
+  const ALTO_BARRA = 64;
+  const altoEncabezadoPortada = Math.max(200, Math.round(windowHeight * 0.55) - ALTO_BARRA - 10);
+
+  const COTAS_PROXIMAS = 3;
+
   const [altoLista, setAltoLista] = useState(0);
-  const altoListaReal = altoLista || (windowHeight - 64) * 0.52;
-  // De ese alto salen el titulo, los tres huecos y los paddings de la lista y de
-  // las tarjetas. Si se suma algo nuevo hay que descontarlo aca tambien, si no
-  // la ultima tarjeta se pasa del borde de la pantalla.
+  const [altoTarjetas, setAltoTarjetas] = useState(0);
+  const altoListaReal = altoLista || (windowHeight - 64) * 0.4;
+  // El alto de la foto sale del alto real de la zona de tarjetas, que se mide
+  // con onLayout. Calcularlo con porazos sobre el alto de la pantalla dejaba
+  // las tarjetas 9px mas abajo del borde de la pantalla.
+  const altoZonaTarjetas = altoTarjetas || Math.max(120, altoListaReal - 82);
   const ladoFotoTarjeta = Math.round(
-    Math.max(38, Math.min(96, (altoListaReal - 78) / 4 - 26))
+    Math.max(
+      44,
+      Math.min(
+        84,
+        (altoZonaTarjetas - 8 * (COTAS_PROXIMAS - 1)) / COTAS_PROXIMAS - 34
+      )
+    )
   );
 
   const cargarMascotas = useCallback(async () => {
@@ -263,7 +212,11 @@ export default function InicioScreen() {
         return;
       }
       const response = await fetch(
-        `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`
+        // El admin mira la agenda de la veterinaria, no la de una persona.
+        usuario.esAdmin
+          ? `${API_BASE_URL}/api/admin/turnos`
+          : `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
+        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
       const resultado = await response.json();
       if (!response.ok) {
@@ -272,6 +225,7 @@ export default function InicioScreen() {
         return;
       }
       setTurnosGuardados(resultado);
+      setAhora(new Date());
     } catch (error) {
       setErrorTurnos(apiUnreachableMessage(error));
       setTurnosGuardados([]);
@@ -286,37 +240,114 @@ export default function InicioScreen() {
     }, [cargarTurnos])
   );
 
-// En la portada solo van 4 citas. La agenda completa esta en la pantalla de
-  // Turnos, asi que aca no hace falta verlas todas.
-  const COTAS_PROXIMAS = 4;
 
-  // Las 4 citas del admin son fijas, no vienen de la API. Un usuario normal ve
-  // sus turnos de verdad.
+  // Los turnos que ya se atendieron no vuelven a salir. Antes no se filtraban y
+  // la portada mostraba como "proximos" turnos que ya habian pasado por el
+  // consultorio: por eso se veian dos a las 10 y dos a las 11.
+  const turnosPendientes = useMemo(
+    () =>
+      turnosGuardados
+        .filter((turno) => !turno.atendidoEn)
+        .filter((turno) => turnoSiguePendiente(turno, ahora))
+        .sort((a, b) =>
+          a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)
+        ),
+    [turnosGuardados, ahora]
+  );
+
+  // El admin ve los turnos de verdad de la sede que esta mirando, y un cliente
+  // los suyos. Antes el admin veia nombres de ejemplo fijos (Lola, Mora, Tito,
+  // Nube) que no tenian nada que ver con la sede elegida.
   const citasVisibles: CitaLista[] = esAdmin
-    ? citasDeEjemplo(sedeSeleccionada).map((cita, indice) => ({
-        ...cita,
-        // Las fotos vienen de la API para poder usar cualquier formato que
-        // tenga la base. Si no hay, cae en la de respaldo.
-        fotoUri: fotosEjemplo[indice] ?? null,
-      }))
-    : turnosGuardados
-        .filter((turno) => turnoSiguePendiente(turno, new Date()))
+    ? turnosPendientes
+        .filter((turno) => turno.sede === sedeSeleccionada)
+        .slice(0, COTAS_PROXIMAS)
+        .map((turno) => ({
+          id: turno.id,
+          key: `admin-${turno.id}`,
+          mascota: turno.mascota.nombre,
+          motivo: turno.tipo,
+          cuando: `${fechaRelativaCorta(turno.fecha, ahora)} - ${turno.hora} hs`,
+          detalle: turno.user?.nombre ?? null,
+          dueno: turno.user?.nombre ?? null,
+          guardado: turno,
+        }))
+    : turnosPendientes
+        .slice(0, COTAS_PROXIMAS)
         .map((turno) => ({
           id: -turno.id,
           key: `guardado-${turno.id}`,
           mascota: turno.mascota.nombre,
           motivo: turno.tipo,
-          fecha: `${turno.hora} hs`,
+          cuando: `${fechaRelativaCorta(turno.fecha, ahora)} - ${turno.hora} hs`,
+          // El cliente no tiene filtro de sede en la portada: decir en cual va
+          // a atenderse es lo unico que aporta la tercera linea.
+          detalle: turno.sede,
           dueno: nombreCompleto || null,
           guardado: turno,
-        }))
-        .slice(0, COTAS_PROXIMAS);
+        }));
 
-  const citasConFoto = citasVisibles.map((cita) => ({
-    ...cita,
-    fotoLocal: cita.fotoLocal ?? (cita.fotoUri ? null : fotoRespaldo),
-  }));
-// El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
+  // La foto de respaldo se resuelve en renderCita, cuando ya se sabe si el
+  // turno trae foto.
+  const renderCita = (item: CitaLista) => {
+  // Orden de preferencia: la foto de la mascota del turno, la que venga como
+  // data URI y, si no hay ninguna, la de respaldo. Antes la de respaldo se
+  // ganaba siempre y todas las tarjetas salian con la misma foto generica.
+  const foto = item.guardado.mascota.foto
+    ? { uri: item.guardado.mascota.foto }
+    : item.fotoUri
+      ? { uri: item.fotoUri }
+      : (item.fotoLocal ?? fotoRespaldo);
+  return (
+    <Pressable
+      key={item.key}
+      style={({ pressed }) => [estilos.cardTurno, styles.citaTarjeta, pressed && estilos.buttonPressed]}
+      onPress={() => setCitaSeleccionada(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`Ver detalle de ${item.mascota}`}
+    >
+      <View style={styles.citaFila}>
+        {foto ? (
+          <Image
+            source={foto}
+            style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
+            resizeMode="cover"
+            accessibilityLabel={`Foto de ${item.mascota}`}
+          />
+        ) : (
+          <View
+            style={[
+              styles.citaFotoVacia,
+              { width: ladoFotoTarjeta, height: ladoFotoTarjeta },
+            ]}
+          >
+            <Ionicons name="paw-outline" size={26} color="#0f3e17" />
+          </View>
+        )}
+        <View style={styles.citaTexto}>
+          <Text
+            style={[estilos.cardTituloTurno, styles.citaTitulo]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {item.mascota} - {item.motivo}
+          </Text>
+          <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
+            {item.cuando}
+          </Text>
+          {item.detalle ? (
+            <Text style={styles.citaDetalle} numberOfLines={1} ellipsizeMode="tail">
+              {item.detalle}
+            </Text>
+          ) : null}
+        </View>
+
+        <Ionicons name="chevron-forward" size={18} color="#8aa38c" />
+      </View>
+    </Pressable>
+  );
+};
+  // El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
   // arma una hoja simple con el mismo valor que muestra el cartel.
   const imprimirQr = async (sede: SedeVeterinaria) => {
     // El SVG del QR se arma aca y no con un script de internet: antes la hoja
@@ -375,90 +406,70 @@ export default function InicioScreen() {
   };
 
   const renderMascota = ({ item }: { item: Mascota }) => (
-<Pressable
-   style={({ pressed }) => [styles.mascotaCard, pressed && estilos.buttonPressed]}
-   onPress={() => setMascotaSeleccionada(item)}
-   accessibilityRole="button"
-   accessibilityLabel={`Ver foto de ${item.nombre}`}
-   >
-   {item.foto ? (
-   <Image
-   source={{ uri: item.foto }}
-   style={styles.mascotaFoto}
-   resizeMode="contain"
-   accessibilityLabel={`Vista previa de ${item.nombre}`}
-   />
-   ) : (
-   <View style={styles.mascotaFoto}>
-   <Ionicons name="paw-outline" size={26} color="#0f3e17" />
-   </View>
-   )}
-      <Text style={estilos.cardTitle} numberOfLines={1} ellipsizeMode="tail">
+    <Pressable
+      style={({ pressed }) => [styles.mascotaCard, pressed && estilos.buttonPressed]}
+      onPress={() => setMascotaSeleccionada(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`Ver foto de ${item.nombre}`}
+    >
+      {/* La foto vive en un contenedor con flex: 1, o sea que se achica solo
+          para dejarle lugar a los dos textos de abajo. Antes tenia alto fijo y
+          con una raza larga el nombre salia debajo de la foto, superpuesto. */}
+      <View style={styles.mascotaFotoArea}>
+        {item.foto ? (
+          <Image
+            source={{ uri: item.foto }}
+            style={styles.mascotaFoto}
+            resizeMode="cover"
+            accessibilityLabel={`Vista previa de ${item.nombre}`}
+          />
+        ) : (
+          <Ionicons name="paw-outline" size={26} color="#0f3e17" />
+        )}
+      </View>
+      <Text style={styles.mascotaNombre} numberOfLines={1} ellipsizeMode="tail">
         {item.nombre}
       </Text>
-      <Text style={estilos.cardSubtitle} numberOfLines={1} ellipsizeMode="tail">
+      <Text style={styles.mascotaRaza} numberOfLines={1} ellipsizeMode="tail">
         {descripcionEspecieMascota(item.especie, item.raza)}
       </Text>
     </Pressable>
   );
 
-const renderCita = (item: CitaLista) => {
-  const foto =
-    item.fotoUri
-      ? { uri: item.fotoUri }
-      : (item.fotoLocal ??
-        (item.guardado.mascota.foto ? { uri: item.guardado.mascota.foto } : null));
-  return (
-    <Pressable
-      key={item.key}
-      style={({ pressed }) => [
-        styles.citaTarjeta,
-        { minHeight: ladoFotoTarjeta + 22 },
-        pressed && estilos.buttonPressed,
-      ]}
-      onPress={() => setCitaSeleccionada(item)}
-      accessibilityRole="button"
-      accessibilityLabel={`Ver detalle de ${item.mascota}`}
-    >
-      <View style={styles.citaFila}>
-        {foto ? (
-          <Image
-            source={foto}
-            style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
-            resizeMode="contain"
-            accessibilityLabel={`Foto de ${item.mascota}`}
-          />
-        ) : (
-          <View
-            style={[
-              styles.citaFotoVacia,
-              { width: ladoFotoTarjeta, height: ladoFotoTarjeta },
-            ]}
-          >
-            <Ionicons name="paw-outline" size={26} color="#0f3e17" />
-          </View>
-        )}
-        <View style={styles.citaTexto}>
-          <Text style={styles.citaTitulo} numberOfLines={1} ellipsizeMode="tail">
-            {item.mascota} - {item.motivo}
-          </Text>
-          <Text style={styles.citaSubtitulo} numberOfLines={1} ellipsizeMode="tail">
-            {item.fecha}
-          </Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-};
-
   return (
     <AppDrawer title="VetPro">
       <View style={styles.portada}>
-        <View style={styles.portadaEncabezado}>
+        <View style={[styles.portadaEncabezado, { height: altoEncabezadoPortada }]}>
             <View style={styles.saludo}>
               <Text style={styles.saludoTexto}>¡Hola, {nombreUsuario}!</Text>
-              <Text style={styles.saludoSubtexto}>Bienvenido de nuevo</Text>
+              <Text style={styles.saludoSubtexto}>¡Que tengas un excelente día!</Text>
             </View>
+
+            <View style={styles.accesos}>
+              {accesos.map((acceso) => (
+                <Pressable
+                  key={acceso.href}
+                  style={({ pressed }) => [styles.acceso, pressed && estilos.buttonPressed]}
+                  onPress={() => router.push(acceso.href)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Ir a ${acceso.label}`}
+                >
+                  <View style={styles.accesoIcono}>
+                    <Ionicons name={acceso.icon} size={28} color="#0f3e17" />
+                  </View>
+                  <Text style={styles.accesoTexto} numberOfLines={2}>
+                    {acceso.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Todo el aire que sobra va entre los accesos y el bloque de abajo.
+                Repartido en partes iguales dejaba los accesos pegados a "Tus
+                Mascotas" y un hueco grande antes del boton de QR. Este separador
+                va FUERA de la fila de accesos: adentro le robaba ancho a las
+                cajas y "Notificaciones" se partia a mitad de palabra. */}
+            <View style={styles.empujeEncabezado} />
 
             {esAdmin ? (
               <View style={styles.bloqueSede}>
@@ -521,13 +532,13 @@ const renderCita = (item: CitaLista) => {
             ) : (
               <Link href="/escanear-qr" asChild>
                 <Pressable
-                  style={estilos.qrBoton}
+                style={StyleSheet.flatten([estilos.qrBoton, styles.botonQrPortada])}
                   accessibilityRole="link"
-                  accessibilityLabel="Escanear código QR de la veterinaria"
+                  accessibilityLabel="Escanear código QR de llegada"
                 >
                   <View style={estilos.qrBotonFila}>
                     <Ionicons name="qr-code-outline" size={20} color="#fffefc" />
-                    <Text style={estilos.buttonTextPrimary}>Escanear QR en la veterinaria</Text>
+                    <Text style={estilos.buttonTextPrimary}>Escanear QR de llegada</Text>
                   </View>
                 </Pressable>
               </Link>
@@ -547,7 +558,7 @@ const renderCita = (item: CitaLista) => {
           ) : errorTurnos ? (
             <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
           ) : null}
-          {citasConFoto.length === 0 && !cargandoTurnos && !errorTurnos ? (
+          {citasVisibles.length === 0 && !cargandoTurnos && !errorTurnos ? (
             <View style={styles.sinCitas}>
               <View style={styles.sinCitasIcono}>
 <Ionicons name="calendar-clear-outline" size={18} color="#0f3e17" />
@@ -557,8 +568,8 @@ const renderCita = (item: CitaLista) => {
    </Text>
             </View>
           ) : (
-            <View style={styles.tarjetasCitas}>
-              {citasConFoto.map(renderCita)}
+            <View style={styles.tarjetasCitas} onLayout={(e) => setAltoTarjetas(e.nativeEvent.layout.height)}>
+              {citasVisibles.map(renderCita)}
             </View>
           )}
         </View>
@@ -724,27 +735,22 @@ const styles = StyleSheet.create({
 
   portada: { flex: 1, backgroundColor: '#fffefc' },
 
-// El encabezado toma solo el alto de lo que tiene arriba: antes reservaba el
-  // 48% de la pantalla y al admin, que no muestra las mascotas, le quedaba un
-  // hueco fijo entre el boton de QR y "Proximos turnos".
+  // "Proximos turnos" arranca al 55% de la pantalla y se lleva el 45% que queda.
+  // El alto del encabezado se calcula con la pantalla en vez de con un
+  // porcentaje: la barra de arriba de la app queda fuera del reparto y con
+  // flexBasis el titulo se corria.
   portadaEncabezado: {
-   flexGrow: 0,
-   flexShrink: 0,
-   justifyContent: 'flex-start' as const,
-   gap: 10,
-   paddingHorizontal: 12,
-   paddingTop: 12,
-   paddingBottom: 2,
-   },
-// El encabezado ya no reserva alto: la lista toma lo que sobre de la pantalla.
+    justifyContent: 'flex-start' as const,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
   portadaLista: {
-   flexBasis: '52%' as DimensionValue,
-   flexGrow: 1,
-   flexShrink: 1,
-   paddingHorizontal: 12,
-   paddingTop: 16,
-   paddingBottom: 10,
-   },
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
   tarjetasCitas: { flex: 1, gap: 8 },
 sinCitas: {
    flexDirection: 'row' as const,
@@ -766,38 +772,27 @@ sinCitas: {
    backgroundColor: '#e4f1e0',
    },
   sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
-citaTarjeta: {
+  citaTarjeta: {
     flex: 1,
     flexShrink: 1,
     justifyContent: 'center' as const,
-    backgroundColor: '#e1f4df',
-    padding: 10,
-    borderRadius: 16,
-    borderColor: '#efeeeb',
-    borderWidth: 1,
+    marginBottom: 0,
   },
   citaFila: {
-    flex: 1,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 13,
   },
-  citaFoto: { width: 72, height: 72, borderRadius: 16, backgroundColor: '#cfe7d3' },
+  citaFoto: { borderRadius: 14, backgroundColor: '#cfe7d3' },
   citaFotoVacia: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     backgroundColor: '#cfe7d3',
   },
   citaTexto: { flex: 1 },
-  citaTitulo: {
-    color: '#0f3e17',
-    fontSize: 17,
-    fontWeight: 'bold' as const,
-  },
-  citaSubtitulo: { marginTop: 3, color: '#4a6152', fontSize: 15 },
+  citaTitulo: { flexShrink: 1 },
+  citaDetalle: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
   qrAdminBotonFila: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -812,7 +807,7 @@ citaTarjeta: {
   },
   qrBotonCompacto: {
     backgroundColor: '#0f3e17',
-    paddingVertical: 15,
+    paddingVertical: 12,
     borderRadius: 14,
     alignItems: 'center' as const,
   },
@@ -833,49 +828,106 @@ citaTarjeta: {
 saludo: {
     width: '100%' as DimensionValue,
     alignItems: 'center' as const,
-    marginVertical: 20,
+    paddingTop: 2,
+    paddingBottom: 6,
   },
   saludoTexto: {
-   alignSelf: 'stretch' as const,
-   color: '#0f3e17',
-   fontSize: 32,
-   fontWeight: 'bold' as const,
-   marginBottom: 6,
-   textAlign: 'center' as const,
-   },
+    alignSelf: 'stretch' as const,
+    color: '#0f3e17',
+    fontSize: 24,
+    fontWeight: 'bold' as const,
+    marginBottom: 2,
+    textAlign: 'center' as const,
+  },
   saludoSubtexto: {
-   alignSelf: 'stretch' as const,
-   color: '#556b58',
-   fontSize: 16,
-   textAlign: 'center' as const,
-   },
+    alignSelf: 'stretch' as const,
+    color: '#556b58',
+    fontSize: 13,
+    textAlign: 'center' as const,
+  },
+  accesos: {
+    width: '100%' as DimensionValue,
+    flexDirection: 'row' as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  empujeEncabezado: { flex: 1, minHeight: 8 },
+  acceso: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#dcecdc',
+    borderRadius: 16,
+    backgroundColor: '#f2f9f1',
+  },
+  accesoIcono: {
+    width: 42,
+    height: 42,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 14,
+    backgroundColor: '#e4f1e0',
+  },
+  accesoTexto: {
+    color: '#1e3326',
+    // 11 y no 12: con 12 "Notificaciones" no entra en el ancho de la caja y se
+    // partia a mitad de palabra ("Notificacion / es").
+    fontSize: 11,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
   bloqueSede: {},
   // El alto va en la lista y no en la card: con el alto fijo y el overflow
   // hidden en la card, una raza larga que hacia dos lineas la cortaba.
-  listaMascotas: { height: 124 },
+  listaMascotas: { height: ALTO_CARD_MASCOTA, marginBottom: 0 },
   mascotaCard: {
-   backgroundColor: '#e1f4df',
+   width: 106,
+   height: ALTO_CARD_MASCOTA,
    padding: 10,
-   borderRadius: 12,
-   width: 100,
-   justifyContent: 'center' as const,
-   alignItems: 'center' as const,
+   borderRadius: 14,
+   backgroundColor: '#e1f4df',
    borderColor: '#efeeeb',
    borderWidth: 1,
+   alignItems: 'center' as const,
   },
-  mascotaFoto: {
-   width: 52,
-   height: 52,
-   borderRadius: 10,
-   marginBottom: 8,
+  // flex: 1 para que la foto tome lo que sobra y los dos textos de abajo
+  // siempre entren: con el alto fijo la foto se comia el espacio del nombre.
+  mascotaFotoArea: {
+   flex: 1,
+   width: '100%',
    alignItems: 'center' as const,
    justifyContent: 'center' as const,
+   borderRadius: 10,
+   overflow: 'hidden' as const,
    backgroundColor: '#cfe7d3',
+  },
+  mascotaFoto: { width: '100%', height: '100%' },
+  mascotaNombre: {
+   alignSelf: 'stretch' as const,
+   marginTop: 8,
+   color: '#0f3e17',
+   fontSize: 15,
+   fontWeight: 'bold' as const,
+   textAlign: 'center' as const,
+  },
+  mascotaRaza: {
+   alignSelf: 'stretch' as const,
+   marginTop: 1,
+   color: '#4a6152',
+   fontSize: 12,
+   textAlign: 'center' as const,
   },
   mascotasVacias: {
     paddingVertical: 16,
     paddingHorizontal: 8,
   },
+  // Sin el margen vertical de estilos.qrBoton: el de abajo empujaba todo el
+  // bloque hacia arriba y dejaba los accesos pegados a "Tus Mascotas".
+  botonQrPortada: { marginVertical: 0, marginTop: 14 },
   qrAdminBloque: {
     marginVertical: 0,
   },

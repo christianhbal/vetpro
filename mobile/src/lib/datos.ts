@@ -34,6 +34,12 @@ export const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as 
 
 export type SedeVeterinaria = (typeof sedesVeterinaria)[number];
 
+// Encabezado de los calendarios, de lunes a domingo. El miércoles va con "M" y
+// no con la "X" de siempre, asi que martes y miércoles muestran la misma letra.
+// Vive acá y no en cada calendario porque ya se nos olvidó uno al cambiarlo:
+// los tres tienen que mostrar siempre las mismas letras.
+export const DIAS_SEMANA = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const;
+
 export function esSedeVeterinaria(value: unknown): value is SedeVeterinaria {
   return typeof value === 'string' && sedesVeterinaria.some((sede) => sede === value);
 }
