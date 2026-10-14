@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 
 type Dia = {
@@ -87,6 +88,10 @@ export default function AdminSedesScreen() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [sedeEnEdicion, setSedeEnEdicion] = useState<Sede | null>(null);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
+  // Nombre de la sede recien guardada, para el aviso de exito.
+  const [sedeGuardada, setSedeGuardada] = useState<{ nombre: string; editando: boolean } | null>(
+    null
+  );
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
   const [dias, setDias] = useState<string[]>([]);
@@ -154,7 +159,10 @@ export default function AdminSedesScreen() {
       return;
     }
 
+    const nombreGuardado = nombre.trim();
+    const editando = sedeEnEdicion !== null;
     cerrarEdicion();
+    setSedeGuardada({ nombre: nombreGuardado, editando });
   };
 
   const confirmarEliminacion = () => {
@@ -390,6 +398,18 @@ export default function AdminSedesScreen() {
           ) : null}
         </View>
       </Modal>
+
+      <AvisoExito
+        visible={sedeGuardada !== null}
+        titulo={sedeGuardada?.editando ? '¡Sede actualizada!' : '¡Sede agregada!'}
+        subtitulo={
+          sedeGuardada !== null
+            ? `${sedeGuardada.nombre} quedó ${sedeGuardada.editando ? 'actualizada' : 'guardada'} correctamente.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de sede guardada"
+        onCerrar={() => setSedeGuardada(null)}
+      />
     </AppDrawer>
   );
 }

@@ -11,6 +11,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   direccionesSedes,
@@ -211,10 +212,12 @@ export default function NotificacionesScreen() {
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
   const [modalNuevo, setModalNuevo] = useState(false);
-  const [confirmando, setConfirmando] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [errorForm, setErrorForm] = useState('');
+  // Titulo del aviso que se acaba de mandar. Es lo unico que necesita el cartel
+  // de "enviado": el resto ya esta en la lista de notificaciones.
+  const [enviado, setEnviado] = useState<string | null>(null);
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
@@ -339,7 +342,10 @@ export default function NotificacionesScreen() {
     setModalNuevo(true);
   };
 
-  const pedirConfirmacion = () => {
+  // No hay reconfirmacion: el admin escribe el aviso y lo manda de una. El
+  // backend todavia no expone un POST para crearlo, asi que el cartel de
+  // "enviado" es parte de la maqueta.
+  const enviarAviso = () => {
     if (!titulo.trim() || !descripcion.trim()) {
       setErrorForm('Completá el título y la descripción del aviso.');
       return;
@@ -349,12 +355,8 @@ export default function NotificacionesScreen() {
       return;
     }
     setErrorForm('');
-    setConfirmando(true);
-  };
-
-  const enviarAviso = () => {
-    setConfirmando(false);
     setModalNuevo(false);
+    setEnviado(titulo.trim());
     setTitulo('');
     setDescripcion('');
   };
@@ -496,7 +498,7 @@ export default function NotificacionesScreen() {
             <View style={estilos.modalActions}>
               <Pressable
                 style={[estilos.modalButton, estilos.modalButtonPrimary, styles.guardarBoton]}
-                onPress={pedirConfirmacion}
+                onPress={enviarAviso}
                 accessibilityRole="button"
               >
                 <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Enviar</Text>
@@ -506,44 +508,13 @@ export default function NotificacionesScreen() {
         </View>
       </Modal>
 
-      <Modal
-        visible={confirmando}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setConfirmando(false)}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setConfirmando(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Cancelar envío"
-          />
-          <View style={estilos.modalCard}>
-            <Text style={estilos.modalTitle}>¿Enviar a todos?</Text>
-            <Text style={styles.vistaPrevia}>{titulo.trim()}</Text>
-            <Text style={estilos.modalText}>{descripcion.trim()}</Text>
-            <View style={estilos.modalActions}>
-              <Pressable
-                style={[estilos.modalButton, estilos.modalButtonNeutral]}
-                onPress={() => setConfirmando(false)}
-                accessibilityRole="button"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                onPress={enviarAviso}
-                accessibilityRole="button"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  Confirmar
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <AvisoExito
+        visible={enviado !== null}
+        titulo="¡Notificación enviada!"
+        subtitulo={enviado !== null ? `${enviado} le va a llegar a todos los clientes.` : undefined}
+        etiquetaBoton="Cerrar el aviso de notificación enviada"
+        onCerrar={() => setEnviado(null)}
+      />
     </AppDrawer>
   );
 }
@@ -680,12 +651,6 @@ const styles = {
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 12,
-  },
-  vistaPrevia: {
-    color: '#0f3e17',
-    fontSize: 17,
-    fontWeight: 'bold' as const,
-    marginBottom: 8,
   },
   unread: {
     borderColor: '#0f3e17',

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
@@ -18,6 +19,8 @@ export default function NuevaMascota() {
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Nombre de la mascota recien registrada, para el aviso de exito.
+  const [mascotaGuardada, setMascotaGuardada] = useState<string | null>(null);
 
   // Si se entra por un link directo no hay historial, asi que caemos a Mascotas.
   const volver = () => {
@@ -100,7 +103,9 @@ export default function NuevaMascota() {
         return;
       }
 
-      router.replace('/mascotas');
+      // La navegacion se hace al cerrar el aviso: si se cambia de pantalla
+      // antes, el componente se desmonta y el modal nunca llega a verse.
+      setMascotaGuardada(nombre.trim());
     } catch (error) {
       setMensaje(apiUnreachableMessage(error));
     } finally {
@@ -245,6 +250,21 @@ export default function NuevaMascota() {
           </Text>
         </Pressable>
       </ScrollView>
+
+      <AvisoExito
+        visible={mascotaGuardada !== null}
+        titulo="¡Mascota registrada!"
+        subtitulo={
+          mascotaGuardada !== null
+            ? `${mascotaGuardada} ya está en tu lista de mascotas.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de mascota registrada"
+        onCerrar={() => {
+          setMascotaGuardada(null);
+          router.replace('/mascotas');
+        }}
+      />
     </AppDrawer>
   );
 }
