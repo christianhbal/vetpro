@@ -12,12 +12,14 @@ import { API_BASE_URL } from '@/lib/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { obtenerUsuarioActual } from '@/lib/session';
 
+const itemPerfil = { label: 'Perfil', href: '/perfil', icon: 'person-outline' } as const;
+
 const menuItems = [
   { label: 'VetPro', href: '/app', icon: 'home-outline' },
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
   { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
   { label: 'Notificaciones', href: '/notificaciones', icon: 'notifications-outline' },
-  { label: 'Perfil', href: '/perfil', icon: 'person-outline' },
+  itemPerfil,
 ] as const;
 
 const adminMenuItems = [
@@ -80,8 +82,15 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
     }, [cargarContadorNotificaciones])
   );
 
+  // El admin ve Perfil al final, debajo de sus secciones de administracion: es
+  // la pantalla personal, no una herramienta de la veterinaria. Para el cliente
+  // queda donde esta, que ya es la ultima.
   const items = esAdmin
-    ? [...menuItems, ...adminMenuItems].filter((item) => item.href !== '/mascotas')
+    ? [
+        ...menuItems.filter((item) => item.href !== '/mascotas' && item.href !== itemPerfil.href),
+        ...adminMenuItems,
+        itemPerfil,
+      ]
     : menuItems;
   const abrirMenu = () => {
     setVisible(true);

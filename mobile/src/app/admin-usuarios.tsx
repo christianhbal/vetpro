@@ -23,9 +23,10 @@ type UsuarioAdministrado = {
   nombre: string;
   email: string;
   role: string;
+  telefono: string | null;
 };
 
-type FiltroRol = 'todos' | 'veterinarios' | 'usuarios';
+type FiltroRol = 'todos' | 'veterinarios' | 'clientes';
 
 function mensajeApi(resultado: unknown): string | null {
   if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
@@ -41,7 +42,8 @@ function esUsuarioAdministrado(value: unknown): value is UsuarioAdministrado {
     typeof usuario.id === 'number' &&
     typeof usuario.nombre === 'string' &&
     typeof usuario.email === 'string' &&
-    typeof usuario.role === 'string'
+    typeof usuario.role === 'string' &&
+    (typeof usuario.telefono === 'string' || usuario.telefono === null)
   );
 }
 
@@ -192,7 +194,7 @@ export default function AdminUsuariosScreen() {
     const coincideRol =
       filtroRol === 'todos' ||
       (filtroRol === 'veterinarios' && usuario.role === 'ADMIN') ||
-      (filtroRol === 'usuarios' && usuario.role !== 'ADMIN');
+      (filtroRol === 'clientes' && usuario.role !== 'ADMIN');
     const consulta = busqueda.trim().toLocaleLowerCase();
     const coincideBusqueda =
       !consulta ||
@@ -204,7 +206,7 @@ export default function AdminUsuariosScreen() {
   const filtros: { id: FiltroRol; label: string }[] = [
     { id: 'todos', label: 'Todos' },
     { id: 'veterinarios', label: 'Veterinarios' },
-    { id: 'usuarios', label: 'Usuarios' },
+    { id: 'clientes', label: 'Clientes' },
   ];
 
   return (
@@ -298,8 +300,11 @@ export default function AdminUsuariosScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.email}</Text>
+                  {item.telefono ? (
+                    <Text style={estilos.cardSubtitle}>{item.telefono}</Text>
+                  ) : null}
                   <Text style={estilos.cardSubtitle}>
-                    {item.role === 'ADMIN' ? 'Veterinario' : 'Dueño de mascota'}
+                    {item.role === 'ADMIN' ? 'Veterinario' : 'Cliente'}
                     {item.id === miId ? ' · Tú' : ''}
                   </Text>
                 </View>

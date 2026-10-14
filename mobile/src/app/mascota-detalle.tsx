@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL } from '@/lib/api';
@@ -44,52 +44,60 @@ export default function MascotaHistorialScreen() {
     edad?: string;
   }>();
   const [abierto, setAbierto] = useState<number | null>(null);
-  const [foto, setFoto] = useState<string | null>(null);
+  const [datos, setDatos] = useState<Mascota | null>(null);
   const [ampliada, setAmpliada] = useState(false);
   const { width: anchoPantalla, height: altoPantalla } = useWindowDimensions();
   const anchoFotoModal = Math.max(0, Math.min(anchoPantalla * 0.9, 520));
   const altoFotoModal = Math.max(0, Math.min(anchoFotoModal, altoPantalla - 180));
 
-  const mascota = useMemo<Mascota>(
-    () => ({
-      id: Number(params.id ?? 0),
-      nombre: params.nombre ?? 'Mascota',
-      especie: params.especie ?? 'Otro',
-      raza: params.raza ? params.raza : null,
-      edad: params.edad ? Number(params.edad) : null,
-      foto,
-    }),
-    [params.id, params.nombre, params.especie, params.raza, params.edad, foto]
+  const id = Number(params.id ?? 0);
+
+  // Lo que se paso por parametro es una foto del momento en que se abrio la
+  // pantalla: si edita la mascota y vuelve, esos valores estan viejos. Se
+  // vuelven a pedir en cada foco, asi que lo guardado gana sobre el parametro
+  // apenas llega. Antes solo se refrescaba la foto, por eso el nombre y la
+  // raza no cambiaban hasta salir y volver a entrar.
+  const [desdeParams] = useState<Mascota>(() => ({
+    id,
+    nombre: params.nombre ?? 'Mascota',
+    especie: params.especie ?? 'Otro',
+    raza: params.raza ? params.raza : null,
+    edad: params.edad ? Number(params.edad) : null,
+    foto: null,
+  }));
+
+  useFocusEffect(
+    useCallback(() => {
+      let vigente = true;
+      void (async () => {
+        try {
+          const usuario = await obtenerUsuarioActual();
+          if (!usuario) return;
+          const response = await fetch(
+            `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+          );
+          if (!response.ok) return;
+          const lista: unknown = await response.json();
+          if (!vigente || !Array.isArray(lista)) return;
+          const encontrada = lista.find((item) => {
+            if (typeof item !== 'object' || item === null || !('id' in item)) return false;
+            return (item as { id: unknown }).id === id;
+          });
+          if (!vigente) return;
+          if (encontrada) setDatos(encontrada as Mascota);
+        } catch {
+          // Sin datos frescos se sigue con los del parametro: la pantalla
+          // tiene que abrir igual aunque la API falle.
+        }
+      })();
+      return () => {
+        vigente = false;
+      };
+    }, [id])
   );
 
-  // La foto no puede viajar por parametro de router: es una data URI larga y el
-  // enlace se rompe. Se vuelve a pedir a la API cuando se entra a la ficha.
-  useEffect(() => {
-    let vigente = true;
-    void (async () => {
-      try {
-        const usuario = await obtenerUsuarioActual();
-        if (!usuario) return;
-        const response = await fetch(
-          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
-        );
-        if (!response.ok) return;
-        const lista = await response.json();
-        if (!vigente || !Array.isArray(lista)) return;
-        const encontrada = lista.find((item: Mascota) => item.id === Number(params.id));
-        setFoto(encontrada?.foto ?? null);
-      } catch {
-        // Sin foto se muestra la huella: no es motivo para cortar la pantalla.
-      }
-    })();
-    return () => {
-      vigente = false;
-    };
-  }, [params.id]);
+  const mascota = datos ?? desdeParams;
 
-  // El historial sale de los mismos ejemplos que la pantalla de Turnos, para
-  // que los datos no cambien de una pantalla a otra. Solo los del viernes: son
-  // los que tienen descripcion, y es justo lo que se quiere ver aca.
   const historial = useMemo(
     () =>
       turnosEjemploCliente([
