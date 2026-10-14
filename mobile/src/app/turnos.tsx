@@ -67,153 +67,17 @@ function fechaCorta(fecha: string): string {
   return `${dia}/${mes}`;
 }
 
-function fechaRelativa(dias: number): string {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() + dias);
-  return fechaComoValor(fecha);
-}
-
-// Dias que la veterinaria no atiende: domingo (0) y miercoles (3), que esta
-// completo. Un turno de ejemplo nunca puede caer en uno de estos.
-const DIAS_SIN_ATENCION = new Set([0, 3]);
-
-// La veterinaria atiende de lunes a sabado y los miercoles estan completos
-// (mismo criterio que el calendario de "Agendar turno"). Con un offset fijo de
-// dias de calendario el ejemplo caia en domingo o en miercoles segun el dia en
-// que se abria la app, y el calendario mostraba un dia cerrado con turno.
-function esDiaHabil(fecha: Date): boolean {
-  return !DIAS_SIN_ATENCION.has(fecha.getDay());
-}
-
-// Ultimo dia habil antes de hoy.
-function fechaHabilAnterior(): string {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() - 1);
-  while (!esDiaHabil(fecha)) {
-    fecha.setDate(fecha.getDate() - 1);
-  }
-  return fechaComoValor(fecha);
-}
-
-
-
-// Ultimo dia habil de un dia de la semana dado, anterior a hoy. Por ejemplo el
-// 5 (viernes) devuelve el viernes previo, salteando domingo y miercoles.
-// Siempre cae en una fecha ya pasada: asi el turno sale con el sello "Atendido".
-function ultimoDiaDeSemana(diaSemana: number): string {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() - 1);
-  while (fecha.getDay() !== diaSemana || !esDiaHabil(fecha)) {
-    fecha.setDate(fecha.getDate() - 1);
-  }
-  return fechaComoValor(fecha);
-}
-
 // Mascota del usuario: el tipo vive en lib/turnos-ejemplo, que es donde se
 // arman los ejemplos compartidos con la portada.
 
-type EjemploPasado = {
-  dueno: string;
-  mascota: string;
-  especie: string;
-  raza: string | null;
-  tipo: string;
-  hora: string;
-  descripcion: string | null;
-  /** Dias de calendario hacia atras. Ignorado si se usa habilAnterior o diaDeSemana. */
-  diasAtras?: number;
-  /** Ancla el ejemplo en el ultimo dia habil antes de hoy. */
-  habilAnterior?: boolean;
-  /** Ancla el ejemplo en el ultimo dia habil de esa semana, anterior a hoy. */
-  diaDeSemana?: number;
-  sede: SedeVeterinaria;
-};
-
-const ejemplosPasados: EjemploPasado[] = [
-  {
-    dueno: 'Ana Gómez',
-    mascota: 'Lola',
-    especie: 'Perro',
-    raza: 'Golden',
-    tipo: 'Vacunas',
-    hora: '10:30',
-    descripcion: 'Vacunación anual. Quedó tranquila, sin reacción.',
-    habilAnterior: true,
-    sede: 'Recoleta',
-  },
-  {
-    dueno: 'Bruno Díaz',
-    mascota: 'Mora',
-    especie: 'Gato',
-    raza: null,
-    tipo: 'Control',
-    hora: '16:00',
-    descripcion: 'Control de rutina. Se recomienda continuar con la dieta habitual.',
-    diasAtras: 2,
-    sede: 'San Isidro',
-  },
-  {
-    dueno: 'Carla Ruiz',
-    mascota: 'Tito',
-    especie: 'Perro',
-    raza: 'Pug',
-    tipo: 'Estética',
-    hora: '11:30',
-    descripcion: 'Baño y corte. Todo listo para la próxima visita.',
-    diasAtras: 2,
-    sede: 'Recoleta',
-  },
-  {
-    dueno: 'Diego Sosa',
-    mascota: 'Roco',
-    especie: 'Perro',
-    raza: 'Schnauzer',
-    tipo: 'Control',
-    hora: '11:00',
-    descripcion:
-      'Control postoperatorio. La herida se ve bien y no hay signos de infección. Continuar el antibiótico hasta completar la tanda.',
-    // Anclado al viernes: el viernes es el dia con mas agenda cerrada, asi que
-    // al abrir esa fecha se ve un turno atendido con su descripcion en la lista.
-    diaDeSemana: 5,
-    sede: 'Recoleta',
-  },
-];
+// Los dias ya pasaron se muestran con los turnos reales que trae la API (los
+// cria el generador de datos de ejemplo del backend, con la mascota y el dueno
+// de verdad). Antes se armaban aca con nombres inventados y duenos que no eran
+// de nadie: la agenda es del veterinario y tiene que mostrar pacientes reales.
 
 // Ejemplos de la agenda del ADMIN: son de una agenda compartida (Lola, Mora,
 // Tito, Roco de otros clientes) y solo se ven si el usuario atiende.
 
-// Turnos de ejemplo de días anteriores. Solo frontend: no vienen de la API y
-// no entran en la lista de próximos, sirven para que el calendario se vea poblado.
-function turnosEjemploPasados(): TurnoLista[] {
-  return ejemplosPasados.map((ejemplo, indice) => {
-    const fecha = ejemplo.diaDeSemana !== undefined
-      ? ultimoDiaDeSemana(ejemplo.diaDeSemana)
-      : ejemplo.habilAnterior
-        ? fechaHabilAnterior()
-        : fechaRelativa(-(ejemplo.diasAtras ?? 1));
-    return {
-      id: -2000 - indice,
-      tipo: ejemplo.tipo,
-      sede: ejemplo.sede,
-      fecha,
-      hora: ejemplo.hora,
-      llegadaEn: new Date(`${fecha}T${ejemplo.hora}:00`).toISOString(),
-      atendidoEn: new Date(`${fecha}T${ejemplo.hora}:00`).toISOString(),
-      descripcion: ejemplo.descripcion,
-      esDemo: true,
-      ocultoEnAgenda: false,
-      mascotaId: -2000 - indice,
-      user: { nombre: ejemplo.dueno },
-      mascota: {
-        id: -2000 - indice,
-        nombre: ejemplo.mascota,
-        especie: ejemplo.especie,
-        raza: ejemplo.raza,
-        foto: null,
-      },
-    };
-  });
-}
 
 
 export default function TurnosScreen() {
@@ -221,9 +85,16 @@ export default function TurnosScreen() {
   const [mascotasPropias, setMascotasPropias] = useState<MascotaEjemplo[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
+  // Cancelar un turno desde esta pantalla, que es la de mirar la agenda y no la
+  // de administrarla. Es el mismo pedido que hace "Administrar turnos", pero sin
+  // pedir el motivo: aca el motivo ya se lo sabe el que esta mirando la pantalla.
+  const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [errorCancelar, setErrorCancelar] = useState('');
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
+  const [token, setToken] = useState('');
   // Arranca en "Todas": es lo que pide la pantalla, ver la agenda completa sin
   // tener que tocar un filtro. Antes arrancaba en la sede de la portada
   // (Recoleta por defecto) y el filtro de la lista sevia movido.
@@ -251,6 +122,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
         return;
       }
       setEsAdmin(usuario.esAdmin);
+      setToken(usuario.accessToken);
 
       // El admin ve la agenda completa; el usuario, solo sus turnos.
       const response = await fetch(
@@ -318,13 +190,19 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
 
   // Turnos que se ven segun el rol.
   //  - admin: la agenda completa de la veterinaria, tal cual la devuelve la API.
-  //  - cliente: SOLO los dos ejemplos por mascota, siempre en el dia de hoy.
-  // Los turnos que el cliente agendo durante las pruebas se acumulo en la base
-  // y llenaba la pantalla de datos viejos; por eso no se suman a los ejemplos.
-  const turnosVisibles = useMemo(
-    () => (esAdmin ? turnos : turnosEjemploCliente(mascotasPropias)),
-    [turnos, esAdmin, mascotasPropias]
-  );
+  //  - cliente: sus propios turnos de la base, los que creo
+  //    clienteTurnosDemo.ts.
+  //
+  // Antes el cliente veia ejemplos armados en el frontend, con ids negativos.
+  // Eso hacia dos cosas malas: no eran filas de la base, asi que el veterinario
+  // no podia cancelarlos desde la misma pantalla que los veia, y la agenda del
+  // admin no los tenia. Los ejemplos quedan de respaldo para cuando todavia no
+  // se corrio ese script, asi que la pantalla nunca queda vacia.
+  const turnosVisibles = useMemo(() => {
+    if (esAdmin) return turnos;
+    if (turnos.length > 0) return turnos;
+    return turnosEjemploCliente(mascotasPropias);
+  }, [turnos, esAdmin, mascotasPropias]);
 
   // Los que solo ocupan la agenda (dias completos) no se listan aca. Tampoco los
   // que ya fueron atendidos. De los que quedan, entran los que la hora aun no
@@ -341,16 +219,12 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   );
 
   // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
-  // haya pasado o el turno figure atendido. Los ejemplos se suman para que el
-  // calendario se vea poblado, pero cada rol ve los suyos:
-  //  - admin: la agenda compartida de la veterinaria (Lola, Mora, Tito, Roco).
+  // haya pasado o el turno figure atendido, y cada rol ve lo suyo:
+  //  - admin: la agenda compartida de la veterinaria, tal cual la devuelve la API.
   //  - cliente: los ejemplos armados con SUS propias mascotas.
   const porDia = useMemo(
-    () => [
-      ...turnosVisibles.filter((turno) => !turno.ocultoEnAgenda),
-      ...(esAdmin ? turnosEjemploPasados() : []),
-    ],
-    [turnosVisibles, esAdmin]
+    () => turnosVisibles.filter((turno) => !turno.ocultoEnAgenda),
+    [turnosVisibles]
   );
 
   const sedesDisponibles = useMemo(() => {
@@ -380,6 +254,76 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           : a.fecha.localeCompare(b.fecha);
       });
   }, [fechaSeleccionada, filtroSede, porDia, proximos, turnosVisibles]);
+
+  /**
+   * Un turno se puede cancelar desde aca si todavia no se atendio y el paciente
+   * no llego. Lo puede hacer el dueño de la mascota o el veterinario: es el turno
+   * de ellos.
+   *
+   * El `id > 0` es la red de seguridad: los ejemplos de respaldo del frontend
+   * tienen id negativo y no existen en la base, asi que no hay nada que
+   * cancelar.
+   */
+  const puedeCancelar =
+    citaSeleccionada !== null &&
+    citaSeleccionada.guardado.id > 0 &&
+    (citaSeleccionada.guardado.atendidoEn === null ||
+      citaSeleccionada.guardado.atendidoEn === undefined) &&
+    (citaSeleccionada.guardado.llegadaEn === null ||
+      citaSeleccionada.guardado.llegadaEn === undefined);
+
+  const cancelarTurno = async () => {
+    if (!citaSeleccionada || cancelando || !token) return;
+    setErrorCancelar('');
+    setCancelando(true);
+    try {
+      // El veterinario cancela el turno de cualquiera y le avisa al dueño con un
+      // motivo. El dueño cancela el suyo y no se manda aviso: le llegaría a la
+      // misma persona que lo pidió.
+      const respuesta = esAdmin
+        ? `${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.guardado.id}`
+        : `${API_BASE_URL}/api/turnos/${citaSeleccionada.guardado.id}`;
+      const response = await fetch(respuesta, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          // Sin cuerpo: aca se responde si o no, sin motivo. El motivo largo se
+          // escribe en "Administrar turnos", que es donde se decide que hacer
+          // con el turno.
+        },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const mensaje =
+          typeof result === 'object' && result !== null && 'message' in result
+            ? result.message
+            : null;
+        setErrorCancelar(
+          typeof mensaje === 'string' ? mensaje : 'No se pudo cancelar el turno.'
+        );
+        setConfirmarCancelacion(false);
+        return;
+      }
+
+      setConfirmarCancelacion(false);
+      setCitaSeleccionada(null);
+      // Se recarga la agenda para que el turno desaparezca de la lista. Si la
+      // recarga falla, la pantalla avisa con su propio error y el turno sigue
+      // visible: mejor eso que un cartel de "listo" con un turno que ya no se
+      // puede volver a tocar.
+      await cargarTurnos();
+    } catch (requestError) {
+      setErrorCancelar(
+        requestError instanceof TypeError
+          ? apiUnreachableMessage(requestError)
+          : 'No se pudo cancelar el turno.'
+      );
+      setConfirmarCancelacion(false);
+    } finally {
+      setCancelando(false);
+    }
+  };
 
   const altoAgendar = Math.max(74, Math.round(windowHeight * 0.1));
 
@@ -489,6 +433,12 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
       </ScrollView>
     </View>
   );
+
+  // Un turno de un dia ya pasado no tiene sentido mostrarle la direccion ni el
+  // boton "Ir": ese turno ya se hizo. Los de hoy y los de adelante si, aunque la
+  // hora ya haya pasado, porque el cliente todavia tiene que ir.
+  const turnoYaPaso =
+    citaSeleccionada !== null && citaSeleccionada.guardado.fecha < valorHoy;
 
   const tituloLista = fechaSeleccionada
     ? `Turnos del ${new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR', {
@@ -639,10 +589,11 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                 </Text>
               ) : null}
 
-              {/* Solo para el cliente: es el que tiene que llegar a la sede. El
-                  veterinario ya esta ahi y no le sirve de nada. Igual que en la
-                  portada. */}
-              {esAdmin ? null : (
+              {/* Solo para el cliente, y solo si el turno todavia no paso: es el que
+                  tiene que llegar a la sede. El veterinario ya esta ahi y no le
+                  sirve de nada, y de un turno viejo la direccion no sirve para
+                  nada. Igual que en la portada. */}
+              {esAdmin || turnoYaPaso ? null : (
                 <>
                   <View style={styles.modalSede}>
                     <Text style={estilos.modalText}>
@@ -677,8 +628,98 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                   </Pressable>
                 </>
               )}
+
+              {/* Cancelar, por el dueño o por el veterinario, y solo si el turno
+                  todavia se puede tocar. Aca no se pide el motivo: es la
+                  pantalla de mirar la agenda, el motivo se escribe en
+                  "Administrar turnos". */}
+              {puedeCancelar ? (
+                <Pressable
+                  style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
+                  onPress={() => {
+                    setErrorCancelar('');
+                    setConfirmarCancelacion(true);
+                  }}
+                  disabled={cancelando}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cancelar el turno de ${citaSeleccionada.mascota}`}
+                >
+                  <Ionicons name="close-circle-outline" size={19} color="#ffffff" />
+                  <Text style={styles.cancelarTexto}>Cancelar turno</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
+        </View>
+      </Modal>
+
+      {/* Confirmacion. Sin campo de texto: aca se responde si o no. */}
+      <Modal
+        visible={confirmarCancelacion}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setConfirmarCancelacion(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setConfirmarCancelacion(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar confirmación"
+          />
+          <View style={estilos.modalCard} accessibilityRole="alert">
+            <Text style={estilos.modalTitle}>¿Cancelar el turno?</Text>
+            <Text style={estilos.modalText}>
+              Se elimina el turno de {citaSeleccionada?.mascota ?? 'la mascota'} del{' '}
+              {citaSeleccionada
+                ? `${fechaCorta(citaSeleccionada.guardado.fecha)} a las ${citaSeleccionada.hora} hs`
+                : ''}{' '}
+              y no se puede deshacer.{' '}
+              {esAdmin ? 'Al dueño le llega la cancelación.' : 'La veterinaria se queda sin este turno.'}
+            </Text>
+
+            {errorCancelar ? (
+              <Text style={styles.errorCancelar} accessibilityRole="alert">
+                {errorCancelar}
+              </Text>
+            ) : null}
+
+            <View style={estilos.modalActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  estilos.modalButton,
+                  estilos.modalButtonNeutral,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => {
+                  setConfirmarCancelacion(false);
+                  setErrorCancelar('');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="No, volver sin cancelar"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>No</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  estilos.modalButton,
+                  styles.confirmarCancelacion,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() => void cancelarTurno()}
+                disabled={cancelando}
+                accessibilityRole="button"
+                accessibilityState={{ busy: cancelando }}
+                accessibilityLabel="Sí, cancelar el turno"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
     </AppDrawer>
@@ -687,6 +728,21 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
 
 const styles = {
   pantalla: { flex: 1, backgroundColor: '#fffefc' },
+  // Boton de cancelar: rojo, no verde. Es la unica accion de la pantalla que
+  // borra algo, y verde se leeria como "guardar".
+  cancelar: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    marginTop: 18,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#a32828',
+  },
+  cancelarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' as const },
+  confirmarCancelacion: { backgroundColor: '#a32828' },
+  errorCancelar: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   bloqueSede: { marginBottom: 12 },
   labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },

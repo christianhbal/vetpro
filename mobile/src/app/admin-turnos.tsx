@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -124,6 +125,14 @@ export default function AdminTurnosScreen() {
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState('');
+  /**
+   * Por que se cancela, escrito por la veterinaria.
+   *
+   * Via en el cuerpo del DELETE y el backend lo copia al aviso del cliente: es
+   * lo unico que va a leer el dueño para entender que paso, asi que va
+   * obligatorio y no un detalle.
+   */
+  const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
@@ -259,11 +268,23 @@ export default function AdminTurnosScreen() {
   const cancelarTurno = async () => {
     if (!seleccionado || cancelando) return;
     setErrorCancelar('');
+
+    // El motivo es lo que va a entender el dueño, asi que no se cancela sin el.
+    const motivo = motivoCancelacion.trim();
+    if (motivo.length < 4) {
+      setErrorCancelar('Contá por qué se cancela: es lo que va a leer el dueño.');
+      return;
+    }
+
     setCancelando(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${seleccionado.id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ motivo }),
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -282,6 +303,7 @@ export default function AdminTurnosScreen() {
       }
 
       setConfirmarCancelacion(false);
+      setMotivoCancelacion('');
       setSeleccionado(null);
       await cargarTurnos();
       // El aviso se arma despues de recargar: si la lista falla, el admin ve el
@@ -306,6 +328,17 @@ export default function AdminTurnosScreen() {
   const guardarCambios = async () => {
     if (!seleccionado || guardando) return;
     setErrorGuardado('');
+
+    // El backend tambien lo rechaza, pero avisar aca evita el viaje y deja el
+    // error al lado del campo. El texto va al dueño: "hora: 19:00 -> 18:00"
+    // sobre un turno que ya estaba despues no se puede atender.
+    if (seleccionado && `${fecha.trim()}T${hora.trim()}` < `${seleccionado.fecha}T${seleccionado.hora}`) {
+      setErrorGuardado(
+        'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.'
+      );
+      return;
+    }
+
     setGuardando(true);
     try {
       const response = await fetch(
@@ -671,11 +704,16 @@ export default function AdminTurnosScreen() {
                 ) : (
                   <Pressable
                     style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
-                    onPress={() => setConfirmarCancelacion(true)}
+                    onPress={() => {
+                      setMotivoCancelacion('');
+                      setErrorCancelar('');
+                      setConfirmarCancelacion(true);
+                    }}
                     disabled={cancelando}
                     accessibilityRole="button"
                     accessibilityLabel={`Cancelar el turno de ${seleccionado.mascota.nombre}`}
                   >
+                    <Ionicons name="close-circle-outline" size={19} color="#ffffff" />
                     <Text style={styles.cancelarTexto}>Cancelar turno</Text>
                   </Pressable>
                 )}
@@ -708,9 +746,35 @@ export default function AdminTurnosScreen() {
           <View style={estilos.modalCard} accessibilityRole="alert">
             <Text style={estilos.modalTitle}>¿Cancelar el turno?</Text>
             <Text style={estilos.modalText}>
-              Se elimina el turno de {seleccionado?.mascota.nombre ?? 'la mascota'} y se le avisa al
-              dueño. Esta acción no se puede deshacer.
+              Se elimina el turno de {seleccionado?.mascota.nombre ?? 'la mascota'} del{' '}
+              {seleccionado ? `${fechaCorta(seleccionado.fecha)} a las ${seleccionado.hora} hs` : ''}{' '}
+              y no se puede deshacer.
             </Text>
+
+            <Text style={styles.motivoLabel}>Motivo de la cancelación</Text>
+            <TextInput
+              style={styles.motivoInput}
+              placeholder="Ej. El profesional que iba a atenderla tuvo un imprevisto."
+              placeholderTextColor="#7a8378"
+              value={motivoCancelacion}
+              onChangeText={setMotivoCancelacion}
+              multiline
+              numberOfLines={4}
+              maxLength={400}
+              textAlignVertical="top"
+              autoFocus
+              accessibilityLabel="Motivo de la cancelación del turno"
+            />
+            <Text style={styles.motivoAyuda}>
+              Se le manda tal cual lo escribas al dueño, en la notificación.
+            </Text>
+
+            {errorCancelar ? (
+              <Text style={styles.saveError} accessibilityRole="alert">
+                {errorCancelar}
+              </Text>
+            ) : null}
+
             <View style={estilos.modalActions}>
               <Pressable
                 style={({ pressed }) => [
@@ -718,22 +782,26 @@ export default function AdminTurnosScreen() {
                   estilos.modalButtonNeutral,
                   pressed && estilos.buttonPressed,
                 ]}
-                onPress={() => setConfirmarCancelacion(false)}
+                onPress={() => {
+                  setConfirmarCancelacion(false);
+                  setMotivoCancelacion('');
+                  setErrorCancelar('');
+                }}
                 accessibilityRole="button"
-                accessibilityLabel="Volver"
+                accessibilityLabel="No, volver sin cancelar"
               >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>No</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [
                   estilos.modalButton,
-                  estilos.modalButtonPrimary,
+                  styles.confirmarCancelacion,
                   pressed && estilos.buttonPressed,
                 ]}
                 onPress={() => void cancelarTurno()}
                 disabled={cancelando}
                 accessibilityRole="button"
-                accessibilityLabel="Confirmar cancelación"
+                accessibilityLabel="Sí, cancelar el turno"
               >
                 <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
                   {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
@@ -853,16 +921,39 @@ const styles = {
   opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
   opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
   bloqueCampo: { marginTop: 12 },
+  // Boton de cancelar: rojo, no verde. Es la unica accion de la pantalla que
+  // borra algo, y verde se leeria como "guardar".
   cancelar: {
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
     marginTop: 12,
     paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: '#d3a179',
     borderRadius: 12,
-    backgroundColor: '#f7ede6',
+    backgroundColor: '#a32828',
   },
-  cancelarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
+  cancelarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' as const },
+  confirmarCancelacion: { backgroundColor: '#a32828' },
+  motivoLabel: {
+    color: '#4d6154',
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  motivoInput: {
+    minHeight: 96,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#f3f7f1',
+    fontSize: 15,
+    color: '#1e3326',
+  },
+  motivoAyuda: { marginTop: 6, color: '#69746a', fontSize: 12, lineHeight: 18 },
   cancelarBloqueado: {
     marginTop: 14,
     color: '#69746a',

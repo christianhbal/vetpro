@@ -166,11 +166,18 @@ async function requireAdmin(
   return user.id;
 }
 
+/**
+ * Manda el push a una lista de tokens.
+ *
+ * `notificationId` es opcional porque el aviso global no tiene uno solo: se crea
+ * una fila por usuario y el push va a todos los dispositivos a la vez. Sin id no
+ * se manda el campo `data`, que la app usa para abrir un aviso puntual.
+ */
 async function sendPushNotification(
   tokens: string[],
   title: string,
   body: string,
-  notificationId: number
+  notificationId?: number
 ): Promise<void> {
   if (tokens.length === 0) return;
   for (let start = 0; start < tokens.length; start += 100) {
@@ -179,7 +186,7 @@ async function sendPushNotification(
       sound: 'default',
       title,
       body,
-      data: { notificationId },
+      data: notificationId === undefined ? {} : { notificationId },
       channelId: 'default',
     }));
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -225,7 +232,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
   const turnos = await prisma.turno.findMany({
     where: { fecha: { gte: fechaActual }, recordatorioEnviadoEn: null },
     include: {
-      mascota: { select: { nombre: true } },
+      mascota: { select: { nombre: true, foto: true } },
       // La relacion se llama user, no usuario. El rol se filtra en el where: el
       // recordatorio es para el dueno del turno, que es el que tiene que
       // presentarse. Un admin tambien puede tener turnos propios en la tabla,
@@ -264,6 +271,8 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
           data: {
             userId: turno.userId,
             turnoId: turno.id,
+            mascotaNombre: turno.mascota.nombre,
+            mascotaFoto: turno.mascota.foto,
             title: TITULO_RECORDATORIO_TURNO,
             message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sedeConDireccion(turno.sede)}.`,
           },
@@ -299,6 +308,11 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
 
 // GET /api/health
 // Confirma que la API y la base de datos estan disponibles.
+// Sexo de una mascota. El POST y el PATCH validan contra esta misma lista: si
+// cada uno escribiera la suya, el POST podria aceptar un valor que el PATCH
+// rechaza y la mascota quedaria guardada con un sexo que la app no muestra.
+const SEXOS_MASCOTA = ['Macho', 'Hembra'];
+
 app.get('/api/health', async (_request, response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -334,7 +348,7 @@ app.get('/api/mascotas', async (request, response) => {
 // POST /api/mascotas
 // Valida y guarda una mascota relacionada con su usuario.
 app.post('/api/mascotas', async (request, response) => {
-  const { nombre, especie, raza, edad, foto, userId } = request.body ?? {};
+  const { nombre, especie, raza, sexo, edad, foto, userId } = request.body ?? {};
   const parsedAge = edad === undefined || edad === null || edad === '' ? null : Number(edad);
 
   if (
@@ -351,6 +365,9 @@ app.post('/api/mascotas', async (request, response) => {
   }
   if (raza !== undefined && raza !== null && typeof raza !== 'string') {
     return response.status(400).json({ message: 'La raza no es valida.' });
+  }
+  if (sexo !== undefined && sexo !== null && !SEXOS_MASCOTA.includes(String(sexo))) {
+    return response.status(400).json({ message: 'El sexo tiene que ser Macho o Hembra.' });
   }
   if (
     parsedAge !== null &&
@@ -379,6 +396,7 @@ app.post('/api/mascotas', async (request, response) => {
         nombre: nombre.trim(),
         especie: especie.trim(),
         raza: typeof raza === 'string' && raza.trim() ? raza.trim() : null,
+        sexo: SEXOS_MASCOTA.includes(String(sexo)) ? String(sexo) : null,
         edad: parsedAge,
         foto: foto ?? null,
         user: { connect: { id: userId } },
@@ -402,12 +420,13 @@ app.patch('/api/mascotas/:id', async (request, response) => {
     return response.status(400).json({ message: 'Indica un id de mascota y userId validos.' });
   }
 
-  const { nombre, especie, raza, edad, foto } = request.body ?? {};
+  const { nombre, especie, raza, sexo, edad, foto } = request.body ?? {};
   const parsedAge = edad === undefined ? undefined : edad === null || edad === '' ? null : Number(edad);
   const data: {
     nombre?: string;
     especie?: string;
     raza?: string | null;
+    sexo?: string | null;
     edad?: number | null;
     foto?: string | null;
   } = {};
@@ -429,6 +448,12 @@ app.patch('/api/mascotas/:id', async (request, response) => {
       return response.status(400).json({ message: 'La raza no es valida.' });
     }
     data.raza = typeof raza === 'string' && raza.trim() ? raza.trim() : null;
+  }
+  if (sexo !== undefined) {
+    if (sexo !== null && !SEXOS_MASCOTA.includes(String(sexo))) {
+      return response.status(400).json({ message: 'El sexo tiene que ser Macho o Hembra.' });
+    }
+    data.sexo = SEXOS_MASCOTA.includes(String(sexo)) ? String(sexo) : null;
   }
   if (parsedAge !== undefined) {
     if (
@@ -603,6 +628,52 @@ app.get('/api/turnos', async (request, response) => {
   } catch (error) {
     console.error('No se pudieron consultar los turnos:', error);
     return response.status(500).json({ message: 'No se pudieron consultar los turnos.' });
+  }
+});
+
+// DELETE /api/turnos/:id
+// El dueño cancela su propio turno.
+//
+// Es distinto del DELETE del admin (que cancela el turno de cualquiera y le
+// avisa al dueño con un motivo): acá no se manda aviso porque el aviso le
+// llegaria a la misma persona que lo pidió. La agenda del veterinario lo ve
+// desaparecer, que es lo que tiene que pasar.
+app.delete('/api/turnos/:id', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id del turno no es válido.' });
+  }
+
+  try {
+    const turno = await prisma.turno.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, atendidoEn: true, llegadaEn: true },
+    });
+    // findFirst y no findUnique: un turno de otro tiene que ser un 404, no un
+    // permiso que le diga al usuario que el turno existe.
+    if (!turno) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    if (turno.atendidoEn) {
+      return response.status(409).json({ message: 'Ese turno ya fue atendido.' });
+    }
+    if (turno.llegadaEn) {
+      return response
+        .status(409)
+        .json({ message: 'Ya te presentaste en la sede, el turno no se puede cancelar.' });
+    }
+
+    await prisma.turno.delete({ where: { id: turno.id } });
+    return response.json({ id: turno.id, cancelado: true });
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el turno.' });
+    }
+    console.error('No se pudo cancelar el turno del cliente:', error);
+    return response.status(500).json({ message: 'No se pudo cancelar el turno.' });
   }
 });
 
@@ -1005,7 +1076,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
     const resultado = await prisma.$transaction(async (transaction) => {
       const anterior = await transaction.turno.findUnique({
         where: { id },
-        include: { mascota: { select: { nombre: true } } },
+        include: { mascota: { select: { nombre: true, foto: true } } },
       });
       if (!anterior) return null;
 
@@ -1019,6 +1090,16 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       if (cambiaHorario) {
         if (!isValidAppointmentSlot(fechaDestino, horaDestino)) {
           return { validationError: 'invalid' as const };
+        }
+        // Un turno no se mueve hacia atras. Se puede estirar el horario o
+        // pizarlo para otro dia, pero devolverlo a una hora anterior deja
+        // clientes con avisos del tipo "hora: 19:00 -> 18:00" sobre un turno
+        // que ya estaba despues, que no se puede atender. El aviso va al dueño
+        // y no hay forma de explicar eso.
+        // La comparacion es de texto: "AAAA-MM-DDTHH:mm" ordena igual que el
+        // reloj porque los numeros van con dos digitos y en orden fijo.
+        if (`${fechaDestino}T${horaDestino}` < `${anterior.fecha}T${anterior.hora}`) {
+          return { validationError: 'atras' as const };
         }
       }
       if (cambiaDisponibilidad) {
@@ -1053,6 +1134,8 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
             data: {
               userId: turno.userId,
               turnoId: turno.id,
+              mascotaNombre: anterior.mascota.nombre,
+              mascotaFoto: anterior.mascota.foto,
               title: 'Tu turno fue modificado',
               message: `El turno de ${anterior.mascota.nombre} cambió: ${cambios.join(', ')}.`,
             },
@@ -1065,11 +1148,17 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       return response.status(404).json({ message: 'No se encontró el turno.' });
     }
     if ('validationError' in resultado) {
-      return resultado.validationError === 'occupied'
-        ? response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' })
-        : response.status(400).json({
-            message: 'El turno debe ser de lunes a sábado, entre las 10:00 y las 18:30, cada media hora y en el futuro.',
-          });
+      if (resultado.validationError === 'occupied') {
+        return response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' });
+      }
+      if (resultado.validationError === 'atras') {
+        return response.status(400).json({
+          message: 'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.',
+        });
+      }
+      return response.status(400).json({
+        message: 'El turno debe ser de lunes a sábado, entre las 10:00 y las 18:30, cada media hora y en el futuro.',
+      });
     }
 
     let pushSent = false;
@@ -1118,13 +1207,22 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
     return response.status(400).json({ message: 'El id del turno no es válido.' });
   }
 
+  // El motivo es opcional: si la veterinaria no escribe nada, el aviso igual
+  // dice por que se cancelo, pero en una linea generica.
+  const motivoPedido =
+    typeof request.body?.motivo === 'string' ? request.body.motivo.trim() : '';
+  const motivo =
+    motivoPedido !== ''
+      ? motivoPedido
+      : 'La veterinaria no pudo sostener la atención en ese horario.';
+
   try {
     const resultado = await prisma.$transaction(async (transaction) => {
       const turno = await transaction.turno.findUnique({
         where: { id },
         include: {
           user: { select: { id: true, nombre: true } },
-          mascota: { select: { nombre: true } },
+          mascota: { select: { nombre: true, foto: true } },
         },
       });
       if (!turno) return null;
@@ -1137,11 +1235,16 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
 
       // La notificación se crea antes del borrado y sin turnoId: al eliminar el
       // turno la relación queda en null (onDelete: SetNull) y el aviso sobrevive.
+      // La foto va copiada porque, sin el turno, no habria de donde sacarla y
+      // el aviso salia sin imagen mientras todos los demas la traen.
       const notification = await transaction.notification.create({
         data: {
           userId: turno.userId,
+          mascotaNombre: turno.mascota.nombre,
+          mascotaFoto: turno.mascota.foto,
+          motivo,
           title: 'Tu turno fue cancelado',
-          message: `El turno de ${turno.mascota.nombre} del ${formatearFechaLarga(turno.fecha)} a las ${turno.hora} fue cancelado por la veterinaria.`,
+          message: `El turno de ${turno.mascota.nombre} del ${formatearFechaLarga(turno.fecha)} a las ${turno.hora} fue cancelado.`,
         },
       });
 
@@ -1217,13 +1320,98 @@ app.get('/api/notifications', async (request, response) => {
         where,
         orderBy: { createdAt: 'desc' },
         take: 100,
+        // El turno viene adentro para que la app no tenga que adivinar de que
+        // sede hablaba el mensaje: el aviso de "Tu turno se acerca" tiene que
+        // mostrar la direccion de ESE turno, no la del proximo turno pendiente.
+        include: {
+          turno: {
+            select: {
+              sede: true,
+              tipo: true,
+              fecha: true,
+              hora: true,
+              mascota: { select: { nombre: true, foto: true } },
+            },
+          },
+        },
       }),
       prisma.notification.count({ where: { ...where, readAt: null } }),
     ]);
-    return response.json({ items, unreadCount });
+    // La mascota va arriba del aviso y no adentro del turno: cuando el turno
+    // se borra al cancelar, los campos copiados en el aviso siguen siendo la
+    // unica fuente, y asi todas las tarjetas se ven igual.
+    const conMascota = items.map((item) => ({
+      ...item,
+      mascota:
+        item.turno?.mascota ??
+        (item.mascotaNombre
+          ? { nombre: item.mascotaNombre, foto: item.mascotaFoto ?? null }
+          : null),
+    }));
+
+    return response.json({ items: conMascota, unreadCount });
   } catch (error) {
     console.error('No se pudieron consultar las notificaciones:', error);
     return response.status(500).json({ message: 'No se pudieron consultar las notificaciones.' });
+  }
+});
+
+// POST /api/notifications/global
+// Aviso general de la veterinaria para todos los usuarios.
+app.post('/api/notifications/global', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const { title, message } = request.body ?? {};
+  if (typeof title !== 'string' || title.trim().length < 4 || title.trim().length > 60) {
+    return response
+      .status(400)
+      .json({ message: 'El título tiene que tener entre 4 y 60 caracteres.' });
+  }
+  if (typeof message !== 'string' || message.trim().length < 4 || message.trim().length > 240) {
+    return response
+      .status(400)
+      .json({ message: 'La descripción tiene que tener entre 4 y 240 caracteres.' });
+  }
+
+  try {
+    // Se crea una fila por usuario y no una sola compartida: la tabla obliga a
+    // que cada aviso pertenezca a alguien (asi el "marcar como leido" no le
+    // muestra a uno lo que otro ya leyo) y es la unica forma de que cada
+    // cliente vea el suyo en su propia lista.
+    const usuarios = await prisma.usuario.findMany({ select: { id: true } });
+    const creados = await prisma.notification.createMany({
+      data: usuarios.map((usuario) => ({
+        userId: usuario.id,
+        title: title.trim(),
+        message: message.trim(),
+        esGlobal: true,
+      })),
+    });
+
+    // El aviso queda guardado aunque el push falle: la lista es la que se lee
+    // siempre. Solo se avisa en consola, como en el resto de los avisos.
+    let pushSent = false;
+    try {
+      const dispositivos = await prisma.notificacionPush.findMany({ select: { token: true } });
+      if (dispositivos.length > 0) {
+        await sendPushNotification(
+          dispositivos.map((dispositivo) => dispositivo.token),
+          title.trim(),
+          message.trim()
+        );
+        pushSent = true;
+      }
+    } catch (pushError) {
+      console.error('El aviso global se guardó, pero no se pudo enviar el push:', pushError);
+    }
+
+    return response.status(201).json({ creadas: creados.count, pushSent });
+  } catch (error) {
+    console.error('No se pudo enviar la notificación global:', error);
+    return response
+      .status(500)
+      .json({ message: 'No se pudo enviar la notificación a todos los clientes.' });
   }
 });
 

@@ -11,6 +11,17 @@ const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
 
 type Tipo = 'Control' | 'Vacunas' | 'Estética';
 
+/**
+ * Cliente de la demo.
+ *
+ * Sus turnos los arma clienteTurnosDemo.ts y no este script: son los que el
+ * dueño ve en su pantalla de Turnos y los tiene que poder cancelar el
+ * veterinario, asi que son filas de verdad. Si tambien se armaran aca, cada
+ * mascota tendria dos turnos para hoy y la agenda del admin mostraria el
+ * doble.
+ */
+const CLIENTE_DEMO = 'chris2@gmail.com';
+
 function fechaComoValor(fecha: Date): string {
   return [
     fecha.getFullYear(),
@@ -179,8 +190,12 @@ async function main(): Promise<void> {
   // Solo se usan mascotas CON foto: la tarjeta del historial muestra la foto
   // para reconocer rapido al paciente, y una mascota sin foto deja el hueco de
   // la huellita.
+  //
+  // Las del cliente de la demo quedan afuera: sus turnos los arma
+  // clienteTurnosDemo.ts. Si entraran tambien aca, cada una tendria un turno
+  // para hoy de mas y la agenda del admin mostraria el doble de gente.
   const conFoto = await prisma.mascota.findMany({
-    where: { foto: { not: null } },
+    where: { foto: { not: null }, user: { email: { not: CLIENTE_DEMO } } },
     select: { id: true, userId: true, nombre: true },
     orderBy: { id: 'asc' },
   });
@@ -259,6 +274,40 @@ async function main(): Promise<void> {
     conDescripcion: boolean;
   }[] = [];
 
+/**
+ * Mascotas que siempre van a la misma sede.
+ *
+ * El reparto es rotatorio: si no, cada mascota cae en las tres sedes y en la
+ * agenda no se ve nunca que un dueño tiene a su paciente siempre en el mismo
+ * lugar. Con esto Chloe queda en San Isidro y el resto se sigue repartiendo.
+ */
+const SEDEFIJA_POR_MASCOTA: Record<string, string> = {
+  Chloe: 'San Isidro',
+};
+
+/** La sede donde esa mascota va siempre, o null si va a donde toque. */
+function sedeFijaDe(nombre: string): string | null {
+  return SEDEFIJA_POR_MASCOTA[nombre] ?? null;
+}
+
+/**
+ * Mascotas que pueden caer en esa sede.
+ *
+ * La anclada a una sede entra PRIMERO y siempre: eso es lo que garantiza el
+ * anclaje, que no se vaya a otra. Pero no es la unica de esa sede: si lo fuera,
+ * en San Isidro (que abre con diez turnos de []) los diez eran de Chloe y la
+ * agenda de la manana salia con la misma foto repetida. Con las libres sumadas
+ * al lado, la anclada sigue yendo siempre ahi y las demas se reparten.
+ */
+function candidatasPara<T extends { nombre: string }>(candidatas: T[], sede: string): T[] {
+  // Las ancladas a otra sede no pueden venir: no es solo una preferencia, si no
+  // se cumple el turno queda de una mascota en una sede a la que nunca va.
+  const libres = candidatas.filter((c) => sedeFijaDe(c.nombre) === null);
+  const deEstaSede = candidatas.filter((c) => sedeFijaDe(c.nombre) === sede);
+  if (deEstaSede.length === 0) return libres.length > 0 ? libres : candidatas;
+  return [...deEstaSede, ...libres];
+}
+
 // Un nombre no puede caer en el mismo horario de la misma sede dos veces. La
 // reserva va por nombre y no por id porque hay dos mascotas distintas que se
 // llaman igual (dos "mati", dos "jorge") y en la tarjeta solo se ve el
@@ -272,9 +321,14 @@ async function main(): Promise<void> {
     const yaReservadas = reservasPorHorario.get(clave) ?? new Set<string>();
     reservasPorHorario.set(clave, yaReservadas);
 
-    let mascota = candidatas[indice % candidatas.length];
-    for (let salto = 0; salto < candidatas.length && yaReservadas.has(mascota.nombre); salto += 1) {
-      mascota = candidatas[(indice + salto + 1) % candidatas.length];
+    const paraEstaSede = candidatasPara(candidatas, ejemplo.sede);
+    let mascota = paraEstaSede[indice % paraEstaSede.length];
+    for (
+      let salto = 0;
+      salto < paraEstaSede.length && yaReservadas.has(mascota.nombre);
+      salto += 1
+    ) {
+      mascota = paraEstaSede[(indice + salto + 1) % paraEstaSede.length];
     }
     yaReservadas.add(mascota.nombre);
 
@@ -337,13 +391,14 @@ async function main(): Promise<void> {
       for (let i = 0; i < Math.min(diaFijo.porSede, libres.length); i += 1) {
         const hora = libres[i];
 
-        let mascota = candidatas[indiceFijo % candidatas.length];
+        const paraEstaSede = candidatasPara(candidatas, sede);
+        let mascota = paraEstaSede[indiceFijo % paraEstaSede.length];
         for (
           let salto = 0;
-          salto < candidatas.length && usados.has(mascota.nombre);
+          salto < paraEstaSede.length && usados.has(mascota.nombre);
           salto += 1
         ) {
-          mascota = candidatas[(indiceFijo + salto + 1) % candidatas.length];
+          mascota = paraEstaSede[(indiceFijo + salto + 1) % paraEstaSede.length];
         }
         usados.add(mascota.nombre);
         indiceFijo += 1;
@@ -391,6 +446,92 @@ async function main(): Promise<void> {
           // Ni llegada ni atendidoEn: solo historial. El Historial los muestra
           // igual por la descripcion.
           atendido: false,
+          conDescripcion: true,
+        });
+      }
+    }
+  }
+
+  // Turnos YA ATENDIDOS de los ultimos dias habil, en las tres sedes.
+  //
+  // Antes estos dias se veian desde el frontend, con nombres inventados
+  // (Lola, Mora, Roco) y duenos que no eran de nadie (Ana Gomez, Bruno Diaz).
+  // La agenda es del veterinario: tiene que mostrar los pacientes reales, con su
+  // nombre y su foto, asi que los historiales salen de la base.
+  const DIAS_PASADOS = 4;
+  const POR_SEDE_Y_DIA = 2;
+  let indicePasado = 0;
+  for (let dia = 1; dia <= DIAS_PASADOS; dia += 1) {
+    const cursor = new Date(
+      ahora.getFullYear(),
+      ahora.getMonth(),
+      ahora.getDate() - dia
+    );
+    if (cursor.getDay() === 0) continue;
+    const fecha = fechaComoValor(cursor);
+
+    for (const sede of sedesVeterinaria) {
+      // Se leen los horarios que ya hay en esa fecha y esa sede (contando los del
+      // dia recien creados) y se toman los primeros libres.
+      const yaOcupados = await prisma.turno.findMany({
+        where: { sede, fecha },
+        select: { hora: true },
+      });
+      const libres = HORARIOS.filter(
+        (hora) => !yaOcupados.some((turno) => turno.hora === hora)
+      );
+
+      const usados = new Set<string>();
+      for (let i = 0; i < Math.min(POR_SEDE_Y_DIA, libres.length); i += 1) {
+        const hora = libres[i];
+
+        const paraEstaSede = candidatasPara(candidatas, sede);
+        let mascota = paraEstaSede[indicePasado % paraEstaSede.length];
+        for (
+          let salto = 0;
+          salto < paraEstaSede.length && usados.has(mascota.nombre);
+          salto += 1
+        ) {
+          mascota = paraEstaSede[(indicePasado + salto + 1) % paraEstaSede.length];
+        }
+        usados.add(mascota.nombre);
+        indicePasado += 1;
+
+        const tipo = TIPOS[indicePasado % TIPOS.length];
+        const momento = new Date(`${fecha}T${hora}:00`).toISOString();
+        const turno = await prisma.turno.create({
+          data: {
+            tipo,
+            sede,
+            fecha,
+            hora,
+            llegadaEn: momento,
+            // Atendidos, con la nota que dejo la veterinaria: asi la lista de
+            // un dia ya pasado sale con el sello "Atendido" y su descripcion.
+            atendidoEn: momento,
+            descripcion: proximaDescripcion(tipo),
+            esDemo: true,
+            // A diferencia de los dias fijos de arriba, estos SI se ven: son los
+            // que el veterinario revisa al abrir un dia pasado.
+            ocultoEnAgenda: false,
+            user: { connect: { id: mascota.userId } },
+            mascota: { connect: { id: mascota.id } },
+          },
+          include: {
+            user: { select: { nombre: true } },
+            mascota: { select: { nombre: true, foto: true } },
+          },
+        });
+        creados.push({
+          id: turno.id,
+          dueno: turno.user.nombre,
+          mascota: turno.mascota.nombre,
+          conFoto: Boolean(turno.mascota.foto),
+          sede: turno.sede,
+          fecha: turno.fecha,
+          hora: turno.hora,
+          llego: true,
+          atendido: true,
           conDescripcion: true,
         });
       }

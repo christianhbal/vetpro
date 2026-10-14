@@ -21,6 +21,9 @@ type Mascota = {
   nombre: string;
   especie: string;
   raza: string | null;
+  // Se trae de la API para pasarlo a la ficha, pero la lista no lo muestra: el
+  // sexo se ve entrando en la mascota, no en la lista.
+  sexo: string | null;
   edad: number | null;
   foto: string | null;
 };
@@ -117,6 +120,7 @@ export default function MascotasScreen() {
                     nombre: item.nombre,
                     especie: item.especie,
                     raza: item.raza ?? '',
+                    sexo: item.sexo ?? '',
                     edad: item.edad === null ? '' : String(item.edad),
                   },
                 })

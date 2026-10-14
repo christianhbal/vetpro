@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Modal,
   Pressable,
   Text,
@@ -20,6 +21,15 @@ import {
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
+/**
+ * Logo de VetPro para los avisos globales.
+ *
+ * Va como asset local y no como data URI de la base: es la misma imagen que
+ * usan el login y el menu, asi que no hay dos copias que puedan quedar
+ * desactualizadas.
+ */
+const logoVetPro = require('../../assets/images/vetpro-logo-horizontal.jpg');
+
 type Aviso = {
   id: number;
   title: string;
@@ -28,7 +38,44 @@ type Aviso = {
   createdAt: string;
   /** Turno al que apunta el aviso. Lo usan los recordatorios de proximidad. */
   turnoId: number | null;
+  /**
+   * El turno con su sede, tipo y mascota. Viene en la respuesta de la API.
+   *
+   * Hace falta porque el aviso de "Tu turno se acerca" tiene que mostrar la
+   * direccion de ESE turno, no la del proximo turno pendiente del usuario: son
+   * cosas distintas y antes se confundian.
+   */
+  turno: {
+    sede: SedeVeterinaria;
+    tipo: string;
+    fecha: string;
+    hora: string;
+  } | null;
+  /** Mascota del aviso. Viene siempre, tenga o no turno asociado. */
+  mascota: { nombre: string; foto: string | null } | null;
+  /**
+   * Por que se cancelo, en palabras.
+   *
+   * Va aparte del `message` porque el mensaje es la linea corta de la lista y
+   * el motivo es lo largo que se lee al apretar el aviso de cancelado.
+   */
+  motivo: string | null;
+  /**
+   * Aviso general de la veterinaria ("feriado", "nos mudamos"), no de un turno
+   * ni de una mascota. La tarjeta lleva el logo de VetPro en vez de la foto del
+   * paciente, porque no hay ninguno.
+   */
+  esGlobal?: boolean | null;
 };
+
+function esMascotaDelAviso(value: unknown): value is NonNullable<Aviso['mascota']> {
+  if (typeof value !== 'object' || value === null) return false;
+  const mascota = value as Record<string, unknown>;
+  return (
+    typeof mascota.nombre === 'string' &&
+    (mascota.foto === null || typeof mascota.foto === 'string')
+  );
+}
 
 function esAviso(value: unknown): value is Aviso {
   if (typeof value !== 'object' || value === null) return false;
@@ -39,7 +86,27 @@ function esAviso(value: unknown): value is Aviso {
     typeof aviso.message === 'string' &&
     (typeof aviso.readAt === 'string' || aviso.readAt === null) &&
     typeof aviso.createdAt === 'string' &&
-    (typeof aviso.turnoId === 'number' || aviso.turnoId === null)
+    (typeof aviso.turnoId === 'number' || aviso.turnoId === null) &&
+    (aviso.turno === null || esTurnoDelAviso(aviso.turno)) &&
+    (aviso.mascota === null || esMascotaDelAviso(aviso.mascota)) &&
+    (typeof aviso.motivo === 'string' || aviso.motivo === null) &&
+    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined)
+  );
+}
+
+function esTurnoDelAviso(value: unknown): value is NonNullable<Aviso['turno']> {
+  if (typeof value !== 'object' || value === null) return false;
+  const turno = value as Record<string, unknown>;
+  const mascota = turno.mascota;
+  if (typeof mascota !== 'object' || mascota === null) return false;
+  return (
+    typeof turno.sede === 'string' &&
+    typeof turno.tipo === 'string' &&
+    typeof turno.fecha === 'string' &&
+    typeof turno.hora === 'string' &&
+    typeof (mascota as Record<string, unknown>).nombre === 'string' &&
+    ((mascota as Record<string, unknown>).foto === null ||
+      typeof (mascota as Record<string, unknown>).foto === 'string')
   );
 }
 
@@ -57,71 +124,98 @@ function avisosUltimosDias(avisos: Aviso[], dias: number): Aviso[] {
   });
 }
 
-type TurnoApi = {
-  id: number;
-  tipo: string;
-  sede: SedeVeterinaria;
-  fecha: string;
-  hora: string;
-  atendidoEn: string | null;
-  mascota: { nombre: string };
-};
-
-function esTurnoApi(value: unknown): value is TurnoApi {
-  if (typeof value !== 'object' || value === null) return false;
-  const turno = value as Record<string, unknown>;
-  return (
-    typeof turno.id === 'number' &&
-    typeof turno.tipo === 'string' &&
-    typeof turno.sede === 'string' &&
-    typeof turno.fecha === 'string' &&
-    typeof turno.hora === 'string' &&
-    (turno.atendidoEn === null || typeof turno.atendidoEn === 'string') &&
-    typeof (turno.mascota as Record<string, unknown> | undefined)?.nombre === 'string'
-  );
+/**
+ * Orden de la lista del cliente: primero los globales, despues lo que no se
+ * leyo y al final lo ya visto.
+ *
+ * El tope de 6 corta DESPUES de ordenar, y por eso importa el orden. Antes se
+ * cortaba por fecha y un aviso sin leer podia caer de septimo: el menu marcaba
+ * "1" y en la lista no habia ningun cartel sin leer que abrir, asi que el numero
+ * no se bajaba nunca solo. Con este orden lo que no leyo siempre esta a mano y,
+ * si aun asi hay mas de 6 sin leer, cada vez que se abre uno entra el
+ * siguiente.
+ *
+ * El orden dentro de cada grupo no se toca, porque Array.sort es estable y la
+ * API ya los manda del mas nuevo al mas viejo.
+ */
+function ordenarParaElCliente(avisos: Aviso[]): Aviso[] {
+  return [...avisos].sort((a, b) => {
+    if (a.esGlobal === true && b.esGlobal !== true) return -1;
+    if (a.esGlobal !== true && b.esGlobal === true) return 1;
+    const sinLeerA = a.readAt === null;
+    const sinLeerB = b.readAt === null;
+    if (sinLeerA !== sinLeerB) return sinLeerA ? -1 : 1;
+    return 0;
+  });
 }
-
-type TurnoAviso = {
-  tipo: string;
-  sede: SedeVeterinaria;
-  mascota: string;
-  minutos: number;
-  hora: string;
-};
 
 /**
- * Datos del turno de un aviso, para la ventana que se abre al tocarlo.
+ * Foto de la mascota del aviso.
  *
- * Se busca por `aviso.turnoId` y no por "el turno que falta menos": con dos
- * turnos en la misma hora el backend genera un recordatorio para cada uno, y
- * buscar el mas cercano hacia que al tocar uno se mostraran los datos del otro.
+ * Viene como data URI desde la API: hay formatos (AVIF) que el empaquetador de
+ * la app no sabe leer, asi que no se pueden traer como archivo.
  */
-function turnoDelAviso(aviso: Aviso, turnos: TurnoApi[], ahora: Date): TurnoAviso | null {
-  if (aviso.turnoId === null) return null;
-  const turno = turnos.find((item) => item.id === aviso.turnoId);
-  if (!turno) return null;
-
-  const [anio, mes, dia] = turno.fecha.split('-').map(Number);
-  const [hh, mm] = turno.hora.split(':').map(Number);
-  const cuando = new Date(anio, mes - 1, dia, hh, mm).getTime();
-  if (!Number.isFinite(cuando)) return null;
-
-  return {
-    tipo: turno.tipo,
-    sede: turno.sede,
-    mascota: turno.mascota.nombre,
-    minutos: Math.round((cuando - ahora.getTime()) / 60000),
-    hora: turno.hora,
-  };
+function fotoDelAviso(aviso: Aviso): string | null {
+  const foto = aviso.mascota?.foto;
+  return foto && foto.trim() !== '' ? foto : null;
 }
 
-function textoDelTurno(turno: TurnoAviso): string {
-  const cuando = turno.minutos <= 30 ? 'En menos de media hora' : 'En menos de una hora';
-  return `${cuando} tenés un turno de ${turno.tipo} para ${turno.mascota} (${turno.hora} hs)`;
+/** El turno del aviso, si la API lo trajo. */
+function turnoDelAviso(aviso: Aviso): Aviso['turno'] {
+  return aviso.turno;
 }
 
-/** Titulo que usa el backend para avisar que el turno esta por empezar. */
+/**
+ * Texto que se ve en la tarjeta sin apretarla.
+ *
+ * El de "Tu turno se acerca" no se usa el mensaje de la API (que termina con la
+ * direccion entre parentesis y queda cortado en dos lineas): se arma con el turno
+ * y para en la sede. La direccion, la hora y el boton "Ir" van solo en la
+ * ventana, que es donde esta lo que hay que hacer para llegar.
+ */
+function textoDelAviso(aviso: Aviso): string {
+  const turno = turnoDelAviso(aviso);
+  if (aviso.title !== TITULO_TURNO || turno === null) return aviso.message;
+  return `Dentro de 1 hora tienes un turno de ${turno.tipo} para ${
+    aviso.mascota?.nombre ?? 'tu mascota'
+  } en ${turno.sede}`;
+}
+
+/** Titulos que usa el backend. Cada uno abre su propia ventana. */
 const TITULO_TURNO = 'Tu turno se acerca';
+const TITULO_MODIFICADO = 'Tu turno fue modificado';
+const TITULO_CANCELADO = 'Tu turno fue cancelado';
+
+/**
+ * Que ventana corresponde a cada aviso.
+ *
+ * Los tres de turno miran el titulo porque cada uno tiene su formato. El global
+ * se decide por el campo `esGlobal` y no por el titulo: el titulo lo escribe la
+ * veterinaria (hoy "Feriado") y puede ser el que sea.
+ */
+function tipoDeVentana(
+  aviso: Aviso
+): 'recordatorio' | 'modificado' | 'cancelado' | 'global' | null {
+  if (aviso.esGlobal === true) return 'global';
+  if (aviso.title === TITULO_TURNO && turnoDelAviso(aviso) !== null) return 'recordatorio';
+  if (aviso.title === TITULO_MODIFICADO) return 'modificado';
+  if (aviso.title === TITULO_CANCELADO) return 'cancelado';
+  return null;
+}
+
+/**
+ * Titulo de la ventana. El de los avisos de turno es largo y con "Tu turno" de
+ * mas, asi que se recorta. El global va tal cual lo escribio la veterinaria.
+ */
+function tituloDeVentana(
+  tipo: 'recordatorio' | 'modificado' | 'cancelado' | 'global',
+  aviso: Aviso
+): string {
+  if (tipo === 'modificado') return 'Turno modificado';
+  if (tipo === 'cancelado') return 'Turno cancelado';
+  if (tipo === 'global') return aviso.title;
+  return TITULO_TURNO;
+}
 
 function mensajeApi(resultado: unknown): string | null {
   if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
@@ -131,20 +225,42 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 /**
- * Ventana del turno que se acerca. Es la misma que salta al confirmar un turno,
- * con el fondo tapado: se abre al apretar el cartel de la lista.
+ * Ventana del aviso. Es la misma que salta al confirmar un turno, con el fondo
+ * tapado: se abre al apretar el cartel de la lista.
+ *
+ * La comparten los cuatro avisos que tienen algo que contar:
+ *  - recordatorio: que viene el turno, con la sede a la que ir y boton "Ir".
+ *  - modificado: que cambio y donde quedo el turno, con boton "OK".
+ *  - cancelado: por que se caigo. No hay turno (el backend lo borro), asi que
+ *    no hay sede a la que ir y el boton es "OK".
+ *  - global: el aviso general de la veterinaria (feriado, cierre). Va con el
+ *    titulo y la descripcion tal cual se escribieron, sin datos de sede.
+ *
+ * Solo el recordatorio tiene "Ir": es el unico aviso donde hay algo adonde ir.
+ * En los otros tres el boton cierra la ventana, asi que dice "OK".
  */
-function VentanaTurno({
+function VentanaAviso({
   aviso,
-  turno,
   onCerrar,
 }: {
   aviso: Aviso | null;
-  turno: TurnoAviso | null;
   onCerrar: () => void;
 }) {
   if (!aviso) return null;
+  const tipo = tipoDeVentana(aviso);
+  if (tipo === null) return null;
+
+  const turno = turnoDelAviso(aviso);
   const sede = turno?.sede ?? null;
+  const cuerpo =
+    tipo === 'recordatorio' && turno
+      ? `Dentro de 1 hora tienes un turno de ${turno.tipo} para ${
+          aviso.mascota?.nombre ?? 'tu mascota'
+        }`
+      : tipo === 'cancelado'
+        ? aviso.motivo ?? aviso.message
+        : aviso.message;
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
       <View style={styles.avisoRaiz}>
@@ -159,16 +275,14 @@ function VentanaTurno({
             <Ionicons name="close" size={22} color="#263b32" />
           </Pressable>
 
-          <View style={styles.avisoIcono}>
-            <Ionicons name="alarm-outline" size={34} color="#fffefc" />
-          </View>
-
-          <Text style={styles.avisoTitulo}>{aviso.title}</Text>
-          <Text style={styles.avisoSubtitulo}>
-            {turno ? textoDelTurno(turno) : aviso.message}
+          <Text style={styles.avisoTitulo}>{tituloDeVentana(tipo, aviso)}</Text>
+          <Text style={tipo === 'cancelado' ? styles.avisoCuerpo : styles.avisoSubtitulo}>
+            {cuerpo}
           </Text>
 
-          {sede ? (
+          {/* El bloque sale entero si hay turno: de ahi salen la sede, la
+              direccion y la hora. Sin turno no hay nada adonde ir. */}
+          {turno && sede ? (
             <View style={styles.avisoDatos}>
               <View style={styles.avisoDato}>
                 <Ionicons name="location-outline" size={17} color="#0f3e17" />
@@ -184,6 +298,15 @@ function VentanaTurno({
                   {direccionesSedes[sede]}
                 </Text>
               </View>
+              {/* La hora va debajo de la dirección y no en el texto de arriba:
+                  el subtítulo dice cuanto falta, no a que hora hay que estar. */}
+              <View style={styles.avisoDato}>
+                <Ionicons name="time-outline" size={17} color="#0f3e17" />
+                <Text style={styles.avisoDatoTexto}>
+                  <Text style={styles.cartelEtiqueta}>Hora: </Text>
+                  {turno.hora}
+                </Text>
+              </View>
             </View>
           ) : null}
 
@@ -191,14 +314,11 @@ function VentanaTurno({
             // Mismo verde y mismo radio que "Escanear QR de llegada": dos
             // botones distintos al lado en la misma pantalla se ven mal.
             style={({ pressed }) => [estilos.qrBoton, styles.avisoBoton, pressed && estilos.buttonPressed]}
-            onPress={() => {
-              // Sin accion a proposito, igual que el "Ir" del detalle del turno.
-            }}
+            onPress={onCerrar}
             accessibilityRole="button"
-            accessibilityLabel="Ir a la sede"
-            accessibilityHint="Todavía no está disponible"
+            accessibilityLabel={tipo === 'recordatorio' ? 'Ir a la sede' : 'Cerrar el aviso'}
           >
-            <Text style={estilos.buttonTextPrimary}>Ir</Text>
+            <Text style={estilos.buttonTextPrimary}>{tipo === 'recordatorio' ? 'Ir' : 'OK'}</Text>
           </Pressable>
         </View>
       </View>
@@ -216,14 +336,15 @@ export default function NotificacionesScreen() {
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [errorForm, setErrorForm] = useState('');
+  // Va mandando el aviso: el boton queda deshabilitado para que no se envien
+  // dos veces con un doble toque.
+  const [enviandoAviso, setEnviandoAviso] = useState(false);
   // Titulo del aviso que se acaba de mandar. Es lo unico que necesita el cartel
   // de "enviado": el resto ya esta en la lista de notificaciones.
   const [enviado, setEnviado] = useState<string | null>(null);
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
-  // Turnos del usuario. Se piden una vez y despues se busca el de cada aviso.
-  const [turnos, setTurnos] = useState<TurnoApi[]>([]);
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -262,23 +383,12 @@ export default function NotificacionesScreen() {
       // devuelve hasta 100 y la base tiene avisos de hace meses, asi que la
       // pantalla aparecia llena de cosas viejas. El admin ve todo, que es quien
       // tiene que revisar el historico.
-      setAvisos(usuario.esAdmin ? result.items : avisosUltimosDias(result.items, 2));
-
-      // El admin no tiene turno propio: la ventana con sede y direccion es del
-      // cliente.
-      if (usuario.esAdmin) {
-        setTurnos([]);
-        return;
-      }
-      const respuestaTurnos = await fetch(
-        `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
-        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
-      );
-      const resultadoTurnos: unknown = await respuestaTurnos.json().catch(() => null);
-      setTurnos(
-        respuestaTurnos.ok && Array.isArray(resultadoTurnos) && resultadoTurnos.every(esTurnoApi)
-          ? resultadoTurnos
-          : []
+      // El cliente ve como mucho 6: con mas no lee ninguna. El admin ve todas,
+      // que es quien tiene que revisar el historico.
+      setAvisos(
+        usuario.esAdmin
+          ? result.items
+          : ordenarParaElCliente(avisosUltimosDias(result.items, 2)).slice(0, 6)
       );
 
     } catch (requestError) {
@@ -331,16 +441,15 @@ export default function NotificacionesScreen() {
     }
   };
 
-  const turnosAvisados = useMemo(
-    () => new Set(turnos.map((turno) => turno.id)),
-    [turnos]
-  );
-
+  // Abre la ventana el aviso de turno que trae, modificado o cancelado, y
+  // tambien el aviso global de la veterinaria.
+  //
+  // El global la abre cualquiera, admin incluido: el es el que lo escribio y no
+  // hay a donde ir con el, asi que no hay motivo para cerrarle la ventana. Los
+  // de turno son del cliente (el "Ir" va a la sede) y el admin solo los revisa
+  // en la lista.
   const abreVentana = (aviso: Aviso) =>
-    !esAdmin &&
-    aviso.title === TITULO_TURNO &&
-    aviso.turnoId !== null &&
-    turnosAvisados.has(aviso.turnoId);
+    (aviso.esGlobal === true || !esAdmin) && tipoDeVentana(aviso) !== null;
 
   const abrirNuevo = () => {
     setTitulo('');
@@ -349,10 +458,10 @@ export default function NotificacionesScreen() {
     setModalNuevo(true);
   };
 
-  // No hay reconfirmacion: el admin escribe el aviso y lo manda de una. El
-  // backend todavia no expone un POST para crearlo, asi que el cartel de
-  // "enviado" es parte de la maqueta.
-  const enviarAviso = () => {
+  // El admin escribe el aviso y lo manda de una, sin reconfirmacion: el cartel
+  // de "enviado" se arma recien cuando la API confirma que quedo guardado.
+  const enviarAviso = async () => {
+    if (enviandoAviso) return;
     if (!titulo.trim() || !descripcion.trim()) {
       setErrorForm('Completá el título y la descripción del aviso.');
       return;
@@ -361,11 +470,41 @@ export default function NotificacionesScreen() {
       setErrorForm('El título debe tener al menos 4 caracteres.');
       return;
     }
+
     setErrorForm('');
-    setModalNuevo(false);
-    setEnviado(titulo.trim());
-    setTitulo('');
-    setDescripcion('');
+    setEnviandoAviso(true);
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario) {
+        router.replace('/');
+        return;
+      }
+      const response = await fetch(`${API_BASE_URL}/api/notifications/global`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${usuario.accessToken}`,
+        },
+        body: JSON.stringify({ title: titulo.trim(), message: descripcion.trim() }),
+      });
+      const resultado: unknown = await response.json();
+      if (!response.ok) {
+        setErrorForm(mensajeApi(resultado) ?? 'No se pudo enviar el aviso a todos los clientes.');
+        return;
+      }
+
+      setModalNuevo(false);
+      setEnviado(titulo.trim());
+      setTitulo('');
+      setDescripcion('');
+      // La lista se recarga recien: el aviso recien creado tiene que aparecer en
+      // el propio listado del admin, no solo en el cartel de "enviado".
+      await cargarAvisos(false);
+    } catch (requestError) {
+      setErrorForm(apiUnreachableMessage(requestError));
+    } finally {
+      setEnviandoAviso(false);
+    }
   };
 
   return (
@@ -419,17 +558,38 @@ export default function NotificacionesScreen() {
                 void marcarLeido(item);
               }}
               accessibilityRole="button"
-              accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver aviso del turno' : ''}`}
+              accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver detalle del aviso' : ''}`}
             >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              <Ionicons
-                name={item.readAt ? 'notifications-outline' : 'notifications'}
-                size={22}
-                color="#0f3e17"
-              />
+              {item.esGlobal ? (
+                // El aviso global no es de una mascota, asi que va el logo. Con
+                // "contain" y un fondo claro el logo horizontal se lee entero
+                // en el cuadrado en vez de quedar con los bordes cortados.
+                <Image
+                  source={logoVetPro}
+                  style={styles.avisoLogo}
+                  resizeMode="contain"
+                  accessibilityLabel="VetPro, cuidado y bienestar"
+                />
+              ) : fotoDelAviso(item) ? (
+                // La foto de la mascota: con la campanita todas las tarjetas se
+                // veian iguales y no se podia saber de quien era el turno.
+                <Image
+                  source={{ uri: fotoDelAviso(item) ?? '' }}
+                  style={styles.avisoFoto}
+                  resizeMode="cover"
+                  accessibilityLabel={`Foto de ${item.mascota?.nombre ?? 'la mascota'}`}
+                />
+              ) : (
+                <Ionicons
+                  name={item.readAt ? 'notifications-outline' : 'notifications'}
+                  size={22}
+                  color="#0f3e17"
+                />
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={estilos.cardTitle}>{item.title}</Text>
-                <Text style={estilos.cardSubtitle}>{item.message}</Text>
+                <Text style={estilos.cardSubtitle}>{textoDelAviso(item)}</Text>
                 <Text style={styles.date}>
                   {new Date(item.createdAt).toLocaleDateString('es-AR')}
                 </Text>
@@ -441,11 +601,7 @@ export default function NotificacionesScreen() {
         }}
       />
 
-      <VentanaTurno
-        aviso={avisoTurno}
-        turno={avisoTurno !== null ? turnoDelAviso(avisoTurno, turnos, new Date()) : null}
-        onCerrar={() => setAvisoTurno(null)}
-      />
+      <VentanaAviso aviso={avisoTurno} onCerrar={() => setAvisoTurno(null)} />
 
       <Modal
         visible={modalNuevo}
@@ -507,11 +663,20 @@ export default function NotificacionesScreen() {
 
             <View style={estilos.modalActions}>
               <Pressable
-                style={[estilos.modalButton, estilos.modalButtonPrimary, styles.guardarBoton]}
-                onPress={enviarAviso}
+                style={[
+                  estilos.modalButton,
+                  estilos.modalButtonPrimary,
+                  styles.guardarBoton,
+                  enviandoAviso && estilos.buttonPressed,
+                ]}
+                onPress={() => void enviarAviso()}
+                disabled={enviandoAviso}
                 accessibilityRole="button"
+                accessibilityState={{ busy: enviandoAviso }}
               >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Enviar</Text>
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {enviandoAviso ? 'Enviando...' : 'Enviar'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -591,7 +756,7 @@ const styles = {
     maxWidth: 380,
     alignItems: 'center' as const,
     paddingHorizontal: 22,
-    paddingTop: 30,
+    paddingTop: 22,
     paddingBottom: 20,
     borderRadius: 20,
     backgroundColor: '#fffefc',
@@ -607,15 +772,6 @@ const styles = {
     borderRadius: 17,
     backgroundColor: '#eef4ea',
   },
-  avisoIcono: {
-    width: 68,
-    height: 68,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginBottom: 16,
-    borderRadius: 34,
-    backgroundColor: '#1f6b33',
-  },
   avisoTitulo: {
     color: '#0f3e17',
     fontSize: 21,
@@ -628,6 +784,15 @@ const styles = {
     fontSize: 15,
     lineHeight: 21,
     textAlign: 'center' as const,
+  },
+  // El motivo de la cancelacion son varias lineas: a la izquierda se lee bien,
+  // centrado hay que volver el ojo al principio en cada renglon.
+  avisoCuerpo: {
+    marginTop: 8,
+    color: '#4a6152',
+    fontSize: 15,
+    lineHeight: 23,
+    textAlign: 'left' as const,
   },
   avisoDatos: {
     alignSelf: 'stretch' as const,
@@ -665,6 +830,20 @@ const styles = {
   unread: {
     borderColor: '#0f3e17',
     borderWidth: 2,
+  },
+  avisoFoto: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#cfe7d3',
+  },
+  // El logo es horizontal: necesita un poco mas de lado y aire alrededor para
+  // que la palabra "VetPro" entre completa.
+  avisoLogo: {
+    width: 58,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#e8f3e4',
   },
   unreadDot: {
     width: 9,

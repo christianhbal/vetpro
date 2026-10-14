@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Image,
   Modal,
@@ -39,6 +38,18 @@ export default function Registro() {
   const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
   const [sesionVerificada, setSesionVerificada] = useState(false);
   const [mostrarConfirmacionAdmin, setMostrarConfirmacionAdmin] = useState(false);
+  /**
+   * Aviso de exito o de error de la pantalla.
+   *
+   * Antes se usaba Alert.alert, que en web abre el dialogo del navegador: un
+   * cartel del sistema operativo en medio de la app, con otro color y otro
+   * boton. Ahora los dos casos usan la misma ventana verde de la app.
+   */
+  const [aviso, setAviso] = useState<{
+    tipo: 'ok' | 'error';
+    titulo: string;
+    mensaje: string;
+  } | null>(null);
   const { top } = useSafeAreaInsets();
 
   const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
@@ -60,19 +71,35 @@ export default function Registro() {
     if (isSubmitting || !sesionVerificada) return;
 
     if (!nombre.trim() || !email.trim() || !telefono.trim() || !password || !confirmPassword) {
-      Alert.alert('Faltan datos', 'Completa todos los campos para continuar.');
+      setAviso({
+        tipo: 'error',
+        titulo: 'Faltan datos',
+        mensaje: 'Completa todos los campos para continuar.',
+      });
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      Alert.alert('Correo no válido', 'Revisa el formato de tu correo electrónico.');
+      setAviso({
+        tipo: 'error',
+        titulo: 'Correo no válido',
+        mensaje: 'Revisa el formato de tu correo electrónico.',
+      });
       return;
     }
     if (password.length < 8) {
-      Alert.alert('Contraseña débil', 'Usa al menos 8 caracteres.');
+      setAviso({
+        tipo: 'error',
+        titulo: 'Contraseña débil',
+        mensaje: 'Usa al menos 8 caracteres.',
+      });
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Las contraseñas no coinciden', 'Vuelve a comprobar ambas contraseñas.');
+      setAviso({
+        tipo: 'error',
+        titulo: 'Las contraseñas no coinciden',
+        mensaje: 'Vuelve a comprobar ambas contraseñas.',
+      });
       return;
     }
 
@@ -98,7 +125,11 @@ export default function Registro() {
       const result = await response.json();
 
       if (!response.ok) {
-        Alert.alert('No se pudo crear la cuenta', result.message ?? 'Inténtalo de nuevo.');
+        setAviso({
+          tipo: 'error',
+          titulo: 'No se pudo crear la cuenta',
+          mensaje: result.message ?? 'Inténtalo de nuevo.',
+        });
         return;
       }
 
@@ -107,10 +138,18 @@ export default function Registro() {
       if (sesionAdmin) {
         setMostrarConfirmacionAdmin(true);
       } else {
-        Alert.alert('Cuenta creada', 'Tu usuario quedó registrado en la base de datos.');
+        setAviso({
+          tipo: 'ok',
+          titulo: 'Cuenta creada',
+          mensaje: 'Tu usuario quedó registrado en la base de datos.',
+        });
       }
     } catch (error) {
-      Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
+      setAviso({
+        tipo: 'error',
+        titulo: 'No hay conexión con la API',
+        mensaje: apiUnreachableMessage(error),
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -261,6 +300,51 @@ export default function Registro() {
           </View>
         }
       />
+
+      {/* Aviso de exito o de error. Misma ventana que la del admin, con el
+          titulo en rojo cuando algo esta mal. */}
+      <Modal
+        visible={aviso !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setAviso(null)}
+      >
+        <View style={styles.confirmationRoot}>
+          <View style={styles.confirmationCard} accessibilityRole="alert">
+            <View
+              style={[
+                styles.avisoIcono,
+                aviso?.tipo === 'error' && styles.avisoIconoError,
+              ]}
+            >
+              <Ionicons
+                name={aviso?.tipo === 'error' ? 'alert-circle-outline' : 'checkmark'}
+                size={30}
+                color={aviso?.tipo === 'error' ? '#a32828' : '#ffffff'}
+              />
+            </View>
+            <Text
+              style={[
+                styles.confirmationTitle,
+                aviso?.tipo === 'error' && styles.avisoTituloError,
+              ]}
+            >
+              {aviso?.titulo ?? ''}
+            </Text>
+            <Text style={styles.avisoMensaje}>{aviso?.mensaje ?? ''}</Text>
+            <Pressable
+              style={styles.confirmationButton}
+              onPress={() => setAviso(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar el aviso"
+            >
+              <Text style={styles.confirmationButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={mostrarConfirmacionAdmin}
@@ -420,6 +504,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 22,
+  },
+  avisoIcono: {
+    alignSelf: 'center',
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderRadius: 29,
+    backgroundColor: '#1f6b33',
+  },
+  avisoIconoError: { backgroundColor: '#f7e3e3' },
+  avisoTituloError: { color: '#a32828' },
+  avisoMensaje: {
+    marginBottom: 22,
+    marginTop: -12,
+    color: '#333333',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
   },
   confirmationButton: {
     alignItems: 'center',

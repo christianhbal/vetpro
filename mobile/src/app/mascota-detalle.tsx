@@ -14,6 +14,7 @@ type Mascota = {
   nombre: string;
   especie: string;
   raza: string | null;
+  sexo: string | null;
   edad: number | null;
   foto: string | null;
 };
@@ -21,6 +22,9 @@ type Mascota = {
 function descripcionMascota(mascota: Mascota): string {
   return [
     descripcionEspecieMascota(mascota.especie, mascota.raza),
+    // Solo se muestra aca y no en la lista de Mascotas: eldueño lo busca cuando
+    // abre la ficha, no cuando esta recorriendo los nombres.
+    mascota.sexo,
     mascota.edad !== null ? `${mascota.edad} años` : null,
   ]
     .filter(Boolean)
@@ -41,6 +45,7 @@ export default function MascotaHistorialScreen() {
     nombre?: string;
     especie?: string;
     raza?: string;
+    sexo?: string;
     edad?: string;
   }>();
   const [abierto, setAbierto] = useState<number | null>(null);
@@ -62,6 +67,7 @@ export default function MascotaHistorialScreen() {
     nombre: params.nombre ?? 'Mascota',
     especie: params.especie ?? 'Otro',
     raza: params.raza ? params.raza : null,
+    sexo: params.sexo ? params.sexo : null,
     edad: params.edad ? Number(params.edad) : null,
     foto: null,
   }));
@@ -164,6 +170,7 @@ export default function MascotaHistorialScreen() {
                   nombre: mascota.nombre,
                   especie: mascota.especie,
                   raza: mascota.raza ?? '',
+                  sexo: mascota.sexo ?? '',
                   edad: mascota.edad === null ? '' : String(mascota.edad),
                 },
               })

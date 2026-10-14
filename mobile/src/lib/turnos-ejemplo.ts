@@ -109,7 +109,29 @@ export function horariosEjemplo(cantidad: number): string[] {
   return Array.from({ length: cantidad }, (_vacio, indice) => disponibles[indice % disponibles.length]);
 }
 
-const SEDE_EJEMPLO = 'Recoleta' as SedeVeterinaria;
+/**
+ * Sede de ejemplo de cada mascota.
+ *
+ * Sin esto todos los turnos de relleno salen en Recoleta: el filtro de sede de
+ * la pantalla de Turnos muestra un solo chip y parece que la veterinaria tiene
+ * una sola direccion. Se elige UNA sede por mascota y no una por turno porque a
+ * la misma mascota no se la lleva a dos veterinarias distintas el mismo dia.
+ *
+ * Las que no estan en la lista caen por posicion, asi un cliente con otras
+ * mascotas tambien ve las tres sedes.
+ */
+const SEDE_POR_MASCOTA: Record<string, SedeVeterinaria> = {
+  Tito: 'Recoleta',
+  Jorge: 'Recoleta',
+  Chloe: 'San Isidro',
+  Marcos: 'Vicente López',
+};
+
+const SEDES_EJEMPLO: SedeVeterinaria[] = ['Recoleta', 'San Isidro', 'Vicente López'];
+
+function sedeEjemploDe(mascota: MascotaEjemplo, indiceMascota: number): SedeVeterinaria {
+  return SEDE_POR_MASCOTA[mascota.nombre] ?? SEDES_EJEMPLO[indiceMascota % SEDES_EJEMPLO.length];
+}
 
 /**
  * Turnos de relleno del CLIENTE, armados con sus propias mascotas.
@@ -130,8 +152,8 @@ export function turnosEjemploCliente(mascotas: MascotaEjemplo[]): TurnoEjemplo[]
   const total = mascotas.length * (MOTIVOS_HOY.length + MOTIVOS_VIERNES.length);
   const horas = horariosEjemplo(total);
 
-  const base = (mascota: MascotaEjemplo, idTurno: number) => ({
-    sede: SEDE_EJEMPLO,
+  const base = (mascota: MascotaEjemplo, idTurno: number, sede: SedeVeterinaria) => ({
+    sede,
     esDemo: true as const,
     ocultoEnAgenda: false,
     mascotaId: idTurno,
@@ -152,7 +174,7 @@ export function turnosEjemploCliente(mascotas: MascotaEjemplo[]): TurnoEjemplo[]
       const idTurno = -3000 - indice;
       return {
         id: idTurno,
-        ...base(mascota, idTurno),
+        ...base(mascota, idTurno, sedeEjemploDe(mascota, indiceMascota)),
         tipo: motivo.tipo,
         fecha: hoy,
         hora: horas[indice],
@@ -175,7 +197,7 @@ export function turnosEjemploCliente(mascotas: MascotaEjemplo[]): TurnoEjemplo[]
       const momento = new Date(`${viernes}T${horas[indice]}:00`).toISOString();
       return {
         id: idTurno,
-        ...base(mascota, idTurno),
+        ...base(mascota, idTurno, sedeEjemploDe(mascota, indiceMascota)),
         tipo: motivo.tipo,
         fecha: viernes,
         hora: horas[indice],

@@ -93,6 +93,20 @@ export function descripcionEspecieMascota(especie: string, raza?: string | null)
 export const ESPECIES_MASCOTA = ['Perro', 'Gato', 'Otro'] as const;
 export const ESPECIE_OTRO = 'Otro';
 
+/**
+ * Sexo de una mascota.
+ *
+ * Son solo dos y no se inventan mas: el backend valida contra esta misma lista
+ * en el POST y en el PATCH de mascotas.
+ */
+export const SEXOS_MASCOTA = ['Macho', 'Hembra'] as const;
+
+export type SexoMascota = (typeof SEXOS_MASCOTA)[number];
+
+export function esSexoMascota(value: unknown): value is SexoMascota {
+  return typeof value === 'string' && SEXOS_MASCOTA.some((sexo) => sexo === value);
+}
+
 export function dividirEspecieMascota(
   especie: string,
   raza: string

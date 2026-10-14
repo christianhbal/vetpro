@@ -9,8 +9,11 @@ import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   dividirEspecieMascota,
+  esSexoMascota,
   ESPECIES_MASCOTA,
   ESPECIE_OTRO,
+  SEXOS_MASCOTA,
+  type SexoMascota,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
@@ -27,6 +30,7 @@ export default function EditarMascota() {
     nombre?: string;
     especie?: string;
     raza?: string;
+    sexo?: string;
     edad?: string;
   }>();
   const id = Number(params.id ?? 0);
@@ -39,6 +43,9 @@ export default function EditarMascota() {
   const [especie, setEspecie] = useState(inicial.seleccion);
   const [otraEspecie, setOtraEspecie] = useState(inicial.otra);
   const [raza, setRaza] = useState(params.raza ?? '');
+  const [sexo, setSexo] = useState<SexoMascota | ''>(
+    esSexoMascota(params.sexo) ? params.sexo : ''
+  );
   const [edad, setEdad] = useState(params.edad ?? '');
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
@@ -62,8 +69,9 @@ export default function EditarMascota() {
         if (!vigente || !Array.isArray(lista)) return;
         const encontrada = lista.find(
           (item) => typeof item === 'object' && item !== null && 'id' in item && item.id === id
-        ) as { foto?: string | null } | undefined;
+        ) as { foto?: string | null; sexo?: string | null } | undefined;
         setFoto(encontrada?.foto ?? null);
+        if (esSexoMascota(encontrada?.sexo)) setSexo(encontrada.sexo);
       } catch {
         // Sin foto se muestra la huella: no es motivo para cortar la pantalla.
       }
@@ -122,6 +130,10 @@ export default function EditarMascota() {
       setMensaje('Decinos qué tipo de animal es.');
       return;
     }
+    if (!sexo) {
+      setMensaje('Elegí si tu mascota es macho o hembra.');
+      return;
+    }
     if (
       edadNumero !== null &&
       (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
@@ -145,6 +157,7 @@ export default function EditarMascota() {
           nombre: nombre.trim(),
           especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
           raza: raza.trim() || null,
+          sexo,
           edad: edadNumero,
           foto: foto ?? null,
           userId: usuario.id,
@@ -241,6 +254,38 @@ export default function EditarMascota() {
                   <Text
                     style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}
                   >
+                    {opcion}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.bloque}>
+          <Text style={styles.label}>Sexo</Text>
+          <View style={styles.filaEspecies}>
+            {SEXOS_MASCOTA.map((opcion) => {
+              const seleccionada = sexo === opcion;
+              return (
+                <Pressable
+                  key={opcion}
+                  onPress={() => setSexo(opcion)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={opcion}
+                  accessibilityState={{ selected: seleccionada }}
+                  style={({ pressed }) => [
+                    styles.especieOpcion,
+                    seleccionada && styles.especieOpcionSeleccionada,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={opcion === 'Macho' ? 'male-outline' : 'female-outline'}
+                    size={17}
+                    color={seleccionada ? '#0f3e17' : '#556b58'}
+                  />
+                  <Text style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}>
                     {opcion}
                   </Text>
                 </Pressable>
@@ -464,7 +509,10 @@ const styles = {
   filaEspecies: { flexDirection: 'row' as const, gap: 6 },
   especieOpcion: {
     flex: 1,
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 7,
     paddingVertical: 13,
     borderWidth: 1.5,
     borderColor: '#cfdcc9',

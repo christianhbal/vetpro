@@ -7,7 +7,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { ESPECIES_MASCOTA, ESPECIE_OTRO } from '@/lib/datos';
+import { ESPECIES_MASCOTA, ESPECIE_OTRO, SEXOS_MASCOTA, type SexoMascota } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
 export default function NuevaMascota() {
@@ -15,6 +15,7 @@ export default function NuevaMascota() {
   const [especie, setEspecie] = useState('');
   const [otraEspecie, setOtraEspecie] = useState('');
   const [raza, setRaza] = useState('');
+  const [sexo, setSexo] = useState<SexoMascota | ''>('');
   const [edad, setEdad] = useState('');
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
@@ -67,6 +68,10 @@ export default function NuevaMascota() {
       setMensaje('Decinos qué tipo de animal es.');
       return;
     }
+    if (!sexo) {
+      setMensaje('Elegí si tu mascota es macho o hembra.');
+      return;
+    }
     if (
       edadNumero !== null &&
       (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
@@ -95,6 +100,7 @@ export default function NuevaMascota() {
           nombre: nombre.trim(),
           especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
           raza: raza.trim() || null,
+          sexo,
           edad: edadNumero,
           foto,
           userId: usuario.id,
@@ -155,6 +161,38 @@ export default function NuevaMascota() {
                     pressed && estilos.buttonPressed,
                   ]}
                 >
+                  <Text style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}>
+                    {opcion}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.bloque}>
+          <Text style={styles.label}>Sexo</Text>
+          <View style={styles.filaEspecies}>
+            {SEXOS_MASCOTA.map((opcion) => {
+              const seleccionada = sexo === opcion;
+              return (
+                <Pressable
+                  key={opcion}
+                  onPress={() => setSexo(opcion)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={opcion}
+                  accessibilityState={{ selected: seleccionada }}
+                  style={({ pressed }) => [
+                    styles.especieOpcion,
+                    seleccionada && styles.especieOpcionSeleccionada,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={opcion === 'Macho' ? 'male-outline' : 'female-outline'}
+                    size={17}
+                    color={seleccionada ? '#0f3e17' : '#556b58'}
+                  />
                   <Text style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}>
                     {opcion}
                   </Text>
@@ -320,7 +358,10 @@ const styles = {
   filaEspecies: { flexDirection: 'row' as const, gap: 6 },
   especieOpcion: {
     flex: 1,
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 7,
     paddingVertical: 13,
     borderWidth: 1.5,
     borderColor: '#cfdcc9',

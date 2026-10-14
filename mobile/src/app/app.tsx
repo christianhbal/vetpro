@@ -4,8 +4,9 @@ import {
   FlatList,
   Image,
   Modal,
-  Platform,
+  // Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -13,7 +14,8 @@ import {
 } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { toString } from 'qrcode';
+// Import de la impression del QR. commented out con la funcion de abajo.
+// import { toString } from 'qrcode';
 import type { DimensionValue, ImageSourcePropType } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
@@ -147,6 +149,23 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // Turnos, asi que aca no hace falta ver mas.
   const COTAS_PROXIMAS = 3;
 
+  /**
+   * Cuantos turnos ve el admin, por sede. No es el mismo numero para las tres
+   * porque las sedes no se parecen entre si: San Isidro abre el dia, asi que a
+   * esa hora hay 3 o 4 personas por llegar y no la manana entera. Con un tope
+   * comun la portada se llenaba de San Isidro y seemed la agenda de la
+   * veterinaria entera colgada de la manana.
+   *
+   * Recoleta es la hora pico y por ahi si entra mas. Vicente Lopez cierra la
+   * jornada, asi que casi nunca tiene tantos pendientes y el tope no llega a
+   * molestar.
+   */
+  const COTAS_ADMIN_POR_SEDE: Record<SedeVeterinaria, number> = {
+    'San Isidro': 4,
+    Recoleta: 6,
+    'Vicente López': 6,
+  };
+
   // Las tarjetas se miden como las de la pantalla de Turnos: alto del contenido
   // y foto cuadrada de 56. Antes el alto salia de una cuenta sobre el alto de la
   // pantalla y las tarjetas quedaban enormes en telefonos altos.
@@ -236,7 +255,11 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // los unicos datos que esa pantalla muestra, asi que la portada tiene que
   // mostrar los mismos y no los turnos sueltos que quedaron de las pruebas.
   const turnosPendientes = useMemo(() => {
-    const base = esAdmin ? turnosGuardados : turnosEjemploCliente(mascotas);
+    // El cliente ve los turnos reales de la base, los mismos que su pantalla de
+    // Turnos, para que las dos pantallas no digan cosas distintas del mismo
+    // turno. Los ejemplos quedan de respaldo si todavia no se creo nada.
+    const base =
+      esAdmin || turnosGuardados.length > 0 ? turnosGuardados : turnosEjemploCliente(mascotas);
     return base
       .filter((turno) => !turno.atendidoEn)
       // Los ejemplos de relleno se muestran siempre, como en la pantalla de
@@ -255,7 +278,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
         .filter((turno) => turno.sede === sedeSeleccionada)
-        .slice(0, COTAS_PROXIMAS)
+        .slice(0, COTAS_ADMIN_POR_SEDE[sedeSeleccionada])
         .map((turno) => ({
           id: turno.id,
           key: `admin-${turno.id}`,
@@ -351,63 +374,75 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
     </Pressable>
   );
 };
+  // ------------------------------------------------------------------
+  // IMPRIMIR EL QR: functionality apagada a proposito.
+  //
+  // El boton que la dispara esta comentado mas abajo, en la ventana del QR.
+  // Sirve para tener el QR en papel para colgarlo en la puerta de la sede.
+  //
+  // Para volver a prenderla hay que:
+  //   1. descomentar "Platform" en el import de react-native.
+  //   2. descomentar el import de 'qrcode'.
+  //   3. descomentar toda esta funcion.
+  //   4. descomentar el boton de imprimir en la ventana del QR.
+  // ------------------------------------------------------------------
   // El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
   // arma una hoja simple con el mismo valor que muestra el cartel.
-  const imprimirQr = async (sede: SedeVeterinaria) => {
-    // El SVG del QR se arma aca y no con un script de internet: antes la hoja
-    // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
-    const svgQr = await toString(checkInDeSede(sede), {
-      type: 'svg',
-      errorCorrectionLevel: 'M',
-      margin: 0,
-      width: 300,
-    });
+  // const imprimirQr = async (sede: SedeVeterinaria) => {
+  //     // El SVG del QR se arma aca y no con un script de internet: antes la hoja
+  //     // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
+  //     const svgQr = await toString(checkInDeSede(sede), {
+  //       type: 'svg',
+  //       errorCorrectionLevel: 'M',
+  //       margin: 0,
+  //       width: 300,
+  //     });
 
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>QR ${sede}</title>
-<style>
-  body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
-  h1 { color: #0f3e17; }
-  svg { width: 300px; height: 300px; }
-</style></head>
-<body>
-  <h1>VetPro</h1>
-  <h2>Codigo QR de llegada</h2>
-  <p>Presentá este código para que los usuarios registren su llegada.</p>
-  <div>${svgQr}</div>
-  <h3 style="color: #0f3e17;">${sede}</h3>
-</body></html>`;
+  //     const html = `<!DOCTYPE html>
+  // <html><head><meta charset="utf-8" /><title>QR ${sede}</title>
+  // <style>
+  //   body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
+  //   h1 { color: #0f3e17; }
+  //   svg { width: 300px; height: 300px; }
+  // </style></head>
+  // <body>
+  //   <h1>VetPro</h1>
+  //   <h2>Codigo QR de llegada</h2>
+  //   <p>Presentá este código para que los usuarios registren su llegada.</p>
+  //   <div>${svgQr}</div>
+  //   <h3 style="color: #0f3e17;">${sede}</h3>
+  // </body></html>`;
 
-    // expo-print es nativo y no existe en web: ahi se usa el dialogo del
-    // navegador. Antes salia "No se pudo abrir la impresion desde aca".
-    if (Platform.OS === 'web') {
-      try {
-        const ventana = window.open('', '_blank', 'width=520,height=760');
-        if (!ventana) {
-          setErrorTurnos('El navegador bloqueó la impresión. Permití las ventanas emergentes.');
-          return;
-        }
-        ventana.document.write(html);
-        ventana.document.close();
-        ventana.focus();
-        await new Promise((resolver) => setTimeout(resolver, 300));
-        ventana.print();
-      } catch (printError) {
-        console.error('No se pudo imprimir el QR en el navegador:', printError);
-        setErrorTurnos('No se pudo abrir la impresión desde acá.');
-      }
-      return;
-    }
+  //     // expo-print es nativo y no existe en web: ahi se usa el dialogo del
+  //     // navegador. Antes salia "No se pudo abrir la impresion desde aca".
+  //     if (Platform.OS === 'web') {
+  //       try {
+  //         const ventana = window.open('', '_blank', 'width=520,height=760');
+  //         if (!ventana) {
+  //           setErrorTurnos('El navegador bloqueó la impresión. Permití las ventanas emergentes.');
+  //           return;
+  //         }
+  //         ventana.document.write(html);
+  //         ventana.document.close();
+  //         ventana.focus();
+  //         await new Promise((resolver) => setTimeout(resolver, 300));
+  //         ventana.print();
+  //       } catch (printError) {
+  //         console.error('No se pudo imprimir el QR en el navegador:', printError);
+  //         setErrorTurnos('No se pudo abrir la impresión desde acá.');
+  //       }
+  //       return;
+  //     }
 
-    try {
-      const Print = await import('expo-print');
-      const archivo = await Print.printToFileAsync({ html });
-      await Print.printAsync({ uri: archivo.uri });
-    } catch (printError) {
-      console.error('No se pudo imprimir el QR:', printError);
-      setErrorTurnos('No se pudo abrir la impresion desde aca.');
-    }
-  };
+  //     try {
+  //       const Print = await import('expo-print');
+  //       const archivo = await Print.printToFileAsync({ html });
+  //       await Print.printAsync({ uri: archivo.uri });
+  //     } catch (printError) {
+  //       console.error('No se pudo imprimir el QR:', printError);
+  //       setErrorTurnos('No se pudo abrir la impresion desde aca.');
+  //     }
+  //   };
 
   const renderMascota = ({ item }: { item: Mascota }) => (
     <Pressable
@@ -583,9 +618,18 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
    </Text>
             </View>
           ) : (
-            <View style={styles.tarjetasCitas}>
+            /* Scrollea SOLO esta franja. Con un View comun las tarjetas se
+               desbordaban y en web se movia la pantalla entera, con lo que el
+               saludo, los accesos y el boton de QR se iban al scroll. Con el
+               ScrollView la zona de arriba queda siempre fija y solo bajan las
+               tarjetas. */
+            <ScrollView
+              style={styles.tarjetasCitas}
+              contentContainerStyle={styles.tarjetasCitasContenido}
+              showsVerticalScrollIndicator={false}
+            >
               {citasVisibles.map(renderCita)}
-            </View>
+            </ScrollView>
           )}
         </View>
       </View>
@@ -760,6 +804,11 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
 
+            {/* Boton de imprimir el QR. Apagado a proposito: todavia no se
+                usa, y apretarlo por error saca el dialogo del sistema y arma
+                una hoja suelta. Para volver: descomentar el bloque de arriba
+                con la funcion imprimirQr y este boton. */}
+            {/*
             <Pressable
               style={({ pressed }) => [estilos.addPetButton, pressed && estilos.buttonPressed]}
               onPress={() => void imprimirQr(sedeQr)}
@@ -769,6 +818,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               <Ionicons name="print-outline" size={19} color="#fffefc" />
               <Text style={estilos.buttonTextPrimary}>Imprimir QR - {sedeQr}</Text>
             </Pressable>
+            */}
           </View>
         </View>
       </Modal>
@@ -807,7 +857,13 @@ const styles = StyleSheet.create({
   // explicitos. OJO: no usar el atajo `flex: 0` ni `flex: 1` aca, porque ambos
   // expanden a flexBasis: 0%, que le gana al height y deja la zona de tarjetas
   // aplastada contra el pie de la pantalla.
-  tarjetasCitas: { gap: 8 },
+  // El ScrollView toma el alto que sobra y scrollea por dentro. El hueco de
+  // arriba esta topeado en 34, asi que todo el resto queda para las tarjetas y
+  // el titulo "Proximos turnos" se sigue arrancando en el mismo lugar.
+  tarjetasCitas: { flex: 1 },
+  // El gap va en el contenido, no en el ScrollView: el gap del contenedor es
+  // el espacio entre el borde y las tarjetas y se pierde al scrollear.
+  tarjetasCitasContenido: { gap: 8, paddingBottom: 2 },
   // Espaciador entre el encabezado y el titulo, con tope: sin maxHeight se
   // come todo el aire y deja un hueco enorme; sin tope las tarjetas quedan
   // pegadas al encabezado. 34 es una banda de respiracion razonable.
@@ -891,20 +947,6 @@ sinCitas: {
     borderRadius: 14,
     alignItems: 'center' as const,
   },
-  imprimirQr: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    gap: 8,
-    marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#0f3e17',
-    backgroundColor: '#f2f9f1',
-  },
-  imprimirQrTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
 saludo: {
     width: '100%' as DimensionValue,
     alignItems: 'center' as const,

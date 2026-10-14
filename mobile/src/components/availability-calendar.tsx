@@ -804,10 +804,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const deshabilitado = esPasado || esDomingo || cargando || Boolean(error);
             const seleccionado = fechaSeleccionada === value;
             // La celda reserva la franja de abajo para el puntito, asi el numero
-            // sube y no queda pegado a el.
-            const llevaPuntito =
-              !esPasado && !seleccionado &&
-              (esDiaBloqueado || (ocupados > 0 && !esDomingo));
+            // sube y no queda pegado a el. Solo lo llevan los dias bloqueados
+            // (los miercoles): el puntito verde de "este dia ya tiene horarios
+            // tomados" quedo pegado arriba del numero y competia con el rojo de
+            // "dia completo", que es el unico que avisa que no se puede agendar.
+            const llevaPuntito = !esPasado && !seleccionado && esDiaBloqueado;
             const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
             return (
               <Pressable
@@ -838,24 +839,14 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 >
                   {dia}
                 </Text>
-                {/* El puntito marca que el dia ya tiene horarios tomados. No va en
-                    los pasados ni en los domingos porque no se pueden agendar, ni en
-                    el que esta elegido porque el fondo oscuro ya lo dice.
-                    Los miercoles llevan puntito rojo: el dia se puede abrir pero
-                    esta completo, y el verde de "tiene turno" los confundiria
-                    con un dia con disponibilidad. */}
+                {/* Puntito rojo de "dia completo, no se puede agendar" (los
+                    miercoles). No va en los pasados ni en el que esta elegido
+                    porque en los dos el fondo ya lo dice. */}
                 {esDiaBloqueado && !esPasado && !seleccionado ? (
                   <View
                     style={[
                       styles.bloqueoDot,
                       { width: altoPuntito, height: altoPuntito, bottom: margenPuntito },
-                    ]}
-                  />
-                ) : ocupados > 0 && !esPasado && !esDomingo && !seleccionado ? (
-                  <View
-                    style={[
-                      styles.busyDot,
-                      { width: altoPuntito, height: altoPuntito, top: margenPuntito, right: margenPuntito },
                     ]}
                   />
                 ) : null}
@@ -872,8 +863,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             <Text style={styles.legendText}>Ocupado</Text>
             <View style={styles.legendCompleto} />
             <Text style={styles.legendText}>Completo</Text>
-            <View style={styles.legendPasado} />
-            <Text style={styles.legendText}>Pasado</Text>
           </View>
         )}
 
@@ -932,7 +921,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                         { minHeight: altoSlot },
                         seleccionado && styles.slotSeleccionado,
                         ocupado && styles.slotOcupado,
-                        pasado && !ocupado && styles.slotPasado,
+                        pasado && !ocupado && styles.slotVencido,
                         pressed && !deshabilitado && estilos.buttonPressed,
                       ]}
                       accessibilityRole="button"
@@ -945,7 +934,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                           { fontSize: slotText },
                           seleccionado && styles.slotTextSeleccionado,
                           ocupado && styles.slotTextOcupado,
-                          pasado && !ocupado && styles.slotTextPasado,
                         ]}
                       >
                         {hora}
@@ -1187,16 +1175,9 @@ const styles = StyleSheet.create({
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
   disabledText: { color: '#a0a69f' },
-  // Puntito de "este dia ya tiene horarios tomados". Solo se muestra en los dias
-// que todavia tienen alguna hora libre.
-  busyDot: {
-    position: 'absolute',
-    borderRadius: 3,
-    backgroundColor: colorOcupadoBorde,
-  },
-  // Puntito de "dia completo, no se puede agendar". Rojo a proposito: el verde
-  // del busyDot significa "tiene turno pero igual hay lugar", y el miercoles
-  // no hay lugar de ningun tipo.
+  // Puntito de "dia completo, no se puede agendar". Rojo a proposito: los
+  // miercoles no tienen lugar de ningun tipo y el verde de los horarios libres
+  // los haria ver como un dia en el que se puede reservar.
   bloqueoDot: {
     position: 'absolute',
     borderRadius: 3,
@@ -1236,14 +1217,6 @@ const styles = StyleSheet.create({
     borderColor: '#a36a3c',
     backgroundColor: colorOcupadoFondo,
   },
-  legendPasado: {
-    width: 15,
-    height: 15,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#8d958c',
-    backgroundColor: '#d6dad3',
-  },
   legendText: { color: '#69746a', fontSize: 12, marginRight: 6 },
   timesSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#dfe8db' },
   timesTitle: { marginBottom: 9, color: '#263b32', fontSize: 13, fontWeight: '600' },
@@ -1273,11 +1246,13 @@ width: '15%',
   slotIcono: { position: 'absolute', top: 2, right: 2 },
   slotSeleccionado: { borderColor: '#0f3e17', borderWidth: 2.5, backgroundColor: '#e8f3e4' },
   slotOcupado: { backgroundColor: colorOcupadoFondo, borderColor: colorOcupadoBorde },
-  slotPasado: { backgroundColor: '#f1f2ef', borderColor: '#e3e5e1' },
+  // Horario que ya paso: se ve igual que uno libre y no se puede apretar. Sin
+  // fondo propio, porque un color que solo aparece en un estado que no hace
+  // falta explicar es solo ruido.
+  slotVencido: {},
   slotText: { color: '#1e3326', fontSize: 12, fontWeight: '600' },
   slotTextSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
   slotTextOcupado: { color: colorOcupadoTexto },
-  slotTextPasado: { color: '#a9afa8' },
   mensajeError: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
   confirmar: {
     alignItems: 'center',
