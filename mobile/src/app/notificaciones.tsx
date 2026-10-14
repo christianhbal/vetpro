@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -26,6 +26,8 @@ type Aviso = {
   message: string;
   readAt: string | null;
   createdAt: string;
+  /** Turno al que apunta el aviso. Lo usan los recordatorios de proximidad. */
+  turnoId: number | null;
 };
 
 function esAviso(value: unknown): value is Aviso {
@@ -36,7 +38,8 @@ function esAviso(value: unknown): value is Aviso {
     typeof aviso.title === 'string' &&
     typeof aviso.message === 'string' &&
     (typeof aviso.readAt === 'string' || aviso.readAt === null) &&
-    typeof aviso.createdAt === 'string'
+    typeof aviso.createdAt === 'string' &&
+    (typeof aviso.turnoId === 'number' || aviso.turnoId === null)
   );
 }
 
@@ -78,45 +81,43 @@ function esTurnoApi(value: unknown): value is TurnoApi {
   );
 }
 
-type ProximoTurno = {
+type TurnoAviso = {
   tipo: string;
   sede: SedeVeterinaria;
   mascota: string;
   minutos: number;
+  hora: string;
 };
 
 /**
- * El turno pendiente que falta menos tiempo.
+ * Datos del turno de un aviso, para la ventana que se abre al tocarlo.
  *
- * De aca salen el tipo, la mascota y la sede. La notificacion del backend trae
- * todo junto en una frase y parsear esa cadena se rompe en cuanto cambia una
- * palabra.
+ * Se busca por `aviso.turnoId` y no por "el turno que falta menos": con dos
+ * turnos en la misma hora el backend genera un recordatorio para cada uno, y
+ * buscar el mas cercano hacia que al tocar uno se mostraran los datos del otro.
  */
-function proximoTurno(turnos: TurnoApi[], ahora: Date): ProximoTurno | null {
-  let mejor: ProximoTurno | null = null;
-  for (const turno of turnos) {
-    if (turno.atendidoEn !== null) continue;
-    const [anio, mes, dia] = turno.fecha.split('-').map(Number);
-    const [hh, mm] = turno.hora.split(':').map(Number);
-    const cuando = new Date(anio, mes - 1, dia, hh, mm).getTime();
-    if (!Number.isFinite(cuando) || cuando <= ahora.getTime()) continue;
-    const minutos = Math.round((cuando - ahora.getTime()) / 60000);
-    if (mejor === null || minutos < mejor.minutos) {
-      mejor = { tipo: turno.tipo, sede: turno.sede, mascota: turno.mascota.nombre, minutos };
-    }
-  }
-  return mejor;
+function turnoDelAviso(aviso: Aviso, turnos: TurnoApi[], ahora: Date): TurnoAviso | null {
+  if (aviso.turnoId === null) return null;
+  const turno = turnos.find((item) => item.id === aviso.turnoId);
+  if (!turno) return null;
+
+  const [anio, mes, dia] = turno.fecha.split('-').map(Number);
+  const [hh, mm] = turno.hora.split(':').map(Number);
+  const cuando = new Date(anio, mes - 1, dia, hh, mm).getTime();
+  if (!Number.isFinite(cuando)) return null;
+
+  return {
+    tipo: turno.tipo,
+    sede: turno.sede,
+    mascota: turno.mascota.nombre,
+    minutos: Math.round((cuando - ahora.getTime()) / 60000),
+    hora: turno.hora,
+  };
 }
 
-/**
- * "Dentro de 30 minutos tenes un turno de Control para mati".
- *
- * Los 30 minutos van fijos: el cartel es un aviso de que hay que arrancar, no
- * una cuenta regresiva. Con la cuenta real (la de 9 horas) el cliente leia un
- * numero que no era el que le servia para decidir.
- */
-function textoDelTurno(turno: ProximoTurno): string {
-  return `Dentro de 30 minutos tienes un turno de ${turno.tipo} para ${turno.mascota}`;
+function textoDelTurno(turno: TurnoAviso): string {
+  const cuando = turno.minutos <= 30 ? 'En menos de media hora' : 'En menos de una hora';
+  return `${cuando} tenés un turno de ${turno.tipo} para ${turno.mascota} (${turno.hora} hs)`;
 }
 
 /** Titulo que usa el backend para avisar que el turno esta por empezar. */
@@ -139,7 +140,7 @@ function VentanaTurno({
   onCerrar,
 }: {
   aviso: Aviso | null;
-  turno: ProximoTurno | null;
+  turno: TurnoAviso | null;
   onCerrar: () => void;
 }) {
   if (!aviso) return null;
@@ -221,7 +222,8 @@ export default function NotificacionesScreen() {
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
-  const [proximo, setProximo] = useState<ProximoTurno | null>(null);
+  // Turnos del usuario. Se piden una vez y despues se busca el de cada aviso.
+  const [turnos, setTurnos] = useState<TurnoApi[]>([]);
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -265,7 +267,7 @@ export default function NotificacionesScreen() {
       // El admin no tiene turno propio: la ventana con sede y direccion es del
       // cliente.
       if (usuario.esAdmin) {
-        setProximo(null);
+        setTurnos([]);
         return;
       }
       const respuestaTurnos = await fetch(
@@ -273,10 +275,10 @@ export default function NotificacionesScreen() {
         { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
       const resultadoTurnos: unknown = await respuestaTurnos.json().catch(() => null);
-      setProximo(
+      setTurnos(
         respuestaTurnos.ok && Array.isArray(resultadoTurnos) && resultadoTurnos.every(esTurnoApi)
-          ? proximoTurno(resultadoTurnos, new Date())
-          : null
+          ? resultadoTurnos
+          : []
       );
 
     } catch (requestError) {
@@ -329,11 +331,16 @@ export default function NotificacionesScreen() {
     }
   };
 
-  // La ultima de las "Tu turno se acerca": la lista viene de la mas nueva a la
-  // mas vieja, asi que es la primera que aparece.
-  const ultimoAvisoDeTurno = esAdmin
-    ? null
-    : avisos.find((aviso) => aviso.title === TITULO_TURNO) ?? null;
+  const turnosAvisados = useMemo(
+    () => new Set(turnos.map((turno) => turno.id)),
+    [turnos]
+  );
+
+  const abreVentana = (aviso: Aviso) =>
+    !esAdmin &&
+    aviso.title === TITULO_TURNO &&
+    aviso.turnoId !== null &&
+    turnosAvisados.has(aviso.turnoId);
 
   const abrirNuevo = () => {
     setTitulo('');
@@ -396,22 +403,24 @@ export default function NotificacionesScreen() {
             )}
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [
-              estilos.cardVertical,
-              !item.readAt && styles.unread,
-              pressed && estilos.buttonPressed,
-            ]}
-            onPress={() => {
-              // La ultima de "Tu turno se acerca" abre la ventana; el resto se
-              // marca como leido nomas.
-              if (item.id === ultimoAvisoDeTurno?.id) setAvisoTurno(item);
-              void marcarLeido(item);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${item.id === ultimoAvisoDeTurno?.id ? '. Ver aviso del turno' : ''}`}
-          >
+        renderItem={({ item }) => {
+          const conVentana = abreVentana(item);
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                estilos.cardVertical,
+                !item.readAt && styles.unread,
+                pressed && estilos.buttonPressed,
+              ]}
+              onPress={() => {
+                // Los avisos de proximidad abren la ventana; el resto se marca
+                // como leido nomas.
+                if (conVentana) setAvisoTurno(item);
+                void marcarLeido(item);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver aviso del turno' : ''}`}
+            >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
               <Ionicons
                 name={item.readAt ? 'notifications-outline' : 'notifications'}
@@ -426,14 +435,15 @@ export default function NotificacionesScreen() {
                 </Text>
               </View>
               {!item.readAt ? <View style={styles.unreadDot} /> : null}
-            </View>
-          </Pressable>
-        )}
+              </View>
+            </Pressable>
+          );
+        }}
       />
 
       <VentanaTurno
         aviso={avisoTurno}
-        turno={proximo}
+        turno={avisoTurno !== null ? turnoDelAviso(avisoTurno, turnos, new Date()) : null}
         onCerrar={() => setAvisoTurno(null)}
       />
 
