@@ -402,8 +402,15 @@ app.patch('/api/mascotas/:id', async (request, response) => {
     return response.status(400).json({ message: 'Indica un id de mascota y userId validos.' });
   }
 
-  const { nombre, especie } = request.body ?? {};
-  const data: { nombre?: string; especie?: string } = {};
+  const { nombre, especie, raza, edad, foto } = request.body ?? {};
+  const parsedAge = edad === undefined ? undefined : edad === null || edad === '' ? null : Number(edad);
+  const data: {
+    nombre?: string;
+    especie?: string;
+    raza?: string | null;
+    edad?: number | null;
+    foto?: string | null;
+  } = {};
 
   if (nombre !== undefined) {
     if (typeof nombre !== 'string' || !nombre.trim()) {
@@ -416,6 +423,36 @@ app.patch('/api/mascotas/:id', async (request, response) => {
       return response.status(400).json({ message: 'La especie no es valida.' });
     }
     data.especie = especie.trim();
+  }
+  if (raza !== undefined) {
+    if (raza !== null && typeof raza !== 'string') {
+      return response.status(400).json({ message: 'La raza no es valida.' });
+    }
+    data.raza = typeof raza === 'string' && raza.trim() ? raza.trim() : null;
+  }
+  if (parsedAge !== undefined) {
+    if (
+      parsedAge !== null &&
+      (!Number.isInteger(parsedAge) || parsedAge < 0 || parsedAge > 200)
+    ) {
+      return response
+        .status(400)
+        .json({ message: 'La edad debe ser un numero entero entre 0 y 200.' });
+    }
+    data.edad = parsedAge;
+  }
+  if (foto !== undefined) {
+    if (
+      foto !== null &&
+      (typeof foto !== 'string' ||
+        foto.length > 4_000_000 ||
+        !/^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}$/.test(foto))
+    ) {
+      return response
+        .status(400)
+        .json({ message: 'La foto no es valida o es demasiado grande.' });
+    }
+    data.foto = foto;
   }
   if (Object.keys(data).length === 0) {
     return response.status(400).json({ message: 'No hay campos para actualizar.' });

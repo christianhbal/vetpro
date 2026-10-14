@@ -133,7 +133,7 @@ export default function MascotasScreen() {
                     accessibilityLabel={`Foto de ${item.nombre}`}
                   />
                 ) : (
-                  <View style={[styles.foto, styles.fotoSinFoto]}>
+                  <View style={[styles.foto, styles.fotoSinFoto, styles.fotoVacio]}>
                     <Ionicons name="paw-outline" size={28} color="#69806a" />
                   </View>
                 )}

@@ -145,6 +145,27 @@ export default function MascotaHistorialScreen() {
           )}
           <Text style={styles.nombre}>{mascota.nombre}</Text>
           <Text style={styles.datos}>{descripcionMascota(mascota)}</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.editar, pressed && estilos.buttonPressed]}
+            onPress={() =>
+              router.push({
+                pathname: '/editar-mascota',
+                params: {
+                  id: String(mascota.id),
+                  nombre: mascota.nombre,
+                  especie: mascota.especie,
+                  raza: mascota.raza ?? '',
+                  edad: mascota.edad === null ? '' : String(mascota.edad),
+                },
+              })
+            }
+            accessibilityRole="link"
+            accessibilityLabel={`Editar los datos de ${mascota.nombre}`}
+          >
+            <Ionicons name="create-outline" size={18} color="#0f3e17" />
+            <Text style={styles.editarTexto}>Editar</Text>
+          </Pressable>
         </View>
 
         <Text style={estilos.sectionTitle}>Historial</Text>
@@ -255,7 +276,11 @@ const styles = {
   // se ve del color de la pantalla.
   fotoGrande: { width: 132, height: 132, borderRadius: 20 },
   // El estado sin foto si lleva fondo: no hay imagen que ocupe el cuadro.
-  fotoVaciaFondo: { backgroundColor: '#e4f1e0' },
+  fotoVaciaFondo: {
+   backgroundColor: '#e4f1e0',
+   alignItems: 'center' as const,
+   justifyContent: 'center' as const,
+  },
   nombre: {
     color: '#0f3e17',
     fontSize: 24,
@@ -263,6 +288,19 @@ const styles = {
     marginTop: 14,
   },
   datos: { color: '#4a6152', fontSize: 15, marginTop: 4, textAlign: 'center' as const },
+  editar: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#fffefc',
+  },
+  editarTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
   tarjeta: {
     backgroundColor: '#e1f4df',
     borderRadius: 12,
