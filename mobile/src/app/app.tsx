@@ -144,42 +144,12 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
   // En la portada van 3 citas. La agenda completa esta en la pantalla de
   // Turnos, asi que aca no hace falta ver mas.
-  // La barra de arriba de la app no forma parte del reparto: el porcentaje se
-  // mide sobre lo que queda debajo de la barra, no sobre la pantalla entera.
-  const ALTO_BARRA = 64;
-
-  // Las 3 tarjetas de "Proximos turnos" se anclan al pie de la pantalla y ocupan
-  // este porcentaje del alto util, en admin y en usuario. Sin un alto fijo cada
-  // tarjeta tiene flex: 1 y en una pantalla alta (iPhone 16 Pro Max) se estiraba
-  // hasta comerse mas de la mitad de la pantalla, con la foto diminuta en el
-  // medio. Se mide sobre windowHeight - ALTO_BARRA porque la barra del drawer no
-  // forma parte del area util. No se le resta el titulo de seccion: el 45% es el
-  // alto de las tarjetas, el titulo va justo encima.
-  const PROPORCION_TARJETAS = 0.45;
-  const altoZonaTurnos = Math.max(150, Math.round((windowHeight - ALTO_BARRA) * PROPORCION_TARJETAS));
-
   const COTAS_PROXIMAS = 3;
-  // Alto de UNA tarjeta de la franja inferior: la franja se reparte en 3 partes
-  // iguales, no se estira segun cuantos turnos haya. Con flex: 1, un cliente con
-  // 2 turnos veia 2 tarjetas que ocupaban toda la franja (cada una la mitad) y
-  // al agregar un tercero todo se encogia. Con el alto fijo, la franja guarda
-  // siempre el lugar de los 3 proximos y el turno que falta se ve como lugar
-  // libre, no como un turno estirado.
-  const altoCita = Math.max(
-    72,
-    Math.floor((altoZonaTurnos - 8 * (COTAS_PROXIMAS - 1)) / COTAS_PROXIMAS)
-  );
 
-  const [altoTarjetas, setAltoTarjetas] = useState(0);
-  // El alto de la foto sale del alto real de la zona de tarjetas, que se mide
-  // con onLayout. Calcularlo con porazos sobre el alto de la pantalla dejaba
-  // las tarjetas 9px mas abajo del borde de la pantalla.
-  // El -34 es el aire que necesitan las dos lineas de texto del turno; sin el,
-  // en pantallas altas la foto crecia tanto que el nombre quedaba aplastado.
-  const altoZonaTarjetas = altoTarjetas || altoZonaTurnos;
-  const ladoFotoTarjeta = Math.round(
-    Math.max(44, Math.min(88, altoZonaTarjetas / COTAS_PROXIMAS - 26))
-  );
+  // Las tarjetas se miden como las de la pantalla de Turnos: alto del contenido
+  // y foto cuadrada de 56. Antes el alto salia de una cuenta sobre el alto de la
+  // pantalla y las tarjetas quedaban enormes en telefonos altos.
+  const LADO_FOTO_CITA = 56;
 
   const cargarMascotas = useCallback(async () => {
     setCargandoMascotas(true);
@@ -324,12 +294,11 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   return (
     <Pressable
       key={item.key}
-      style={({ pressed }) => [
-        estilos.cardTurno,
-        styles.citaTarjeta,
-        { height: altoCita, flexGrow: 0, flexShrink: 0 },
-        pressed && estilos.buttonPressed,
-      ]}
+style={({ pressed }) => [
+   estilos.cardTurno,
+   styles.citaTarjeta,
+   pressed && estilos.buttonPressed,
+   ]}
       onPress={() => setCitaSeleccionada(item)}
       accessibilityRole="button"
       accessibilityLabel={`Ver detalle de ${item.mascota}`}
@@ -338,26 +307,26 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
         {foto ? (
           <Image
             source={foto}
-            style={[styles.citaFoto, { width: ladoFotoTarjeta, height: ladoFotoTarjeta }]}
-            resizeMode="contain"
-            accessibilityLabel={`Foto de ${item.mascota}`}
-          />
-        ) : (
-          <View
-            style={[
-              styles.citaFotoVacia,
-              { width: ladoFotoTarjeta, height: ladoFotoTarjeta },
-            ]}
-          >
-            {/* La huella se escala con el lado de la foto: fijo en 26 llenaba
-                todo el cuadro de 56 y se veía disproportionado al achicarlo. */}
-            <Ionicons
-              name="paw-outline"
-              size={Math.round(ladoFotoTarjeta * 0.42)}
-              color="#0f3e17"
-            />
-          </View>
-        )}
+style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
+   resizeMode="contain"
+   accessibilityLabel={`Foto de ${item.mascota}`}
+   />
+   ) : (
+   <View
+   style={[
+   styles.citaFotoVacia,
+   { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA },
+   ]}
+   >
+   {/* La huella se escala con el lado de la foto: fijo en 26 llenaba
+   todo el cuadro de 56 y se veía desproporcionado al achicarlo. */}
+   <Ionicons
+   name="paw-outline"
+   size={Math.round(LADO_FOTO_CITA * 0.42)}
+   color="#0f3e17"
+   />
+   </View>
+   )}
         <View style={styles.citaTexto}>
           <Text
             style={[estilos.cardTituloTurno, styles.citaTitulo]}
@@ -603,16 +572,8 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           ) : errorTurnos ? (
             <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
           ) : null}
-          {/* Sin turnos la franja mantiene el alto: si el aviso encogiera a su
-              altura, "Proximos turnos" bajaria y al cargar el primero la
-              pantalla daria un salto. */}
           {citasVisibles.length === 0 && !cargandoTurnos && !errorTurnos ? (
-            <View
-              style={[
-                styles.sinCitas,
-                { height: altoZonaTurnos, flexGrow: 0, flexShrink: 0 },
-              ]}
-            >
+            <View style={styles.sinCitas}>
               <View style={styles.sinCitasIcono}>
 <Ionicons name="calendar-clear-outline" size={18} color="#0f3e17" />
    </View>
@@ -621,20 +582,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
    </Text>
             </View>
           ) : (
-            <View
-              style={[
-                styles.tarjetasCitas,
-                {
-                  height: altoZonaTurnos,
-                  // flexGrow/flexShrink en vez de flex: 0. El atajo flex
-                  // expande a flexBasis: 0 y eso le gana al height, dejando las
-                  // tarjetas aplastadas contra el borde inferior.
-                  flexGrow: 0,
-                  flexShrink: 0,
-                },
-              ]}
-              onLayout={(e) => setAltoTarjetas(e.nativeEvent.layout.height)}
-            >
+            <View style={styles.tarjetasCitas}>
               {citasVisibles.map(renderCita)}
             </View>
           )}
@@ -959,8 +907,7 @@ sinCitas: {
 saludo: {
     width: '100%' as DimensionValue,
     alignItems: 'center' as const,
-    paddingTop: 2,
-    paddingBottom: 6,
+    marginVertical: 30,
   },
   saludoTexto: {
     alignSelf: 'stretch' as const,

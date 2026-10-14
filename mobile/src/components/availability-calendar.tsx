@@ -13,7 +13,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -98,7 +97,6 @@ type Props = {
   sedeFija?: SedeVeterinaria | null;
   /** Nombre a mostrar cuando la mascota viene fija, por si el id no llego. */
   mascotaNombreFija?: string;
-  titulo?: string;
   /** Version mas chica, para cuando la agenda entra dentro de otra pantalla. */
   compacta?: boolean;
   /**
@@ -203,7 +201,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       mascotaIdFija = null,
       mascotaNombreFija,
       sedeFija = null,
-      titulo = 'Agendar turno',
       compacta = false,
       ocultarBotonGuardar = false,
       comoAdmin = false,
@@ -613,11 +610,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const margenPuntito = Math.max(2, Math.round(altoDia * 0.1));
     const franjaPuntito = altoPuntito + margenPuntito;
 
-    // En una pantalla baja el titulo "Agendar turno" sobra: el drawer de
-    // arriba ya dice lo mismo y ocupa 46px que hacen falta para el boton.
-    const { height: alturaVentana } = useWindowDimensions();
-    const pantallaBaja = alturaVentana < 720;
-
     // Cuando sede y mascota vienen fijas ya se saben: la pantalla de atencion
     // las muestra en el encabezado, asi que repetirlas aca es al pedo.
     const ocultarFilaCampos = compacta && sedeFija !== null && mascotaIdFija !== null;
@@ -1009,9 +1001,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             !compacta && { paddingBottom: hueco(12) },
           ]}
         >
-          {titulo && !compacta && !pantallaBaja ? (
-            <Text style={[styles.titulo, { marginBottom: hueco(12) }]}>{titulo}</Text>
-          ) : null}
           {cuerpoAgenda}
         </View>
 
@@ -1092,13 +1081,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffefc',
   },
   cardCompacto: { paddingHorizontal: 0, paddingBottom: 0 },
-  titulo: {
-    color: '#0f3e17',
-    fontSize: 19,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
   campoBloque: { marginBottom: 10 },
   filaCampos: { flexDirection: 'row', gap: 8 },
   columnaCampo: { flex: 1 },
