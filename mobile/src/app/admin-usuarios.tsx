@@ -14,6 +14,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
@@ -50,6 +51,7 @@ function esUsuarioAdministrado(value: unknown): value is UsuarioAdministrado {
 export default function AdminUsuariosScreen() {
   const [usuarios, setUsuarios] = useState<UsuarioAdministrado[]>([]);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<UsuarioAdministrado | null>(null);
+  const [usuarioEliminado, setUsuarioEliminado] = useState<string | null>(null);
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [veterinarioCreado, setVeterinarioCreado] = useState<UsuarioAdministrado | null>(null);
   const [nombreNuevo, setNombreNuevo] = useState('');
@@ -120,6 +122,7 @@ export default function AdminUsuariosScreen() {
       }
       setUsuarios((actuales) => actuales.filter((item) => item.id !== usuarioAEliminar.id));
       setUsuarioAEliminar(null);
+      setUsuarioEliminado(usuarioAEliminar.nombre);
     } catch (requestError) {
       Alert.alert('No se pudo eliminar', apiUnreachableMessage(requestError));
     } finally {
@@ -506,6 +509,18 @@ export default function AdminUsuariosScreen() {
           ) : null}
         </View>
       </Modal>
+
+      <AvisoExito
+        visible={usuarioEliminado !== null}
+        titulo="¡Cuenta eliminada!"
+        subtitulo={
+          usuarioEliminado !== null
+            ? `Se eliminó la cuenta de ${usuarioEliminado}, con sus mascotas y turnos.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de cuenta eliminada"
+        onCerrar={() => setUsuarioEliminado(null)}
+      />
     </AppDrawer>
   );
 }

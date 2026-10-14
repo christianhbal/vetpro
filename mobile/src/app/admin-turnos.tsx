@@ -11,6 +11,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { CalendarioTurnos } from '@/components/calendario-turnos';
 import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
@@ -105,6 +106,12 @@ export default function AdminTurnosScreen() {
   const [ahora, setAhora] = useState(() => new Date());
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<TurnoAdministrado | null>(null);
+  const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
+    null
+  );
+  const [turnoCancelado, setTurnoCancelado] = useState<{ mascota: string; texto: string } | null>(
+    null
+  );
   const [tipo, setTipo] = useState('Control');
   const [sede, setSede] = useState<SedeVeterinaria>('Recoleta');
   const [fecha, setFecha] = useState('');
@@ -277,6 +284,13 @@ export default function AdminTurnosScreen() {
       setConfirmarCancelacion(false);
       setSeleccionado(null);
       await cargarTurnos();
+      // El aviso se arma despues de recargar: si la lista falla, el admin ve el
+      // error de la pantalla y no un "listo" que lo invite a tocar un turno ya
+      // borrado.
+      setTurnoCancelado({
+        mascota: seleccionado.mascota.nombre,
+        texto: `${fechaCorta(seleccionado.fecha)} a las ${seleccionado.hora} hs`,
+      });
     } catch (requestError) {
       setErrorCancelar(
         requestError instanceof TypeError
@@ -340,6 +354,10 @@ export default function AdminTurnosScreen() {
 
       setTurnos(listaActualizada);
       setAhora(new Date());
+      setTurnoGuardado({
+        mascota: seleccionado.mascota.nombre,
+        texto: `${tipo} · ${sede} · ${fechaCorta(fecha.trim())} a las ${hora.trim()} hs`,
+      });
       setSeleccionado(null);
     } catch (requestError) {
       setErrorGuardado(
@@ -725,6 +743,30 @@ export default function AdminTurnosScreen() {
           </View>
         </View>
       </Modal>
+
+      <AvisoExito
+        visible={turnoGuardado !== null}
+        titulo="¡Turno actualizado!"
+        subtitulo={
+          turnoGuardado !== null
+            ? `Guardamos los cambios del turno de ${turnoGuardado.mascota}: ${turnoGuardado.texto}.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de turno actualizado"
+        onCerrar={() => setTurnoGuardado(null)}
+      />
+
+      <AvisoExito
+        visible={turnoCancelado !== null}
+        titulo="¡Turno cancelado!"
+        subtitulo={
+          turnoCancelado !== null
+            ? `Se canceló el turno de ${turnoCancelado.mascota} del ${turnoCancelado.texto} y el cliente fue notificado.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de turno cancelado"
+        onCerrar={() => setTurnoCancelado(null)}
+      />
     </AppDrawer>
   );
 }
