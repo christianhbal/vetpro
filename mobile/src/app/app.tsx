@@ -21,6 +21,7 @@ import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
   descripcionEspecieMascota,
+  direccionesSedes,
   sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
@@ -730,10 +731,41 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
                 )}
               </Text>
               <Text style={estilos.modalText}>Hora: {citaSeleccionada.guardado.hora}</Text>
-              <Text style={estilos.modalText}>Sede: {citaSeleccionada.guardado.sede}</Text>
-              {citaSeleccionada.dueno ? (
-                <Text style={estilos.modalText}>Dueño: {citaSeleccionada.dueno}</Text>
+              
+              <View style={styles.modalSede}>
+                <Text style={estilos.modalText}>
+                  <Text style={styles.modalEtiqueta}>Sede: </Text>
+                  {citaSeleccionada.guardado.sede}
+                </Text>
+                <Text style={estilos.modalText}>
+                  <Text style={styles.modalEtiqueta}>Dirección: </Text>
+                  {direccionesSedes[citaSeleccionada.guardado.sede]}
+                </Text>
+              </View>
+
+              {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
+                  que en web no existe y en Android se lleva la app afuera.
+                  Cuando se defina a donde lleva, se le pone el onPress. */}
+              {!esAdmin ? (
+                <Pressable
+                  // Mismo verde y mismo radio que "Escanear QR de llegada": dos
+                  // botones distintos al lado en la misma pantalla se ven mal.
+                  style={({ pressed }) => [
+                    estilos.qrBoton,
+                    styles.irBoton,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                  onPress={() => {
+                    // Sin accion a proposito.
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ir a la sede"
+                  accessibilityHint="Todavía no está disponible"
+                >
+                  <Text style={estilos.buttonTextPrimary}>Ir</Text>
+                </Pressable>
               ) : null}
+
               {/* Sin descripcion: son turnos proximos, todavia no fueron
                   atendidos. La descripcion la carga el veterinario al completar
                   el turno, en la pantalla de atencion. */}
@@ -880,6 +912,18 @@ sinCitas: {
   citaTexto: { flex: 1 },
   citaTitulo: { flexShrink: 1 },
   citaDetalle: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  modalSede: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  // "Sede:" y "Direccion:" en negrita, el dato despues. Antes la sede
+  // venia toda en negrita y la direccion suelta, sin etiqueta.
+  modalEtiqueta: { fontWeight: '700' as const, color: '#0f3e17' },
+  // El fondo, el radio y el alto salen de estilos.qrBoton: el mismo verde que
+  // "Escanear QR de llegada".
+  irBoton: { marginTop: 20, marginBottom: 0 },
   qrAdminBotonFila: {
     flexDirection: 'row',
     alignItems: 'center',

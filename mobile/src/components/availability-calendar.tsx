@@ -13,6 +13,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import { useFocusEffect } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   descripcionEspecieMascota,
+  direccionesSedes,
   DIAS_SEMANA,
   sedesVeterinaria,
   type SedeVeterinaria,
@@ -588,11 +590,33 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     // Medidas que se comprimen con la escala para que el formulario entre entero.
     // En modo compacto los pisos son mas bajos porque la agenda va dentro de otra
     // pantalla y no hay espacio para holguras.
-    const altoDia = Math.max(compacta ? 24 : 30, Math.round((compacta ? 32 : 36) * escala));
-    const altoSlot = Math.max(compacta ? 26 : 31, Math.round((compacta ? 32 : 36) * escala));
-    const diaText = Math.max(compacta ? 10 : 11, Math.round((compacta ? 12 : 13) * escala));
-    const slotText = Math.max(compacta ? 9 : 10, Math.round((compacta ? 11 : 12) * escala));
-    const gapSlot = Math.max(compacta ? 3 : 4, Math.round(5 * escala));
+    //
+    // Los pisos importan: con 0.30 y 0.31, en una pantalla de 600px de alto el
+    // calendario ya no entraba mas y el formulario se cortaba. Con 24 y 26
+    // sigue entrando y los numeros todavia se leen.
+    const altoDia = Math.max(18, Math.round((compacta ? 32 : 36) * escala));
+    const altoSlot = Math.max(20, Math.round((compacta ? 32 : 36) * escala));
+    const diaText = Math.max(10, Math.round((compacta ? 12 : 13) * escala));
+    const slotText = Math.max(9, Math.round((compacta ? 11 : 12) * escala));
+    const gapSlot = Math.max(3, Math.round(5 * escala));
+
+    // Los margenes tambien se comprimen. Antes eran fijos: en un iPhone SE
+    // (375x667, unos 580px utiles) el formulario no entra ni con la grilla
+    // comprimida al limite, porque los huecos entre bloques se suman.
+    const esp = Math.max(0.55, Math.min(1.2, escala));
+    const hueco = (valor: number) => Math.max(4, Math.round(valor * esp));
+
+    // El puntito de "dia con turno" y el rojo de "dia completo" van abajo, como
+    // siempre. Para que no se le suba encima del numero cuando la celda se
+    // comprime, la celda reserva la franja de abajo y el numero sube.
+    const altoPuntito = Math.max(4, Math.round(altoDia * 0.16));
+    const margenPuntito = Math.max(2, Math.round(altoDia * 0.1));
+    const franjaPuntito = altoPuntito + margenPuntito;
+
+    // En una pantalla baja el titulo "Agendar turno" sobra: el drawer de
+    // arriba ya dice lo mismo y ocupa 46px que hacen falta para el boton.
+    const { height: alturaVentana } = useWindowDimensions();
+    const pantallaBaja = alturaVentana < 720;
 
     // Cuando sede y mascota vienen fijas ya se saben: la pantalla de atencion
     // las muestra en el encabezado, asi que repetirlas aca es al pedo.
@@ -686,8 +710,27 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           </View>
         )}
 
+        {/* Direccion de la sede elegida. Va en una linea propia y en letra chica
+            para no desarmar la fila de dos columnas: dentro de la columna de Sede
+            los dos selectores quedaban desalineados. */}
+        {compacta || sedeFija ? null : (
+          <View style={[styles.direccionSede, { marginTop: hueco(7), marginBottom: hueco(10) }]}>
+            <Ionicons name="location-outline" size={12} color="#0f3e17" />
+            <Text style={styles.direccionTexto} numberOfLines={1} ellipsizeMode="tail">
+              <Text style={styles.direccionEtiqueta}>Dirección: </Text>
+              {direccionesSedes[sede]}
+            </Text>
+          </View>
+        )}
+
         {compacta ? null : <Text style={styles.label}>Tipo de turno</Text>}
-        <View style={[styles.tiposFila, compacta && styles.tiposFilaCompacto]}>
+        <View
+          style={[
+            styles.tiposFila,
+            compacta && styles.tiposFilaCompacto,
+            !compacta && { marginBottom: hueco(10) },
+          ]}
+        >
           {tiposTurno.map((opcion) => {
             const seleccionado = tipo === opcion;
             return (
@@ -715,7 +758,13 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           })}
         </View>
 
-        <View style={[styles.monthRow, compacta && styles.monthRowCompacto]}>
+        <View
+          style={[
+            styles.monthRow,
+            compacta && styles.monthRowCompacto,
+            !compacta && { marginTop: hueco(10), marginBottom: hueco(8) },
+          ]}
+        >
           <Pressable
             style={styles.monthButton}
             onPress={() => moverMes(-1)}
@@ -762,6 +811,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             // asi que no cuenta como deshabilitado: solo se ve distinto.
             const deshabilitado = esPasado || esDomingo || cargando || Boolean(error);
             const seleccionado = fechaSeleccionada === value;
+            // La celda reserva la franja de abajo para el puntito, asi el numero
+            // sube y no queda pegado a el.
+            const llevaPuntito =
+              !esPasado && !seleccionado &&
+              (esDiaBloqueado || (ocupados > 0 && !esDomingo));
             const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
             return (
               <Pressable
@@ -770,6 +824,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                   styles.day,
                   { height: altoDia },
                   seleccionado && styles.selectedDay,
+                  llevaPuntito && { paddingBottom: franjaPuntito },
                 ]}
                 onPress={() => {
                   setFechaSeleccionada(value);
@@ -798,9 +853,19 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                     esta completo, y el verde de "tiene turno" los confundiria
                     con un dia con disponibilidad. */}
                 {esDiaBloqueado && !esPasado && !seleccionado ? (
-                  <View style={styles.bloqueoDot} />
+                  <View
+                    style={[
+                      styles.bloqueoDot,
+                      { width: altoPuntito, height: altoPuntito, bottom: margenPuntito },
+                    ]}
+                  />
                 ) : ocupados > 0 && !esPasado && !esDomingo && !seleccionado ? (
-                  <View style={styles.busyDot} />
+                  <View
+                    style={[
+                      styles.busyDot,
+                      { width: altoPuntito, height: altoPuntito, top: margenPuntito, right: margenPuntito },
+                    ]}
+                  />
                 ) : null}
               </Pressable>
             );
@@ -808,7 +873,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         </View>
 
         {compacta ? null : (
-          <View style={styles.legend}>
+          <View style={[styles.legend, !compacta && { marginTop: hueco(12) }]}>
             <View style={styles.legendLibre} />
             <Text style={styles.legendText}>Libre</Text>
             <View style={styles.legendOcupado} />
@@ -820,7 +885,13 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           </View>
         )}
 
-        <View style={[styles.timesSection, compacta && styles.timesSectionCompacto]}>
+        <View
+          style={[
+            styles.timesSection,
+            compacta && styles.timesSectionCompacto,
+            !compacta && { marginTop: hueco(12), paddingTop: hueco(12) },
+          ]}
+        >
           {/* En compacto el dia ya se ve marcado en el calendario, asi que el
               titulo con la fecha es al第四次. */}
           {compacta ? null : (
@@ -911,6 +982,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             style={({ pressed }) => [
               styles.confirmar,
               compacta && styles.confirmarCompacto,
+              !compacta && { marginTop: hueco(12), paddingVertical: Math.max(11, hueco(15)) },
               !puedeConfirmar && estilos.buttonPressed,
               pressed && puedeConfirmar && estilos.buttonPressed,
             ]}
@@ -930,8 +1002,16 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
     return (
       <>
-        <View style={[styles.card, compacta && styles.cardCompacto]}>
-          {titulo && !compacta ? <Text style={styles.titulo}>{titulo}</Text> : null}
+        <View
+          style={[
+            styles.card,
+            compacta && styles.cardCompacto,
+            !compacta && { paddingBottom: hueco(12) },
+          ]}
+        >
+          {titulo && !compacta && !pantallaBaja ? (
+            <Text style={[styles.titulo, { marginBottom: hueco(12) }]}>{titulo}</Text>
+          ) : null}
           {cuerpoAgenda}
         </View>
 
@@ -1058,18 +1138,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  campo: {
+  // Pastilla en vez de texto suelto: asi se lee como un dato mas de la sede
+  // y no como un texto que se colo abajo de los selectores.
+  direccionSede: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    minHeight: 60,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1.5,
-    borderColor: '#cfdcc9',
-    borderRadius: 14,
-    backgroundColor: '#fffefc',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 7,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#dfe8db',
+    backgroundColor: '#f1f7ee',
   },
+  direccionTexto: { flexShrink: 1, color: '#5c6b60', fontSize: 12 },
+  direccionEtiqueta: { fontWeight: '700', color: '#0f3e17' },
   campoCompacto: {
     gap: 8,
     minHeight: 52,
@@ -1218,9 +1304,6 @@ const styles = StyleSheet.create({
 // que todavia tienen alguna hora libre.
   busyDot: {
     position: 'absolute',
-    bottom: 3,
-    width: 5,
-    height: 5,
     borderRadius: 3,
     backgroundColor: colorOcupadoBorde,
   },
@@ -1229,21 +1312,20 @@ const styles = StyleSheet.create({
   // no hay lugar de ningun tipo.
   bloqueoDot: {
     position: 'absolute',
-    bottom: 3,
-    width: 5,
-    height: 5,
     borderRadius: 3,
     backgroundColor: '#c0392b',
   },
   // Casilla de la leyenda para el dia completo (miercoles). Mismo rojo que el
   // puntito del calendario, asi se leen como la misma señal.
+  // Relleno solido, no un rosa mas: asi se lee de un vistazo contra el
+  // cuadrado del horario ocupado, que es crema.
   legendCompleto: {
     width: 15,
     height: 15,
     borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#c0392b',
-    backgroundColor: '#f6d9d5',
+    borderWidth: 1.5,
+    borderColor: '#7d1f14',
+    backgroundColor: '#c0392b',
   },
   legend: {
     flexDirection: 'row',
@@ -1254,7 +1336,7 @@ const styles = StyleSheet.create({
   legendLibre: {
     width: 15,
     height: 15,
-    borderRadius: 5,
+    borderRadius: 4,
     borderWidth: 1.5,
     borderColor: '#a8c3a4',
     backgroundColor: '#ffffff',
@@ -1262,18 +1344,18 @@ const styles = StyleSheet.create({
   legendOcupado: {
     width: 15,
     height: 15,
-    borderRadius: 5,
+    borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: colorOcupadoBorde,
+    borderColor: '#a36a3c',
     backgroundColor: colorOcupadoFondo,
   },
   legendPasado: {
     width: 15,
     height: 15,
-    borderRadius: 5,
+    borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: '#e3e5e1',
-    backgroundColor: '#f1f2ef',
+    borderColor: '#8d958c',
+    backgroundColor: '#d6dad3',
   },
   legendText: { color: '#69746a', fontSize: 12, marginRight: 6 },
   timesSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#dfe8db' },
@@ -1288,7 +1370,11 @@ const styles = StyleSheet.create({
   },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 5 },
   slot: {
-    width: '15.5%',
+    // 15% y no 15.5: con 15.5% entran 5 por fila y los 18 horarios quedan en
+// 5+5+5+3, con la ultima fila de 3 repartida con space-between y un hueco
+// enorme en el medio. Con 15% entran 6 por fila justas (6 x 15% = 90% y 7 x 15%
+// no entra), o sea 3 filas parejas de 6, sin huecos raros.
+width: '15%',
     minHeight: 34,
     alignItems: 'center',
     justifyContent: 'center',

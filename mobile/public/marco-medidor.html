@@ -4,11 +4,21 @@
     <meta charset="utf-8" />
     <title>medidor</title>
     <style>
-      body { margin: 0; background: #222; }
-      iframe { width: 440px; height: 956px; border: 0; display: block; }
+      body { margin: 0; background: #333; font: 12px system-ui; color: #fff; }
+      .fila { display: flex; gap: 10px; padding: 10px; }
+      .caja { display: flex; flex-direction: column; gap: 4px; }
+      iframe { border: 0; display: block; background: #fff; }
     </style>
   </head>
   <body>
-    <iframe id="app" src="/app"></iframe>
+    <div class="fila">
+      <div class="caja"><span>iPhone SE 375x667</span><iframe id="a" src="/nuevo-turno" style="width:375px;height:667px"></iframe></div>
+      <div class="caja"><span>iphone 440x956</span><iframe id="d" src="/nuevo-turno" style="width:440px;height:956px"></iframe></div>
+    </div>
+    <div class="fila">
+      <div class="caja"><span>medio 515x900</span><iframe id="b" src="/nuevo-turno" style="width:515px;height:900px"></iframe></div>
+      <div class="caja"><span>angosto 400x820</span><iframe id="c" src="/nuevo-turno" style="width:400px;height:820px"></iframe></div>
+      <div class="caja"><span>tablet 768x1024</span><iframe id="e" src="/nuevo-turno" style="width:768px;height:1024px"></iframe></div>
+    </div>
   </body>
 </html>

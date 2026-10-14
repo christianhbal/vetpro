@@ -12,6 +12,10 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import {
+  direccionesSedes,
+  type SedeVeterinaria,
+} from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
@@ -49,11 +53,155 @@ function avisosUltimosDias(avisos: Aviso[], dias: number): Aviso[] {
   });
 }
 
+type TurnoApi = {
+  id: number;
+  tipo: string;
+  sede: SedeVeterinaria;
+  fecha: string;
+  hora: string;
+  atendidoEn: string | null;
+  mascota: { nombre: string };
+};
+
+function esTurnoApi(value: unknown): value is TurnoApi {
+  if (typeof value !== 'object' || value === null) return false;
+  const turno = value as Record<string, unknown>;
+  return (
+    typeof turno.id === 'number' &&
+    typeof turno.tipo === 'string' &&
+    typeof turno.sede === 'string' &&
+    typeof turno.fecha === 'string' &&
+    typeof turno.hora === 'string' &&
+    (turno.atendidoEn === null || typeof turno.atendidoEn === 'string') &&
+    typeof (turno.mascota as Record<string, unknown> | undefined)?.nombre === 'string'
+  );
+}
+
+type ProximoTurno = {
+  tipo: string;
+  sede: SedeVeterinaria;
+  mascota: string;
+  minutos: number;
+};
+
+/**
+ * El turno pendiente que falta menos tiempo.
+ *
+ * De aca salen el tipo, la mascota y la sede. La notificacion del backend trae
+ * todo junto en una frase y parsear esa cadena se rompe en cuanto cambia una
+ * palabra.
+ */
+function proximoTurno(turnos: TurnoApi[], ahora: Date): ProximoTurno | null {
+  let mejor: ProximoTurno | null = null;
+  for (const turno of turnos) {
+    if (turno.atendidoEn !== null) continue;
+    const [anio, mes, dia] = turno.fecha.split('-').map(Number);
+    const [hh, mm] = turno.hora.split(':').map(Number);
+    const cuando = new Date(anio, mes - 1, dia, hh, mm).getTime();
+    if (!Number.isFinite(cuando) || cuando <= ahora.getTime()) continue;
+    const minutos = Math.round((cuando - ahora.getTime()) / 60000);
+    if (mejor === null || minutos < mejor.minutos) {
+      mejor = { tipo: turno.tipo, sede: turno.sede, mascota: turno.mascota.nombre, minutos };
+    }
+  }
+  return mejor;
+}
+
+/**
+ * "Dentro de 30 minutos tenes un turno de Control para mati".
+ *
+ * Los 30 minutos van fijos: el cartel es un aviso de que hay que arrancar, no
+ * una cuenta regresiva. Con la cuenta real (la de 9 horas) el cliente leia un
+ * numero que no era el que le servia para decidir.
+ */
+function textoDelTurno(turno: ProximoTurno): string {
+  return `Dentro de 30 minutos tienes un turno de ${turno.tipo} para ${turno.mascota}`;
+}
+
+/** Titulo que usa el backend para avisar que el turno esta por empezar. */
+const TITULO_TURNO = 'Tu turno se acerca';
+
 function mensajeApi(resultado: unknown): string | null {
   if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
     return null;
   }
   return typeof resultado.message === 'string' ? resultado.message : null;
+}
+
+/**
+ * Ventana del turno que se acerca. Es la misma que salta al confirmar un turno,
+ * con el fondo tapado: se abre al apretar el cartel de la lista.
+ */
+function VentanaTurno({
+  aviso,
+  turno,
+  onCerrar,
+}: {
+  aviso: Aviso | null;
+  turno: ProximoTurno | null;
+  onCerrar: () => void;
+}) {
+  if (!aviso) return null;
+  const sede = turno?.sede ?? null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
+      <View style={styles.avisoRaiz}>
+        <Pressable style={styles.avisoFondo} onPress={onCerrar} accessibilityRole="button" accessibilityLabel="Cerrar aviso" />
+        <View style={styles.aviso}>
+          <Pressable
+            style={({ pressed }) => [styles.avisoCerrar, pressed && estilos.buttonPressed]}
+            onPress={onCerrar}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar aviso"
+          >
+            <Ionicons name="close" size={22} color="#263b32" />
+          </Pressable>
+
+          <View style={styles.avisoIcono}>
+            <Ionicons name="alarm-outline" size={34} color="#fffefc" />
+          </View>
+
+          <Text style={styles.avisoTitulo}>{aviso.title}</Text>
+          <Text style={styles.avisoSubtitulo}>
+            {turno ? textoDelTurno(turno) : aviso.message}
+          </Text>
+
+          {sede ? (
+            <View style={styles.avisoDatos}>
+              <View style={styles.avisoDato}>
+                <Ionicons name="location-outline" size={17} color="#0f3e17" />
+                <Text style={styles.avisoDatoTexto}>
+                  <Text style={styles.cartelEtiqueta}>Sede: </Text>
+                  {sede}
+                </Text>
+              </View>
+              <View style={styles.avisoDato}>
+                <Ionicons name="navigate-outline" size={17} color="#0f3e17" />
+                <Text style={styles.avisoDatoTexto}>
+                  <Text style={styles.cartelEtiqueta}>Dirección: </Text>
+                  {direccionesSedes[sede]}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          <Pressable
+            // Mismo verde y mismo radio que "Escanear QR de llegada": dos
+            // botones distintos al lado en la misma pantalla se ven mal.
+            style={({ pressed }) => [estilos.qrBoton, styles.avisoBoton, pressed && estilos.buttonPressed]}
+            onPress={() => {
+              // Sin accion a proposito, igual que el "Ir" del detalle del turno.
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Ir a la sede"
+            accessibilityHint="Todavía no está disponible"
+          >
+            <Text style={estilos.buttonTextPrimary}>Ir</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 export default function NotificacionesScreen() {
@@ -67,6 +215,10 @@ export default function NotificacionesScreen() {
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [errorForm, setErrorForm] = useState('');
+  // La ventana que salta sale de la ultima notificacion de "Tu turno se
+  // acerca": no hay ningun cartel armado a mano.
+  const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
+  const [proximo, setProximo] = useState<ProximoTurno | null>(null);
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -106,6 +258,24 @@ export default function NotificacionesScreen() {
       // pantalla aparecia llena de cosas viejas. El admin ve todo, que es quien
       // tiene que revisar el historico.
       setAvisos(usuario.esAdmin ? result.items : avisosUltimosDias(result.items, 2));
+
+      // El admin no tiene turno propio: la ventana con sede y direccion es del
+      // cliente.
+      if (usuario.esAdmin) {
+        setProximo(null);
+        return;
+      }
+      const respuestaTurnos = await fetch(
+        `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
+        { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
+      );
+      const resultadoTurnos: unknown = await respuestaTurnos.json().catch(() => null);
+      setProximo(
+        respuestaTurnos.ok && Array.isArray(resultadoTurnos) && resultadoTurnos.every(esTurnoApi)
+          ? proximoTurno(resultadoTurnos, new Date())
+          : null
+      );
+
     } catch (requestError) {
       setError(apiUnreachableMessage(requestError));
       setAvisos([]);
@@ -156,6 +326,12 @@ export default function NotificacionesScreen() {
     }
   };
 
+  // La ultima de las "Tu turno se acerca": la lista viene de la mas nueva a la
+  // mas vieja, asi que es la primera que aparece.
+  const ultimoAvisoDeTurno = esAdmin
+    ? null
+    : avisos.find((aviso) => aviso.title === TITULO_TURNO) ?? null;
+
   const abrirNuevo = () => {
     setTitulo('');
     setDescripcion('');
@@ -193,19 +369,21 @@ export default function NotificacionesScreen() {
         onRefresh={() => void cargarAvisos()}
         refreshing={cargando}
         ListHeaderComponent={
-          esAdmin ? (
-            <Pressable
-              style={({ pressed }) => [styles.nuevoBoton, pressed && estilos.buttonPressed]}
-              onPress={abrirNuevo}
-              accessibilityRole="button"
-              accessibilityLabel="Enviar notificación a todos los clientes"
-            >
-              <View style={styles.nuevoFila}>
-                <Ionicons name="megaphone-outline" size={20} color="#fffefc" />
-                <Text style={estilos.buttonTextPrimary}>Enviar notificación global</Text>
-              </View>
-            </Pressable>
-          ) : null
+          <>
+            {esAdmin ? (
+              <Pressable
+                style={({ pressed }) => [styles.nuevoBoton, pressed && estilos.buttonPressed]}
+                onPress={abrirNuevo}
+                accessibilityRole="button"
+                accessibilityLabel="Enviar notificación a todos los clientes"
+              >
+                <View style={styles.nuevoFila}>
+                  <Ionicons name="megaphone-outline" size={20} color="#fffefc" />
+                  <Text style={estilos.buttonTextPrimary}>Enviar notificación global</Text>
+                </View>
+              </Pressable>
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           <View style={{ paddingVertical: 20, alignItems: 'center' }}>
@@ -223,9 +401,14 @@ export default function NotificacionesScreen() {
               !item.readAt && styles.unread,
               pressed && estilos.buttonPressed,
             ]}
-            onPress={() => void marcarLeido(item)}
+            onPress={() => {
+              // La ultima de "Tu turno se acerca" abre la ventana; el resto se
+              // marca como leido nomas.
+              if (item.id === ultimoAvisoDeTurno?.id) setAvisoTurno(item);
+              void marcarLeido(item);
+            }}
             accessibilityRole="button"
-            accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}`}
+            accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${item.id === ultimoAvisoDeTurno?.id ? '. Ver aviso del turno' : ''}`}
           >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
               <Ionicons
@@ -244,6 +427,12 @@ export default function NotificacionesScreen() {
             </View>
           </Pressable>
         )}
+      />
+
+      <VentanaTurno
+        aviso={avisoTurno}
+        turno={proximo}
+        onCerrar={() => setAvisoTurno(null)}
       />
 
       <Modal
@@ -360,6 +549,116 @@ export default function NotificacionesScreen() {
 }
 
 const styles = {
+  cartel: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#0f3e17',
+    backgroundColor: '#f1f7ee',
+  },
+  // Solo la parte de arriba del cartel abre la ventana: el "Ir" de abajo es
+  // un boton aparte y no puede quedar adentro de otro boton.
+  cartelApertura: { width: '100%' as const },
+  cartelEncabezado: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  cartelIcono: {
+    width: 34,
+    height: 34,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 17,
+    backgroundColor: '#e4f1e0',
+  },
+  cartelTextos: { flex: 1 },
+  cartelTitulo: { color: '#0f3e17', fontSize: 17, fontWeight: 'bold' as const },
+  cartelCuenta: { marginTop: 1, color: '#556b58', fontSize: 13 },
+  cartelMascota: {
+    marginTop: 12,
+    color: '#0f3e17',
+    fontSize: 16,
+    fontWeight: 'bold' as const,
+  },
+  cartelDetalle: { marginTop: 2, color: '#4a6152', fontSize: 14 },
+  cartelSede: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#dfe8db',
+    gap: 5,
+  },
+  cartelSedeFila: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
+  cartelSedeTexto: { flex: 1, color: '#5c6b60', fontSize: 13 },
+  cartelEtiqueta: { color: '#0f3e17', fontWeight: '700' as const },
+  cartelBoton: { marginTop: 14, marginBottom: 0 },
+  // Ventana del turno, calcada de la de "Turno creado con exito".
+  avisoRaiz: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    padding: 24,
+  },
+  avisoFondo: {
+    position: 'absolute' as const,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(18, 32, 22, 0.55)',
+  },
+  aviso: {
+    width: '100%' as const,
+    maxWidth: 380,
+    alignItems: 'center' as const,
+    paddingHorizontal: 22,
+    paddingTop: 30,
+    paddingBottom: 20,
+    borderRadius: 20,
+    backgroundColor: '#fffefc',
+  },
+  avisoCerrar: {
+    position: 'absolute' as const,
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 17,
+    backgroundColor: '#eef4ea',
+  },
+  avisoIcono: {
+    width: 68,
+    height: 68,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 16,
+    borderRadius: 34,
+    backgroundColor: '#1f6b33',
+  },
+  avisoTitulo: {
+    color: '#0f3e17',
+    fontSize: 21,
+    fontWeight: 'bold' as const,
+    textAlign: 'center' as const,
+  },
+  avisoSubtitulo: {
+    marginTop: 6,
+    color: '#5c6b60',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center' as const,
+  },
+  avisoDatos: {
+    alignSelf: 'stretch' as const,
+    gap: 9,
+    marginTop: 18,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#f1f7ee',
+  },
+  avisoDato: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  avisoDatoTexto: { flex: 1, color: '#1e3326', fontSize: 14 },
+  avisoBoton: { alignSelf: 'stretch' as const, marginTop: 18, marginBottom: 0 },
   nuevoBoton: {
     marginBottom: 14,
     padding: 15,

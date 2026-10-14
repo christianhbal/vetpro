@@ -34,6 +34,12 @@ export const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as 
 
 export type SedeVeterinaria = (typeof sedesVeterinaria)[number];
 
+export const direccionesSedes: Record<SedeVeterinaria, string> = {
+  Recoleta: 'Av. Recoleta 1234',
+  'San Isidro': 'Av. Centenario 2450',
+  'Vicente López': 'Av. del Libertador 1580',
+};
+
 // Encabezado de los calendarios, de lunes a domingo. El miércoles va con "M" y
 // no con la "X" de siempre, asi que martes y miércoles muestran la misma letra.
 // Vive acá y no en cada calendario porque ya se nos olvidó uno al cambiarlo:

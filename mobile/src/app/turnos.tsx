@@ -15,6 +15,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { CalendarioTurnos } from '@/components/calendario-turnos';
 import { estilos } from '@/lib/estilos';
 import {
+  direccionesSedes,
   formatearFechaTurno,
   sedesVeterinaria,
   turnoSiguePendiente,
@@ -637,6 +638,45 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                   Descripción: {citaSeleccionada.descripcion}
                 </Text>
               ) : null}
+
+              {/* Solo para el cliente: es el que tiene que llegar a la sede. El
+                  veterinario ya esta ahi y no le sirve de nada. Igual que en la
+                  portada. */}
+              {esAdmin ? null : (
+                <>
+                  <View style={styles.modalSede}>
+                    <Text style={estilos.modalText}>
+                      <Text style={styles.modalEtiqueta}>Sede: </Text>
+                      {citaSeleccionada.guardado.sede}
+                    </Text>
+                    <Text style={estilos.modalText}>
+                      <Text style={styles.modalEtiqueta}>Dirección: </Text>
+                      {direccionesSedes[citaSeleccionada.guardado.sede]}
+                    </Text>
+                  </View>
+
+                  {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
+                      que en web no existe y en Android se lleva la app afuera.
+                      Cuando se defina a donde lleva, se le pone el onPress. */}
+                  <Pressable
+                    // Mismo verde y mismo radio que "Escanear QR de llegada": dos
+                    // botones distintos al lado en la misma pantalla se ven mal.
+                    style={({ pressed }) => [
+                      estilos.qrBoton,
+                      styles.irBoton,
+                      pressed && estilos.buttonPressed,
+                    ]}
+                    onPress={() => {
+                      // Sin accion a proposito.
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ir a la sede"
+                    accessibilityHint="Todavía no está disponible"
+                  >
+                    <Text style={estilos.buttonTextPrimary}>Ir</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           )}
         </View>
@@ -722,6 +762,16 @@ const styles = {
     gap: 8,
   },
   turnoTitulo: { flexShrink: 1 },
+  modalSede: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  modalEtiqueta: { fontWeight: '700' as const, color: '#0f3e17' },
+  // El fondo, el radio y el alto salen de estilos.qrBoton: el mismo verde que
+  // "Escanear QR de llegada".
+  irBoton: { marginTop: 20, marginBottom: 0 },
   agendar: {
     paddingHorizontal: 15,
     paddingTop: 6,
