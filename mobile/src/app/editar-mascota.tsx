@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +7,12 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import {
+  dividirEspecieMascota,
+  ESPECIES_MASCOTA,
+  ESPECIE_OTRO,
+} from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
-
-const especies = ['Perro', 'Gato', 'Otro'];
 
 /**
  * Edicion de una mascota. Es la misma pantalla que "Agregar mascota" con los
@@ -29,7 +32,12 @@ export default function EditarMascota() {
   const id = Number(params.id ?? 0);
 
   const [nombre, setNombre] = useState(params.nombre ?? '');
-  const [especie, setEspecie] = useState(params.especie ?? '');
+  const inicial = useMemo(
+    () => dividirEspecieMascota(params.especie ?? '', params.raza ?? ''),
+    [params.especie, params.raza]
+  );
+  const [especie, setEspecie] = useState(inicial.seleccion);
+  const [otraEspecie, setOtraEspecie] = useState(inicial.otra);
   const [raza, setRaza] = useState(params.raza ?? '');
   const [edad, setEdad] = useState(params.edad ?? '');
   const [foto, setFoto] = useState<string | null>(null);
@@ -110,6 +118,10 @@ export default function EditarMascota() {
       setMensaje('Completa el nombre y la especie.');
       return;
     }
+    if (especie === ESPECIE_OTRO && !otraEspecie.trim()) {
+      setMensaje('Decinos qué tipo de animal es.');
+      return;
+    }
     if (
       edadNumero !== null &&
       (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
@@ -131,7 +143,7 @@ export default function EditarMascota() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: nombre.trim(),
-          especie,
+          especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
           raza: raza.trim() || null,
           edad: edadNumero,
           foto: foto ?? null,
@@ -211,7 +223,7 @@ export default function EditarMascota() {
         <View style={styles.bloque}>
           <Text style={styles.label}>Animal</Text>
           <View style={styles.filaEspecies}>
-            {especies.map((opcion) => {
+            {ESPECIES_MASCOTA.map((opcion) => {
               const seleccionada = especie === opcion;
               return (
                 <Pressable
@@ -236,6 +248,22 @@ export default function EditarMascota() {
             })}
           </View>
         </View>
+
+        {especie === ESPECIE_OTRO ? (
+          <View style={styles.bloque}>
+            <Text style={styles.label}>¿Qué animal es?</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. Canguro"
+              placeholderTextColor="#8b978c"
+              value={otraEspecie}
+              onChangeText={setOtraEspecie}
+              autoCapitalize="words"
+              returnKeyType="next"
+              accessibilityLabel="Tipo de animal"
+            />
+          </View>
+        ) : null}
 
         <View style={styles.filaCampos}>
           <View style={[styles.bloque, styles.columnaAncha]}>

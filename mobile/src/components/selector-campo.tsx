@@ -242,10 +242,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#e4f1e0',
   },
   campoIconoCompacto: { width: 28, height: 28, borderRadius: 9 },
-  // Mismo color que el selector que lo contiene: la foto va con contain y no
-  // llena el circulo, asi que con otro color se veia el contraste alrededor.
-  campoAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#fbfdf9' },
-  avatarCompacto: { width: 28, height: 28, borderRadius: 14 },
+  campoAvatar: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#fbfdf9' },
+  avatarCompacto: { width: 28, height: 28, borderRadius: 9 },
   campoAvatarVacio: { alignItems: 'center', justifyContent: 'center' },
   campoTextoBloque: { flex: 1 },
   campoTexto: { color: '#1e3326', fontSize: 16, fontWeight: '600' },
@@ -303,7 +301,7 @@ const styles = StyleSheet.create({
   },
   opcionElegida: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
   // Mismo color que la fila que lo contiene (#fbfdf9).
-  opcionAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fbfdf9' },
+  opcionAvatar: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#fbfdf9' },
   opcionAvatarIcono: { alignItems: 'center', justifyContent: 'center' },
   opcionTextoBloque: { flex: 1 },
   opcionTitulo: { color: '#1e3326', fontSize: 16, fontWeight: '600' },

@@ -40,10 +40,6 @@ export const direccionesSedes: Record<SedeVeterinaria, string> = {
   'Vicente López': 'Av. del Libertador 1580',
 };
 
-// Encabezado de los calendarios, de lunes a domingo. El miércoles va con "M" y
-// no con la "X" de siempre, asi que martes y miércoles muestran la misma letra.
-// Vive acá y no en cada calendario porque ya se nos olvidó uno al cambiarlo:
-// los tres tienen que mostrar siempre las mismas letras.
 export const DIAS_SEMANA = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const;
 
 export function esSedeVeterinaria(value: unknown): value is SedeVeterinaria {
@@ -72,11 +68,43 @@ export function turnoSiguePendiente(turno: Pick<TurnoGuardado, 'fecha' | 'hora'>
   );
 }
 
+
+export function nombreEspecieMascota(especie: string, raza?: string | null): string {
+  const animal = especie.trim();
+  if (animal.toLocaleLowerCase() === 'otro') return raza?.trim() ?? '';
+  return animal;
+}
+
+//las pantallas que solo muestran el animal usannombreEspecieMascota.
 export function descripcionEspecieMascota(especie: string, raza?: string | null): string {
-  if (especie.trim().toLocaleLowerCase() === 'otro') {
-    return raza?.trim() ?? '';
+  const animal = nombreEspecieMascota(especie, raza);
+  const tipo = raza?.trim() ?? '';
+  // Con "Otro" el tipo ES el animal, asi que no se repite ni se agrega.
+  if (
+    especie.trim().toLocaleLowerCase() === 'otro' ||
+    !tipo ||
+    tipo.toLocaleLowerCase() === animal.toLocaleLowerCase()
+  ) {
+    return animal;
   }
-  return especie.trim();
+  return `${animal} · ${tipo}`;
+}
+
+export const ESPECIES_MASCOTA = ['Perro', 'Gato', 'Otro'] as const;
+export const ESPECIE_OTRO = 'Otro';
+
+export function dividirEspecieMascota(
+  especie: string,
+  raza: string
+): { seleccion: string; otra: string } {
+  const valor = especie.trim();
+  if (ESPECIES_MASCOTA.some((opcion) => opcion !== ESPECIE_OTRO && opcion === valor)) {
+    return { seleccion: valor, otra: '' };
+  }
+  if (valor.toLocaleLowerCase() === ESPECIE_OTRO.toLocaleLowerCase()) {
+    return { seleccion: ESPECIE_OTRO, otra: raza.trim() };
+  }
+  return { seleccion: ESPECIE_OTRO, otra: valor };
 }
 
 export const usuario = {

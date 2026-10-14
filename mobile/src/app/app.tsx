@@ -22,6 +22,7 @@ import { estilos } from '@/lib/estilos';
 import {
   descripcionEspecieMascota,
   direccionesSedes,
+  nombreEspecieMascota,
   sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
@@ -434,7 +435,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
         {item.nombre}
       </Text>
       <Text style={styles.mascotaRaza} numberOfLines={1} ellipsizeMode="tail">
-        {descripcionEspecieMascota(item.especie, item.raza)}
+        {nombreEspecieMascota(item.especie, item.raza)}
       </Text>
     </Pressable>
   );

@@ -7,13 +7,13 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { ESPECIES_MASCOTA, ESPECIE_OTRO } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
-
-const especies = ['Perro', 'Gato', 'Otro'];
 
 export default function NuevaMascota() {
   const [nombre, setNombre] = useState('');
   const [especie, setEspecie] = useState('');
+  const [otraEspecie, setOtraEspecie] = useState('');
   const [raza, setRaza] = useState('');
   const [edad, setEdad] = useState('');
   const [foto, setFoto] = useState<string | null>(null);
@@ -63,6 +63,10 @@ export default function NuevaMascota() {
       setMensaje('Completa el nombre y la especie.');
       return;
     }
+    if (especie === ESPECIE_OTRO && !otraEspecie.trim()) {
+      setMensaje('Decinos qué tipo de animal es.');
+      return;
+    }
     if (
       edadNumero !== null &&
       (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
@@ -89,7 +93,7 @@ export default function NuevaMascota() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: nombre.trim(),
-          especie,
+          especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
           raza: raza.trim() || null,
           edad: edadNumero,
           foto,
@@ -136,7 +140,7 @@ export default function NuevaMascota() {
         <View style={styles.bloque}>
           <Text style={styles.label}>Animal</Text>
           <View style={styles.filaEspecies}>
-            {especies.map((opcion) => {
+            {ESPECIES_MASCOTA.map((opcion) => {
               const seleccionada = especie === opcion;
               return (
                 <Pressable
@@ -159,6 +163,22 @@ export default function NuevaMascota() {
             })}
           </View>
         </View>
+
+        {especie === ESPECIE_OTRO ? (
+          <View style={styles.bloque}>
+            <Text style={styles.label}>¿Qué animal es?</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. Pez"
+              placeholderTextColor="#8b978c"
+              value={otraEspecie}
+              onChangeText={setOtraEspecie}
+              autoCapitalize="words"
+              returnKeyType="next"
+              accessibilityLabel="Tipo de animal"
+            />
+          </View>
+        ) : null}
 
         <View style={styles.filaCampos}>
           <View style={[styles.bloque, styles.columnaAncha]}>

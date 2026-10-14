@@ -732,9 +732,6 @@ const styles = {
     gap: 12,
     minHeight: 64,
   },
-  // El fondo va en el placeholder de la foto vacia, no en la foto: con
-  // resizeMode="contain" la imagen no llena el cuadro y el sobrante se veia
-  // como un marco verde alrededor.
   turnoFoto: { width: 56, height: 56, borderRadius: 12 },
   turnoFotoVacia: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
   turnoTexto: { flex: 1 },
@@ -769,8 +766,6 @@ const styles = {
     borderTopColor: '#eee',
   },
   modalEtiqueta: { fontWeight: '700' as const, color: '#0f3e17' },
-  // El fondo, el radio y el alto salen de estilos.qrBoton: el mismo verde que
-  // "Escanear QR de llegada".
   irBoton: { marginTop: 20, marginBottom: 0 },
   agendar: {
     paddingHorizontal: 15,
