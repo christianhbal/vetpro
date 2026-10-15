@@ -9,9 +9,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Link, Stack, router } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
+import { estilos } from '../lib/estilos';
 import { obtenerUsuarioActual } from '../lib/session';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -216,15 +217,14 @@ export default function Registro() {
         ListHeaderComponent={
           <View style={styles.header}>
             {sesionAdmin ? (
-              <Link href="/admin-usuarios" asChild>
-                <Pressable
-                  style={styles.backButton}
+              <Pressable
+                  style={({ pressed }) => [styles.backButton, pressed && estilos.buttonPressed]}
+                  onPress={() => router.push('/admin-usuarios')}
                   accessibilityRole="link"
                   accessibilityLabel="Volver a administrar usuarios"
                 >
                   <Ionicons name="arrow-back" size={22} color="#0f3e17" />
                 </Pressable>
-              </Link>
             ) : null}
             <Image
               source={require('../../assets/images/vetpro-logo-horizontal.jpg')}
@@ -285,16 +285,18 @@ export default function Registro() {
 
             {!sesionAdmin ? (
               <View style={styles.loginRow}>
-                <Text style={styles.loginPrompt}>¿Ya tienes una cuenta? </Text>
-                <Link href="/" asChild>
-                  <Pressable
-                    style={styles.loginLinkButton}
-                    accessibilityRole="link"
-                    accessibilityLabel="Inicia sesión"
-                  >
-                    <Text style={styles.loginLink}>Inicia sesión</Text>
-                  </Pressable>
-                </Link>
+                <Text style={styles.loginPrompt}>¿Ya tienes una cuenta?</Text>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.loginLinkButton,
+                    pressed && estilos.buttonPressed,
+                  ]}
+                  onPress={() => router.push('/')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Inicia sesión"
+                >
+                  <Text style={styles.loginLink}>Inicia sesión</Text>
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -465,24 +467,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // Pregunta y pastilla en la misma línea, como en el ingreso.
   loginRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    ...estilos.linkRow,
     marginTop: 22,
   },
   loginPrompt: {
-    color: '#263b32',
-    fontSize: 15,
+    ...estilos.linkPrompt,
   },
   loginLinkButton: {
-    padding: 4,
+    ...estilos.linkPill,
   },
   loginLink: {
-    color: '#1B4D3E',
-    fontSize: 15,
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
+    ...estilos.linkPillText,
   },
   confirmationRoot: {
     flex: 1,

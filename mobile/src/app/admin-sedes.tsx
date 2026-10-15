@@ -374,7 +374,7 @@ export default function AdminSedesScreen() {
                 ¿Estás seguro de que quieres eliminar la sede {sedeAEliminar.nombre}? Los turnos
                 agendados en esa sede también quedan sin sede asignada.
               </Text>
-              <View style={estilos.modalActions}>
+              <View style={[estilos.modalActions, styles.accionesCentradas]}>
                 <Pressable
                   style={[estilos.modalButton, estilos.modalButtonNeutral]}
                   onPress={() => setSedeAEliminar(null)}
@@ -524,6 +524,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  // La confirmacion es una decision, no una accion de formulario: los
+  // botones van al centro de la ventana, parejos y con el mismo peso a los lados.
+  accionesCentradas: { justifyContent: 'center' as const },
   deleteButton: {
     backgroundColor: '#a32d2d',
   },

@@ -1767,8 +1767,18 @@ app.post('/api/sessions', async (request, response) => {
       where: { email: email.trim().toLowerCase() },
     });
 
-    if (!user || user.password !== password) {
-      return response.status(401).json({ message: 'El correo o la contraseña no son correctos.' });
+    if (!user) {
+      // El correo no existe. Se le dice explícitamente porque el dueño que se
+      // equivoca al tipear el correo necesita saber si se equivocó al escribir
+      // o al escribir la clave, si no vuelve a intentar lo mismo tres veces.
+      return response.status(401).json({ message: 'Correo no registrado.' });
+    }
+
+    if (user.password !== password) {
+      // Acá sí sabemos que la cuenta existe, asi que se le puede decir al dueño
+      // que fue la contraseña. Es la falta de información más comun y la que
+      // mas confunde cuando el mensaje es "correo o contraseña".
+      return response.status(401).json({ message: 'Contraseña incorrecta.' });
     }
 
     const accessToken = createAccessToken(user.id, user.password);

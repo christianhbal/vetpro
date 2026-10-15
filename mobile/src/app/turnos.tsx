@@ -908,7 +908,7 @@ const puedeCancelar =
               </Text>
             ) : null}
 
-            <View style={estilos.modalActions}>
+            <View style={[estilos.modalActions, styles.accionesCentradas]}>
               <Pressable
                 style={({ pressed }) => [
                   estilos.modalButton,
@@ -1200,6 +1200,10 @@ const styles = {
   eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
   confirmarCancelacion: { backgroundColor: '#a32828' },
   errorCancelar: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
+  // La confirmacion es una decision, no una accion de formulario: los botones
+  // van al centro de la ventana, parejos y con el mismo peso a los lados. En los
+  // formularios siguen a la derecha porque la accion vive abajo del contenido.
+  accionesCentradas: { justifyContent: 'center' as const },
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   bloqueSede: { marginBottom: 12 },
   labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
