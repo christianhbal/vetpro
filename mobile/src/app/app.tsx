@@ -4,7 +4,7 @@ import {
   FlatList,
   Image,
   Modal,
-  // Platform,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,8 +14,8 @@ import {
 } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-// Import de la impression del QR. commented out con la funcion de abajo.
-// import { toString } from 'qrcode';
+// Import de la impresion del QR (ver imprimirQr mas abajo).
+import { toString } from 'qrcode';
 import type { DimensionValue, ImageSourcePropType } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
@@ -123,6 +123,8 @@ export default function InicioScreen() {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [modalQr, setModalQr] = useState(false);
+  const [imprimiendoQr, setImprimiendoQr] = useState(false);
+  const [qrAviso, setQrAviso] = useState('');
   const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
   // La sede es la misma que en la pantalla de Turnos: el hook la guarda en el
   // dispositivo, asi no hay que elegirla de nuevo en cada pantalla.
@@ -375,74 +377,78 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
   );
 };
   // ------------------------------------------------------------------
-  // IMPRIMIR EL QR: functionality apagada a proposito.
+  // IMPRIMIR EL QR (solo admin, desde la ventana del QR de la portada).
   //
-  // El boton que la dispara esta comentado mas abajo, en la ventana del QR.
-  // Sirve para tener el QR en papel para colgarlo en la puerta de la sede.
-  //
-  // Para volver a prenderla hay que:
-  //   1. descomentar "Platform" en el import de react-native.
-  //   2. descomentar el import de 'qrcode'.
-  //   3. descomentar toda esta funcion.
-  //   4. descomentar el boton de imprimir en la ventana del QR.
+  // Sirve para tener el QR en papel, colgado en la puerta de la sede.
+  // El aviso de error va en un texto abajo del boton y no en setErrorTurnos:
+  // ese estado se muestra en la franja de "Proximos turnos", que es del
+  // usuario normal, asi que para el admin el errorseria invisible.
   // ------------------------------------------------------------------
   // El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
   // arma una hoja simple con el mismo valor que muestra el cartel.
-  // const imprimirQr = async (sede: SedeVeterinaria) => {
-  //     // El SVG del QR se arma aca y no con un script de internet: antes la hoja
-  //     // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
-  //     const svgQr = await toString(checkInDeSede(sede), {
-  //       type: 'svg',
-  //       errorCorrectionLevel: 'M',
-  //       margin: 0,
-  //       width: 300,
-  //     });
+  const imprimirQr = async (sede: SedeVeterinaria) => {
+    if (imprimiendoQr) return;
+    setQrAviso('');
+    setImprimiendoQr(true);
 
-  //     const html = `<!DOCTYPE html>
-  // <html><head><meta charset="utf-8" /><title>QR ${sede}</title>
-  // <style>
-  //   body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
-  //   h1 { color: #0f3e17; }
-  //   svg { width: 300px; height: 300px; }
-  // </style></head>
-  // <body>
-  //   <h1>VetPro</h1>
-  //   <h2>Codigo QR de llegada</h2>
-  //   <p>Presentá este código para que los usuarios registren su llegada.</p>
-  //   <div>${svgQr}</div>
-  //   <h3 style="color: #0f3e17;">${sede}</h3>
-  // </body></html>`;
+    try {
+      // El SVG del QR se arma aca y no con un script de internet: antes la hoja
+      // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
+      const svgQr = await toString(checkInDeSede(sede), {
+        type: 'svg',
+        errorCorrectionLevel: 'M',
+        margin: 0,
+        width: 300,
+      });
 
-  //     // expo-print es nativo y no existe en web: ahi se usa el dialogo del
-  //     // navegador. Antes salia "No se pudo abrir la impresion desde aca".
-  //     if (Platform.OS === 'web') {
-  //       try {
-  //         const ventana = window.open('', '_blank', 'width=520,height=760');
-  //         if (!ventana) {
-  //           setErrorTurnos('El navegador bloqueó la impresión. Permití las ventanas emergentes.');
-  //           return;
-  //         }
-  //         ventana.document.write(html);
-  //         ventana.document.close();
-  //         ventana.focus();
-  //         await new Promise((resolver) => setTimeout(resolver, 300));
-  //         ventana.print();
-  //       } catch (printError) {
-  //         console.error('No se pudo imprimir el QR en el navegador:', printError);
-  //         setErrorTurnos('No se pudo abrir la impresión desde acá.');
-  //       }
-  //       return;
-  //     }
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>QR ${sede}</title>
+<style>
+  body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
+  h1 { color: #0f3e17; }
+  svg { width: 300px; height: 300px; }
+</style></head>
+<body>
+  <h1>VetPro</h1>
+  <h2>Codigo QR de llegada</h2>
+  <p>Presentá este código para que los usuarios registren su llegada.</p>
+  <div>${svgQr}</div>
+  <h3 style="color: #0f3e17;">${sede}</h3>
+</body></html>`;
 
-  //     try {
-  //       const Print = await import('expo-print');
-  //       const archivo = await Print.printToFileAsync({ html });
-  //       await Print.printAsync({ uri: archivo.uri });
-  //     } catch (printError) {
-  //       console.error('No se pudo imprimir el QR:', printError);
-  //       setErrorTurnos('No se pudo abrir la impresion desde aca.');
-  //     }
-  //   };
+      // expo-print es nativo y no existe en web: ahi se usa el dialogo del
+      // navegador. Antes salia "No se pudo abrir la impresion desde aca".
+      if (Platform.OS === 'web') {
+        try {
+          const ventana = window.open('', '_blank', 'width=520,height=760');
+          if (!ventana) {
+            setQrAviso('El navegador bloqueó la impresión. Permití las ventanas emergentes.');
+            return;
+          }
+          ventana.document.write(html);
+          ventana.document.close();
+          ventana.focus();
+          await new Promise((resolver) => setTimeout(resolver, 300));
+          ventana.print();
+        } catch (printError) {
+          console.error('No se pudo imprimir el QR en el navegador:', printError);
+          setQrAviso('No se pudo abrir la impresión desde acá.');
+        }
+        return;
+      }
+
+      try {
+        const Print = await import('expo-print');
+        const archivo = await Print.printToFileAsync({ html });
+        await Print.printAsync({ uri: archivo.uri });
+      } catch (printError) {
+        console.error('No se pudo imprimir el QR:', printError);
+        setQrAviso('No se pudo abrir la impresión desde acá.');
+      }
+    } finally {
+      setImprimiendoQr(false);
+    }
+  };
 
   const renderMascota = ({ item }: { item: Mascota }) => (
     <Pressable
@@ -562,6 +568,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                   style={({ pressed }) => [styles.qrBotonCompacto, pressed && estilos.buttonPressed]}
                   onPress={() => {
                     setSedeQr(sedeSeleccionada);
+                    setQrAviso('');
                     setModalQr(true);
                   }}
                   accessibilityRole="button"
@@ -804,21 +811,30 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
 
-            {/* Boton de imprimir el QR. Apagado a proposito: todavia no se
-                usa, y apretarlo por error saca el dialogo del sistema y arma
-                una hoja suelta. Para volver: descomentar el bloque de arriba
-                con la funcion imprimirQr y este boton. */}
-            {/*
+            {/* Boton de imprimir. Solo aparece en esta ventana, que es la unica
+                parte de la portada que es del admin (esAdmin). */}
             <Pressable
-              style={({ pressed }) => [estilos.addPetButton, pressed && estilos.buttonPressed]}
+              style={({ pressed }) => [
+                estilos.addPetButton,
+                styles.qrAdminBotonImprimir,
+                pressed && estilos.buttonPressed,
+                imprimiendoQr && styles.qrAdminBotonOcupado,
+              ]}
               onPress={() => void imprimirQr(sedeQr)}
+              disabled={imprimiendoQr}
               accessibilityRole="button"
               accessibilityLabel={`Imprimir el código QR de ${sedeQr}`}
             >
               <Ionicons name="print-outline" size={19} color="#fffefc" />
-              <Text style={estilos.buttonTextPrimary}>Imprimir QR - {sedeQr}</Text>
+              <Text style={estilos.buttonTextPrimary}>
+                {imprimiendoQr ? 'Preparando...' : `Imprimir QR - ${sedeQr}`}
+              </Text>
             </Pressable>
-            */}
+
+            {/* El aviso va aca adentro y no en setErrorTurnos: ese estado se
+                muestra en la franja de "Proximos turnos", que es del usuario
+                normal, y para el admin no existiria en pantalla. */}
+            {qrAviso ? <Text style={styles.qrAdminAviso}>{qrAviso}</Text> : null}
           </View>
         </View>
       </Modal>
@@ -1087,6 +1103,21 @@ saludo: {
     color: '#0f3e17',
     fontSize: 18,
     fontWeight: 'bold' as const,
+  },
+  // El boton de imprimir va debajo del marco del QR, con aire de la sede.
+  qrAdminBotonImprimir: {
+    alignSelf: 'stretch' as const,
+    marginTop: 20,
+  },
+  qrAdminBotonOcupado: {
+    opacity: 0.65,
+  },
+  qrAdminAviso: {
+    marginTop: 14,
+    color: '#6b6b6b',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center' as const,
   },
   turnPhotoPlaceholder: {
     width: 56,
