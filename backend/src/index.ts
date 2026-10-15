@@ -1236,12 +1236,16 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
       // La notificación se crea antes del borrado y sin turnoId: al eliminar el
       // turno la relación queda en null (onDelete: SetNull) y el aviso sobrevive.
       // La foto va copiada porque, sin el turno, no habria de donde sacarla y
-      // el aviso salia sin imagen mientras todos los demas la traen.
+      // el aviso salia sin imagen mientras todos los demas la traen. La sede y
+      // la hora tambien: sin ellas la ventana del aviso no puede decir de que
+      // sede era el turno que se cayo.
       const notification = await transaction.notification.create({
         data: {
           userId: turno.userId,
           mascotaNombre: turno.mascota.nombre,
           mascotaFoto: turno.mascota.foto,
+          sede: turno.sede,
+          hora: turno.hora,
           motivo,
           title: 'Tu turno fue cancelado',
           message: `El turno de ${turno.mascota.nombre} del ${formatearFechaLarga(turno.fecha)} a las ${turno.hora} fue cancelado.`,

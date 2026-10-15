@@ -191,6 +191,9 @@ async function armarCanceladosDeAdmin(): Promise<void> {
         mascotaNombre: mascota.nombre,
         mascotaFoto: mascota.foto,
         motivo: `El profesional que iba a atender a ${mascota.nombre} tuvo un imprevisto y la atencion quedo sin cobertura.`,
+        // Sede y hora copiadas antes de borrar el turno, como hace el backend.
+        sede,
+        hora,
         title: 'Tu turno fue cancelado',
         message: `El turno de ${mascota.nombre} del ${formatearFechaLarga(fecha)} a las ${hora} fue cancelado.`,
       },

@@ -80,6 +80,12 @@ model Notification {
   // Por que se cancelo, en palabras. Va aparte del mensaje porque el mensaje es
   // la linea corta de la lista y el motivo es lo que se abre al apretar.
   motivo        String?
+  // Sede y hora del turno cancelado, copiadas por la misma razon que el nombre
+  // y la foto: al cancelar el turno se borra y la relacion queda en null. Sin
+  // esto el aviso de "Tu turno fue cancelado" no podria decir donde era el turno
+  // que se cayo, y queda distinto de todos los demas.
+  sede          String?
+  hora          String?
   // Aviso general de la veterinaria ("feriado", "se muda de sede"). No es de
   // una mascota ni de un turno: la tarjeta lleva el logo de VetPro en vez de la
   // foto del paciente. Se marca para no adivinarlo en la app.

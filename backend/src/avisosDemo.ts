@@ -199,6 +199,11 @@ async function main(): Promise<void> {
         // El motivo va aparte del mensaje: el mensaje es la linea de la lista y
         // el motivo es lo que se lee al apretar el aviso.
         motivo: `El profesional que iba a atender a ${paraCancelar.mascota.nombre} tuvo un imprevisto y la atencion quedo sin cobertura.`,
+        // Sede y hora copiadas del turno, como el backend hace de verdad: sin
+        // turno no hay de donde sacarlas y la ventana del aviso no podria decir
+        // de que sede era el turno que se cayo.
+        sede: paraCancelar.sede,
+        hora: paraCancelar.hora,
         title: TITULO_CANCELADO,
         message: `El turno de ${paraCancelar.mascota.nombre} del ${formatearFechaLarga(
           paraCancelar.fecha

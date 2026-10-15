@@ -61,6 +61,15 @@ type Aviso = {
    */
   motivo: string | null;
   /**
+   * Sede y hora del turno cancelado.
+   *
+   * Vienen copiadas en el aviso y no dentro de `turno` porque al cancelar el
+   * turno se borra y la relacion queda en null. Sin estas dos, la ventana del
+   * aviso de cancelado no podria decir de que sede era el turno que se cayo.
+   */
+  sede: string | null;
+  hora: string | null;
+  /**
    * Aviso general de la veterinaria ("feriado", "nos mudamos"), no de un turno
    * ni de una mascota. La tarjeta lleva el logo de VetPro en vez de la foto del
    * paciente, porque no hay ninguno.
@@ -90,6 +99,8 @@ function esAviso(value: unknown): value is Aviso {
     (aviso.turno === null || esTurnoDelAviso(aviso.turno)) &&
     (aviso.mascota === null || esMascotaDelAviso(aviso.mascota)) &&
     (typeof aviso.motivo === 'string' || aviso.motivo === null) &&
+    (typeof aviso.sede === 'string' || aviso.sede === null || aviso.sede === undefined) &&
+    (typeof aviso.hora === 'string' || aviso.hora === null || aviso.hora === undefined) &&
     (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined)
   );
 }
@@ -231,8 +242,9 @@ function mensajeApi(resultado: unknown): string | null {
  * La comparten los cuatro avisos que tienen algo que contar:
  *  - recordatorio: que viene el turno, con la sede a la que ir y boton "Ir".
  *  - modificado: que cambio y donde quedo el turno, con boton "OK".
- *  - cancelado: por que se caigo. No hay turno (el backend lo borro), asi que
- *    no hay sede a la que ir y el boton es "OK".
+ *  - cancelado: por que se caio, mas los datos del turno que se perdio. No hay
+ *    turno (el backend lo borro), asi que la sede y la hora salen de los campos
+ *    copiados en el aviso. El boton es "OK": al turno ya no se va.
  *  - global: el aviso general de la veterinaria (feriado, cierre). Va con el
  *    titulo y la descripcion tal cual se escribieron, sin datos de sede.
  *
@@ -251,7 +263,11 @@ function VentanaAviso({
   if (tipo === null) return null;
 
   const turno = turnoDelAviso(aviso);
-  const sede = turno?.sede ?? null;
+  // Del turno si esta vivo; si ya se cancelo y borro, de los campos copiados en
+  // el aviso. Asi el cancelado muestra la misma sede, direccion y hora que el
+  // modificado y no queda como un aviso sin datos.
+  const sede = (turno?.sede ?? aviso.sede ?? null) as SedeVeterinaria | null;
+  const hora = turno?.hora ?? aviso.hora ?? null;
   const cuerpo =
     tipo === 'recordatorio' && turno
       ? `Dentro de 1 hora tienes un turno de ${turno.tipo} para ${
@@ -276,13 +292,16 @@ function VentanaAviso({
           </Pressable>
 
           <Text style={styles.avisoTitulo}>{tituloDeVentana(tipo, aviso)}</Text>
-          <Text style={tipo === 'cancelado' ? styles.avisoCuerpo : styles.avisoSubtitulo}>
-            {cuerpo}
-          </Text>
+          {/* El cancelado no lleva texto arriba: su motivo va adentro del
+              bloque, como la fila de Sede y Direccion. */}
+          {tipo !== 'cancelado' ? (
+            <Text style={styles.avisoSubtitulo}>{cuerpo}</Text>
+          ) : null}
 
-          {/* El bloque sale entero si hay turno: de ahi salen la sede, la
-              direccion y la hora. Sin turno no hay nada adonde ir. */}
-          {turno && sede ? (
+          {/* El bloque sale entero si hay sede y hora, salgan del turno vivo o de los
+              campos copiados en el aviso cuando el turno ya se borro al
+              cancelar. Sin sede no hay nada que mostrar. */}
+          {sede && hora ? (
             <View style={styles.avisoDatos}>
               <View style={styles.avisoDato}>
                 <Ionicons name="location-outline" size={17} color="#0f3e17" />
@@ -295,7 +314,7 @@ function VentanaAviso({
                 <Ionicons name="navigate-outline" size={17} color="#0f3e17" />
                 <Text style={styles.avisoDatoTexto}>
                   <Text style={styles.cartelEtiqueta}>Dirección: </Text>
-                  {direccionesSedes[sede]}
+                  {direccionesSedes[sede] ?? ''}
                 </Text>
               </View>
               {/* La hora va debajo de la dirección y no en el texto de arriba:
@@ -304,9 +323,25 @@ function VentanaAviso({
                 <Ionicons name="time-outline" size={17} color="#0f3e17" />
                 <Text style={styles.avisoDatoTexto}>
                   <Text style={styles.cartelEtiqueta}>Hora: </Text>
-                  {turno.hora}
+                  {hora}
                 </Text>
               </View>
+              {/* La descripcion va ULTIMA, con la misma etiqueta que Sede,
+                  Direccion y Hora: es un dato mas del aviso. Afuera del bloque
+                  quedaba flotando sola pegada al borde, y arriba de todo
+                  partia el bloque en dos y rompia el renglon de las filas cortas. */}
+              {tipo === 'cancelado' ? (
+                <View style={styles.avisoDatoArriba}>
+                  {/* Un bocadillo y no un documento: el motivo es lo que dijo la veterinaria,
+                  no un texto para leer. Con document-text-outline parecia una
+                  hoja de informe pegada en el medio de los datos. */}
+                  <Ionicons name="chatbox-ellipses-outline" size={17} color="#0f3e17" />
+                  <Text style={styles.avisoDatoTextoLargo}>
+                    <Text style={styles.cartelEtiqueta}>Descripción: </Text>
+                    {cuerpo}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -803,7 +838,11 @@ const styles = {
     backgroundColor: '#f1f7ee',
   },
   avisoDato: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  // La fila de "Descripcion" es la unica que ocupa varias lineas: el icono va
+  // arriba, pegado a la primera, y no al medio de todo el texto.
+  avisoDatoArriba: { flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 10 },
   avisoDatoTexto: { flex: 1, color: '#1e3326', fontSize: 14 },
+  avisoDatoTextoLargo: { flex: 1, color: '#1e3326', fontSize: 14, lineHeight: 20 },
   avisoBoton: { alignSelf: 'stretch' as const, marginTop: 18, marginBottom: 0 },
   nuevoBoton: {
     marginBottom: 14,
