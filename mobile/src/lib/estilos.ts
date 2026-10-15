@@ -61,7 +61,6 @@ export const estilos = StyleSheet.create({
     borderColor: '#efeeeb',
     borderWidth: 1,
   },
-  // Tarjeta de turno, verdes claros de la misma familia que el resto de la app.
   cardTurno: {
     backgroundColor: '#d9f0da',
     padding: 15,
@@ -257,18 +256,6 @@ petPhotoClose: {
   modalButtonTextLight: {
     color: '#fffefc',
   },
-  // Fila de salida de las pantallas de ingreso: la pregunta en texto plano y,
-  // a la derecha, la pastilla con la acción ("Haz clic aquí", "Registrarse",
-  // "Inicia sesión").
-  //
-  // La pastilla envuelve SOLO la acción. Cuando abarcaba la pregunta entera
-  // quedaba un botón enorme con un signo de interrogación adentro, y no se
-  // leía como un link sino como un cuarto botón más de la pantalla.
-  //
-  // El par va JUNTO y centrado como una sola pieza: la pregunta pegada a la
-  // pastilla y las dos en el medio. Con space-between quedaban separadas
-  // (pregunta a un borde, pastilla al otro) y a lo ancho se leía como dos
-  // textos sueltos en vez de una línea.
   linkRow: {
     width: '100%',
     flexDirection: 'row',
@@ -281,10 +268,6 @@ petPhotoClose: {
     color: '#263b32',
     fontSize: 15,
   },
-  // Pastilla de la acción. Del ancho de su texto (sin width: '100%', que era
-  // lo que la estiraba de borde a borde) y un escalón más abajo que el botón
-  // principal: 40px de alto contra los 60 de "Iniciar Sesión", con letra de
-  // 15px contra sus 18px.
   linkPill: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -313,6 +296,12 @@ petPhotoClose: {
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  formError: {
+    color: '#a32828',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
   },
   formInput: {
     width: '100%',

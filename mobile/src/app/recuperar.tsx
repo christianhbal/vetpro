@@ -5,56 +5,31 @@ import { Ionicons } from '@expo/vector-icons';
 import { estilos } from '../lib/estilos';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-/**
- * Pantalla de "¿Olvidaste tu contraseña? Haz clic aquí".
- *
- * Es el espejo de "Crear cuenta": mismo fondo, mismo logo, misma forma de los
- * campos y el botón. Acá solo se pide el correo, porque es lo único que hace
- * falta para saber a quién mandar el código.
- *
- * OJO, lo que falta: todavía no hay nada detrás. No existe el endpoint en el
- * backend ni hay servicio de correo configurado, así que la pantalla NO manda
- * ningún correo: muestra el aviso de "correo enviado" y listo. Cuando se arme
- * el flujo hay que reemplazar el cuerpo de `enviarRecuperacion` por la llamada
- * real, que va a ser:
- *
- *   await fetch(`${API_BASE_URL}/api/password-reset`, {
- *     method: 'POST',
- *     headers: { 'Content-Type': 'application/json' },
- *     body: JSON.stringify({ email: email.trim() }),
- *   });
- *
- * y leer `result.message` para el caso de error, como en el resto de la app.
- */
 export default function Recuperar() {
   const [email, setEmail] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
+  // Error del formulario, escrito arriba del boton. El modal queda solo para el
+  // exito, que hay que reconocer a mano.
+  const [error, setError] = useState('');
   const { top } = useSafeAreaInsets();
 
   const enviarRecuperacion = async () => {
     if (enviando) return;
+    setError('');
 
     if (!email.trim()) {
-      setAviso({
-        titulo: 'Falta el correo',
-        mensaje: 'Escribí el correo con el que te registraste.',
-      });
+      setError('Escribí el correo con el que te registraste.');
       return;
     }
 
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setAviso({
-        titulo: 'Correo no válido',
-        mensaje: 'Revisa el formato de tu correo electrónico.',
-      });
+      setError('Revisa el formato de tu correo electrónico.');
       return;
     }
 
     setEnviando(true);
     try {
-      // Ver el comentario de arriba del archivo: este es el lugar donde va la
-      // llamada al backend cuando exista.
       setAviso({
         titulo: 'Correo enviado',
         mensaje: `Si ${email.trim()} está registrado, te llega un código para crear una contraseña nueva.`,
@@ -87,13 +62,22 @@ export default function Recuperar() {
           placeholder="Correo electrónico"
           placeholderTextColor="#777"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(valor) => {
+            setEmail(valor);
+            setError('');
+          }}
           keyboardType="email-address"
           autoCapitalize="none"
           autoComplete="email"
           returnKeyType="done"
           onSubmitEditing={enviarRecuperacion}
         />
+
+        {error !== '' ? (
+          <Text style={estilos.formError} accessibilityRole="alert">
+            {error}
+          </Text>
+        ) : null}
 
         <Pressable
           style={({ pressed }) => [
@@ -113,21 +97,17 @@ export default function Recuperar() {
           <Text style={styles.loginPrompt}>¿Recordaste la contraseña?</Text>
 
           <Pressable
-            style={({ pressed }) => [
-              styles.loginLinkButton,
-              pressed && estilos.buttonPressed,
-            ]}
+            style={({ pressed }) => [pressed && estilos.buttonPressed]}
             onPress={() => router.push('/')}
             accessibilityRole="link"
-            accessibilityLabel="Inicia sesión"
+            accessibilityLabel="Iniciar sesión"
+            hitSlop={8}
           >
-            <Text style={styles.loginLink}>Inicia sesión</Text>
+            <Text style={styles.loginLink}>Iniciar sesión</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Misma ventana que el aviso de credenciales del ingreso: fondo oscuro,
-          X arriba a la derecha, título grande y el motivo en gris abajo. */}
       <Modal
         visible={aviso !== null}
         transparent
@@ -237,9 +217,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  // Pregunta y pastilla en la misma línea, como en el ingreso. Esta pantalla
-  // tiene una sola salida ("Inicia sesión"): el "¿No tienes una cuenta?" vive
-  // en el ingreso, que es donde tiene sentido ofrecer registrarse.
   loginRow: {
     ...estilos.linkRow,
     marginTop: 24,
@@ -247,14 +224,12 @@ const styles = StyleSheet.create({
   loginPrompt: {
     ...estilos.linkPrompt,
   },
-  loginLinkButton: {
-    ...estilos.linkPill,
-  },
   loginLink: {
-    ...estilos.linkPillText,
+    color: '#1B4D3E',
+    fontSize: 15,
+    fontWeight: 'bold' as const,
+    textDecorationLine: 'underline',
   },
-  // Mismas medidas que el aviso de credenciales del ingreso, para que las dos
-  // ventanas se vean iguales si aparecen una después de la otra.
   avisoCard: {
     width: '100%',
     maxWidth: 400,
