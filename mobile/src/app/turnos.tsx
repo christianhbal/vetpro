@@ -6,13 +6,16 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { CalendarioTurnos } from '@/components/calendario-turnos';
+import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { estilos } from '@/lib/estilos';
 import {
   direccionesSedes,
@@ -67,6 +70,48 @@ function fechaCorta(fecha: string): string {
   return `${dia}/${mes}`;
 }
 
+/**
+ * El estado de un turno, de mas nuevo a mas viejo.
+ *
+ * Solo hay dos sellos: "Atendido" y "En la sede". Un turno pendiente comun no
+ * lleva nada, se lee solo por su nombre, su tipo y su hora. Los turnos de
+ * ejemplo no se marcan: son filas de la base como cualquier otra y marcarlos
+ * ensuciaba la agenda.
+ *
+ * El que llego sin ser atendido sale como "En la sede", que es el que el
+ * veterinario tiene que atender primero.
+ */
+type SelloTurno = 'atendido' | 'enSede';
+
+function selloDe(turno: TurnoLista): SelloTurno | null {
+  if (turno.atendidoEn !== null && turno.atendidoEn !== undefined) return 'atendido';
+  if (turno.llegadaEn !== null && turno.llegadaEn !== undefined) return 'enSede';
+  return null;
+}
+
+const TEXTOS_SELLO: Record<SelloTurno, string> = {
+  atendido: 'Atendido',
+  enSede: 'En la sede',
+};
+
+const TIPOS_TURNO = ['Control', 'Vacunas', 'Estética'];
+
+/** Un horario tomado, como lo devuelve GET /api/turnos/disponibilidad. */
+type HorarioOcupado = { fecha: string; hora: string };
+
+function esHorarioOcupado(value: unknown): value is HorarioOcupado {
+  if (typeof value !== 'object' || value === null) return false;
+  const horario = value as Record<string, unknown>;
+  return typeof horario.fecha === 'string' && typeof horario.hora === 'string';
+}
+
+function mensajeApi(resultado: unknown): string | null {
+  if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
+    return null;
+  }
+  return typeof resultado.message === 'string' ? resultado.message : null;
+}
+
 // Mascota del usuario: el tipo vive en lib/turnos-ejemplo, que es donde se
 // arman los ejemplos compartidos con la portada.
 
@@ -85,12 +130,31 @@ export default function TurnosScreen() {
   const [mascotasPropias, setMascotasPropias] = useState<MascotaEjemplo[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
-  // Cancelar un turno desde esta pantalla, que es la de mirar la agenda y no la
-  // de administrarla. Es el mismo pedido que hace "Administrar turnos", pero sin
-  // pedir el motivo: aca el motivo ya se lo sabe el que esta mirando la pantalla.
+  // Cancelar un turno desde esta pantalla. Es el mismo pedido que hacia
+  // "Administrar turnos", pero el motivo se escribe aca y no en otra pantalla:
+  // el motivo va en la notificacion del cliente y es lo unico que va a leer.
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
+  const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState('');
+  // Datos del turno recien guardado o cancelado, para los avisos de exito.
+  const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
+    null
+  );
+  const [turnoCancelado, setTurnoCancelado] = useState<{ mascota: string; texto: string } | null>(
+    null
+  );
+  // Modificar un turno: solo el admin, y solo sobre los que no tienen sello.
+  const [editando, setEditando] = useState(false);
+  const [tipo, setTipo] = useState('Control');
+  const [sedeForm, setSedeForm] = useState<SedeVeterinaria>('Recoleta');
+  const [fechaForm, setFechaForm] = useState('');
+  const [horaForm, setHoraForm] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState('');
+  const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
@@ -205,14 +269,16 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   }, [turnos, esAdmin, mascotasPropias]);
 
   // Los que solo ocupan la agenda (dias completos) no se listan aca. Tampoco los
-  // que ya fueron atendidos. De los que quedan, entran los que la hora aun no
-  // venció; los de ejemplo flotan y se ven siempre.
+  // que ya fueron atendidos, ni los que ya se presentaron: esos quedan esperando
+  // en "Atender pacientes", que es la pantalla hecha para eso. De los que
+  // quedan, entran los que la hora aun no venció; los de ejemplo flotan.
   const proximos = useMemo(
     () =>
       turnosVisibles.filter(
         (turno) =>
           !turno.ocultoEnAgenda &&
           (turno.atendidoEn === null || turno.atendidoEn === undefined) &&
+          (turno.llegadaEn === null || turno.llegadaEn === undefined) &&
           (turno.esDemo === true || turnoSiguePendiente(turno, ahora))
       ),
     [turnosVisibles, ahora]
@@ -264,17 +330,156 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
    * tienen id negativo y no existen en la base, asi que no hay nada que
    * cancelar.
    */
-  const puedeCancelar =
-    citaSeleccionada !== null &&
-    citaSeleccionada.guardado.id > 0 &&
-    (citaSeleccionada.guardado.atendidoEn === null ||
-      citaSeleccionada.guardado.atendidoEn === undefined) &&
-    (citaSeleccionada.guardado.llegadaEn === null ||
-      citaSeleccionada.guardado.llegadaEn === undefined);
+const puedeCancelar =
+   citaSeleccionada !== null &&
+   citaSeleccionada.guardado.id > 0 &&
+   (citaSeleccionada.guardado.atendidoEn === null ||
+   citaSeleccionada.guardado.atendidoEn === undefined) &&
+   (citaSeleccionada.guardado.llegadaEn === null ||
+   citaSeleccionada.guardado.llegadaEn === undefined);
+
+  // Modificar y cancelar son lo mismo en cuanto a si se puede: un turno que ya
+  // se atendio o que se presento no se tocan mas. El backend tambien rechaza el
+  // DELETE de esos dos, asi que en vez de dejar el boton y que falle, no se
+  // ofrece.
+  const puedeEditar =
+   esAdmin &&
+   citaSeleccionada !== null &&
+   citaSeleccionada.guardado.id > 0 &&
+   selloDe(citaSeleccionada.guardado) === null;
+
+
+  // Los horarios tomados del mes, para que el campo de hora no ofrezca uno que
+  // ya esta ocupado.
+  const cargarDisponibilidad = useCallback(
+    async (year: number, month: number, sedeConsultada: SedeVeterinaria) => {
+      const mes = `${year}-${String(month).padStart(2, '0')}`;
+      setCargandoDisponibilidad(true);
+      setErrorDisponibilidad('');
+      setHorariosOcupados([]);
+      try {
+        const usuario = await obtenerUsuarioActual();
+        if (!usuario) {
+          throw new Error('Inicia sesión para consultar la disponibilidad.');
+        }
+        const response = await fetch(
+          `${API_BASE_URL}/api/turnos/disponibilidad?mes=${encodeURIComponent(mes)}&sede=${encodeURIComponent(sedeConsultada)}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
+        );
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(mensajeApi(result) ?? 'No se pudo cargar la disponibilidad.');
+        }
+        if (!Array.isArray(result) || !result.every(esHorarioOcupado)) {
+          throw new Error('La API devolvió horarios ocupados inválidos.');
+        }
+        setHorariosOcupados(result);
+      } catch (requestError) {
+        setErrorDisponibilidad(
+          requestError instanceof TypeError
+            ? apiUnreachableMessage(requestError)
+            : requestError instanceof Error
+              ? requestError.message
+              : apiUnreachableMessage(requestError)
+        );
+      } finally {
+        setCargandoDisponibilidad(false);
+      }
+    },
+    []
+  );
+
+  const abrirEdicion = (turno: TurnoLista) => {
+    setErrorGuardado('');
+    setTipo(turno.tipo);
+    setSedeForm(turno.sede);
+    setFechaForm(turno.fecha);
+    setHoraForm(turno.hora);
+    setEditando(true);
+    const [year, month] = turno.fecha.split('-').map(Number);
+    if (year && month) void cargarDisponibilidad(year, month, turno.sede);
+  };
+
+  const guardarCambios = async () => {
+    if (!citaSeleccionada || guardando) return;
+    setErrorGuardado('');
+
+    // El backend tambien lo rechaza, pero avisar aca evita el viaje y deja el
+    // error al lado del campo.
+    if (
+      `${fechaForm.trim()}T${horaForm.trim()}` <
+      `${citaSeleccionada.guardado.fecha}T${citaSeleccionada.guardado.hora}`
+    ) {
+      setErrorGuardado(
+        'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.'
+      );
+      return;
+    }
+
+    setGuardando(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.guardado.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            tipo,
+            sede: sedeForm,
+            fecha: fechaForm.trim(),
+            hora: horaForm.trim(),
+          }),
+        }
+      );
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        setErrorGuardado(mensajeApi(result) ?? 'No se pudo modificar el turno.');
+        return;
+      }
+      if (
+        typeof result !== 'object' ||
+        result === null ||
+        !('id' in result) ||
+        result.id !== citaSeleccionada.guardado.id
+      ) {
+        throw new Error('La API no confirmó los cambios del turno.');
+      }
+
+      const nombreMascota = citaSeleccionada.guardado.mascota.nombre;
+      setEditando(false);
+      setCitaSeleccionada(null);
+      await cargarTurnos();
+      // El aviso va despues de recargar, por el mismo motivo que el cancelado.
+      setTurnoGuardado({
+        mascota: nombreMascota,
+        texto: `${tipo} · ${sedeForm} · ${fechaCorta(fechaForm.trim())} a las ${horaForm.trim()} hs`,
+      });
+    } catch (requestError) {
+      setErrorGuardado(
+        requestError instanceof TypeError
+          ? apiUnreachableMessage(requestError)
+          : requestError instanceof Error
+            ? requestError.message
+            : apiUnreachableMessage(requestError)
+      );
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   const cancelarTurno = async () => {
     if (!citaSeleccionada || cancelando || !token) return;
     setErrorCancelar('');
+
+    // El motivo lo lee el dueño en la notificación del cancelación, asi que el
+    // veterinario tiene que escribirlo. Al cliente no se le pide: él no le avisa
+    // a nadie, el motivo no tendria a donde ir.
+    const motivo = motivoCancelacion.trim();
+    if (esAdmin && motivo.length < 4) {
+      setErrorCancelar('Contá por qué se cancela: es lo que va a leer el dueño.');
+      return;
+    }
+
     setCancelando(true);
     try {
       // El veterinario cancela el turno de cualquiera y le avisa al dueño con un
@@ -288,10 +493,8 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-          // Sin cuerpo: aca se responde si o no, sin motivo. El motivo largo se
-          // escribe en "Administrar turnos", que es donde se decide que hacer
-          // con el turno.
         },
+        body: esAdmin ? JSON.stringify({ motivo }) : undefined,
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -307,12 +510,22 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
       }
 
       setConfirmarCancelacion(false);
+      setMotivoCancelacion('');
       setCitaSeleccionada(null);
       // Se recarga la agenda para que el turno desaparezca de la lista. Si la
       // recarga falla, la pantalla avisa con su propio error y el turno sigue
       // visible: mejor eso que un cartel de "listo" con un turno que ya no se
       // puede volver a tocar.
       await cargarTurnos();
+      // El aviso va despues de recargar, por el mismo motivo.
+      if (esAdmin) {
+        setTurnoCancelado({
+          mascota: citaSeleccionada.guardado.mascota.nombre,
+          texto: `${fechaCorta(citaSeleccionada.guardado.fecha)} a las ${
+            citaSeleccionada.guardado.hora
+          } hs`,
+        });
+      }
     } catch (requestError) {
       setErrorCancelar(
         requestError instanceof TypeError
@@ -327,14 +540,16 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
 
   const altoAgendar = Math.max(74, Math.round(windowHeight * 0.1));
 
-  const renderTurno = (cita: CitaLista) => (
-    <Pressable
-      key={cita.key}
-      style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
-      onPress={() => setCitaSeleccionada(cita)}
-      accessibilityRole="button"
-      accessibilityLabel={`Ver detalle de ${cita.mascota}`}
-    >
+  const renderTurno = (cita: CitaLista) => {
+    const sello = selloDe(cita.guardado);
+    return (
+      <Pressable
+        key={cita.key}
+        style={({ pressed }) => [estilos.cardTurno, pressed && estilos.buttonPressed]}
+        onPress={() => setCitaSeleccionada(cita)}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver detalle de ${cita.mascota}`}
+      >
       <View style={styles.turnoFila}>
         {cita.guardado.mascota.foto ? (
           <Image
@@ -357,11 +572,11 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
             >
               {cita.mascota} - {cita.motivo}
             </Text>
-            {/* El sello "Atendido" es informacion del veterinario: marca en la agenda
-              que ya paso. Para el cliente es su propio turno y no aporta nada. */}
-            {cita.atendido && esAdmin ? (
-              <View style={styles.selloAtendido}>
-                <Text style={styles.selloAtendidoTexto}>Atendido</Text>
+            {/* Los sellos son informacion del veterinario: le dicen en que estado
+                esta el turno. Para el cliente es su propio turno y no aporta. */}
+            {sello !== null && esAdmin ? (
+              <View style={styles.sello}>
+                <Text style={styles.selloTexto}>{TEXTOS_SELLO[sello]}</Text>
               </View>
             ) : null}
           </View>
@@ -384,7 +599,8 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
         <Ionicons name="chevron-forward" size={18} color="#8aa38c" />
       </View>
     </Pressable>
-  );
+    );
+  };
 
   const encabezadoSeccion = (titulo: string, citas: CitaLista[]) => (
     <View style={styles.listaEncabezado}>
@@ -629,14 +845,31 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                 </>
               )}
 
+              {/* El veterinario administra el turno desde aca: si no tiene sello
+                  todavia se puede modificar o cancelar. El dueño solo cancela
+                  el suyo. */}
+              {puedeEditar ? (
+                <Pressable
+                  style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
+                  onPress={() => abrirEdicion(citaSeleccionada.guardado)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Modificar el turno de ${citaSeleccionada.mascota}`}
+                >
+                  <Ionicons name="create-outline" size={19} color="#ffffff" />
+                  <Text style={styles.modificarTexto}>Modificar turno</Text>
+                </Pressable>
+              ) : null}
+
               {/* Cancelar, por el dueño o por el veterinario, y solo si el turno
-                  todavia se puede tocar. Aca no se pide el motivo: es la
-                  pantalla de mirar la agenda, el motivo se escribe en
-                  "Administrar turnos". */}
+                  todavia se puede tocar. El motivo se pide en la confirmacion,
+                  porque es lo que lee el dueño en la notificacion. Mismo estilo
+                  que "Eliminar sede": es una accion destructiva y se ve
+                  distinta del verde de guardar. */}
               {puedeCancelar ? (
                 <Pressable
-                  style={({ pressed }) => [styles.cancelar, pressed && estilos.buttonPressed]}
+                  style={({ pressed }) => [styles.eliminar, pressed && estilos.buttonPressed]}
                   onPress={() => {
+                    setMotivoCancelacion('');
                     setErrorCancelar('');
                     setConfirmarCancelacion(true);
                   }}
@@ -644,8 +877,10 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                   accessibilityRole="button"
                   accessibilityLabel={`Cancelar el turno de ${citaSeleccionada.mascota}`}
                 >
-                  <Ionicons name="close-circle-outline" size={19} color="#ffffff" />
-                  <Text style={styles.cancelarTexto}>Cancelar turno</Text>
+                  <View style={styles.eliminarFila}>
+                    <Ionicons name="close-circle-outline" size={19} color="#8a5324" />
+                    <Text style={styles.eliminarTexto}>Cancelar turno</Text>
+                  </View>
                 </Pressable>
               ) : null}
             </View>
@@ -680,6 +915,29 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
               {esAdmin ? 'Al dueño le llega la cancelación.' : 'La veterinaria se queda sin este turno.'}
             </Text>
 
+            {/* Solo el veterinario escribe el motivo: va en la notificación que
+                recibe el dueño y es lo único que va a leer. */}
+            {esAdmin ? (
+              <>
+                <Text style={styles.motivoLabel}>Motivo de la cancelación</Text>
+                <TextInput
+                  style={styles.motivoInput}
+                  placeholder="Ej. El profesional que iba a atenderla tuvo un imprevisto."
+                  placeholderTextColor="#7a8378"
+                  value={motivoCancelacion}
+                  onChangeText={setMotivoCancelacion}
+                  multiline
+                  numberOfLines={4}
+                  maxLength={400}
+                  textAlignVertical="top"
+                  accessibilityLabel="Motivo de la cancelación del turno"
+                />
+                <Text style={styles.motivoAyuda}>
+                  Se le manda tal cual lo escribas al dueño, en la notificación.
+                </Text>
+              </>
+            ) : null}
+
             {errorCancelar ? (
               <Text style={styles.errorCancelar} accessibilityRole="alert">
                 {errorCancelar}
@@ -695,6 +953,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
                 ]}
                 onPress={() => {
                   setConfirmarCancelacion(false);
+                  setMotivoCancelacion('');
                   setErrorCancelar('');
                 }}
                 accessibilityRole="button"
@@ -722,15 +981,216 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           </View>
         </View>
       </Modal>
+
+      {/* Modificar el turno. Modal propio y no campos dentro del de detalle:
+          son cuatro datos y un calendario de horarios, y metidos en el detalle
+          el cartel queda mas alto que la pantalla. */}
+      <Modal
+        visible={editando}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setEditando(false)}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setEditando(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar edición de turno"
+          />
+          <View style={estilos.modalCard}>
+            <Pressable
+              style={({ pressed }) => [estilos.petPhotoClose, pressed && estilos.buttonPressed]}
+              onPress={() => setEditando(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar edición de turno"
+            >
+              <Ionicons name="close" size={24} color="#263b32" />
+            </Pressable>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={estilos.modalTitle}>Modificar turno</Text>
+              {citaSeleccionada ? (
+                <Text style={styles.modalNombreMascota}>
+                  {citaSeleccionada.guardado.mascota.nombre}
+                </Text>
+              ) : null}
+
+              <Text style={styles.label}>Tipo de turno</Text>
+              <View style={styles.filaOpciones}>
+                {TIPOS_TURNO.map((opcion) => {
+                  const elegida = tipo === opcion;
+                  return (
+                    <Pressable
+                      key={opcion}
+                      onPress={() => setTipo(opcion)}
+                      accessibilityRole="radio"
+                      accessibilityLabel={opcion}
+                      accessibilityState={{ selected: elegida }}
+                      style={({ pressed }) => [
+                        styles.opcion,
+                        elegida && styles.opcionSeleccionada,
+                        pressed && estilos.buttonPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.opcionTexto, elegida && styles.opcionTextoSeleccionado]}
+                      >
+                        {opcion}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>Sede</Text>
+              <View style={styles.filaOpciones}>
+                {sedesVeterinaria.map((opcion) => {
+                  const elegida = sedeForm === opcion;
+                  return (
+                    <Pressable
+                      key={opcion}
+                      onPress={() => {
+                        if (opcion === sedeForm) return;
+                        setSedeForm(opcion);
+                        const [year, month] = fechaForm.split('-').map(Number);
+                        if (year && month) void cargarDisponibilidad(year, month, opcion);
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityLabel={opcion}
+                      accessibilityState={{ selected: elegida }}
+                      style={({ pressed }) => [
+                        styles.opcion,
+                        elegida && styles.opcionSeleccionada,
+                        pressed && estilos.buttonPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.opcionTexto, elegida && styles.opcionTextoSeleccionado]}
+                      >
+                        {opcion}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.bloqueCampo}>
+                <TurnoDateTimeField
+                  tipo="fecha"
+                  valor={fechaForm}
+                  onChange={(valor) => {
+                    setFechaForm(valor);
+                    setHoraForm('');
+                  }}
+                  onMonthChange={(year, month) => void cargarDisponibilidad(year, month, sedeForm)}
+                />
+              </View>
+
+              <View style={styles.bloqueCampo}>
+                <TurnoDateTimeField
+                  tipo="hora"
+                  valor={horaForm}
+                  onChange={setHoraForm}
+                  fechaSeleccionadaValor={fechaForm}
+                  horariosOcupados={horariosOcupados}
+                  cargandoDisponibilidad={cargandoDisponibilidad}
+                  errorDisponibilidad={errorDisponibilidad}
+                />
+              </View>
+
+              {errorGuardado ? (
+                <Text style={styles.errorGuardado} accessibilityRole="alert">
+                  {errorGuardado}
+                </Text>
+              ) : null}
+
+              <Pressable
+                style={({ pressed }) => [styles.confirmar, pressed && estilos.buttonPressed]}
+                onPress={() => void guardarCambios()}
+                disabled={guardando}
+                accessibilityRole="button"
+                accessibilityState={{ busy: guardando }}
+              >
+                <Text style={styles.confirmarTexto}>
+                  {guardando ? 'Guardando...' : 'Guardar cambios'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <AvisoExito
+        visible={turnoGuardado !== null}
+        titulo="¡Turno actualizado!"
+        subtitulo={
+          turnoGuardado !== null
+            ? `Guardamos los cambios del turno de ${turnoGuardado.mascota}: ${turnoGuardado.texto}.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de turno actualizado"
+        onCerrar={() => setTurnoGuardado(null)}
+      />
+
+      <AvisoExito
+        visible={turnoCancelado !== null}
+        titulo="¡Turno cancelado!"
+        subtitulo={
+          turnoCancelado !== null
+            ? `Se canceló el turno de ${turnoCancelado.mascota} del ${turnoCancelado.texto} y el cliente fue notificado.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de turno cancelado"
+        onCerrar={() => setTurnoCancelado(null)}
+      />
     </AppDrawer>
   );
 }
 
 const styles = {
   pantalla: { flex: 1, backgroundColor: '#fffefc' },
-  // Boton de cancelar: rojo, no verde. Es la unica accion de la pantalla que
-  // borra algo, y verde se leeria como "guardar".
-  cancelar: {
+  modalNombreMascota: {
+    color: '#0f3e17',
+    fontSize: 20,
+    fontWeight: 'bold' as const,
+    marginTop: 2,
+  },
+  errorGuardado: { color: '#a32828', fontSize: 14, lineHeight: 20, marginTop: 10 },
+  label: {
+    color: '#4d6154',
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  filaOpciones: { flexDirection: 'row' as const, gap: 6, marginBottom: 4 },
+  opcion: {
+    flex: 1,
+    alignItems: 'center' as const,
+    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#fffefc',
+  },
+  opcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
+  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
+  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
+  bloqueCampo: { marginTop: 12 },
+  confirmar: {
+    alignItems: 'center' as const,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#0f3e17',
+  },
+  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
+  // Boton de modificar: verde oscuro, el mismo que "Guardar cambios". Es la
+  // accion que lleva a editar, no la que borra.
+  modificar: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
@@ -738,9 +1198,46 @@ const styles = {
     marginTop: 18,
     paddingVertical: 13,
     borderRadius: 12,
-    backgroundColor: '#a32828',
+    backgroundColor: '#0f3e17',
   },
-  cancelarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' as const },
+  modificarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' as const },
+  motivoLabel: {
+    color: '#4d6154',
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  motivoInput: {
+    minHeight: 96,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: '#cfdcc9',
+    borderRadius: 12,
+    backgroundColor: '#f3f7f1',
+    fontSize: 15,
+    color: '#1e3326',
+  },
+  motivoAyuda: { marginTop: 6, color: '#69746a', fontSize: 12, lineHeight: 18 },
+  // Mismos valores que "Eliminar sede" en la pantalla de sedes: es la misma
+  // accion, borrar algo de la agenda.
+  eliminar: {
+    alignItems: 'center' as const,
+    marginTop: 10,
+    paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: '#d3a179',
+    borderRadius: 12,
+    backgroundColor: '#f7ede6',
+  },
+  eliminarFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+  },
+  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
   confirmarCancelacion: { backgroundColor: '#a32828' },
   errorCancelar: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
@@ -791,24 +1288,16 @@ const styles = {
   turnoFoto: { width: 56, height: 56, borderRadius: 12 },
   turnoFotoVacia: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
   turnoTexto: { flex: 1 },
-  dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
-  turnPhotoPlaceholder: {
-    width: 56,
-    height: 56,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: 12,
-    backgroundColor: '#e2f2e4',
+dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+sello: {
+   borderWidth: 1,
+   borderColor: '#0f3e17',
+   borderRadius: 10,
+   paddingHorizontal: 8,
+   paddingVertical: 2,
+   backgroundColor: '#e8f3e4',
   },
-  selloAtendido: {
-    borderWidth: 1,
-    borderColor: '#0f3e17',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    backgroundColor: '#e8f3e4',
-  },
-  selloAtendidoTexto: { color: '#0f3e17', fontSize: 11, fontWeight: '700' as const },
+  selloTexto: { color: '#0f3e17', fontSize: 11, fontWeight: '700' as const },
   turnoEncabezado: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
