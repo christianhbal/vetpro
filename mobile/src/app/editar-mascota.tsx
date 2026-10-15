@@ -10,20 +10,10 @@ import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   dividirEspecieMascota,
   esSexoMascota,
-  ESPECIES_MASCOTA,
-  ESPECIE_OTRO,
-  SEXOS_MASCOTA,
   type SexoMascota,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
-/**
- * Edicion de una mascota. Es la misma pantalla que "Agregar mascota" con los
- * campos ya cargados y un PATCH en vez de un POST.
- *
- * La foto no viaja por parametro de router: es una data URI larga y rompe el
- * enlace. Se vuelve a pedir a la API cuando se entra a la pantalla.
- */
 export default function EditarMascota() {
   const params = useLocalSearchParams<{
     id?: string;
@@ -40,12 +30,18 @@ export default function EditarMascota() {
     () => dividirEspecieMascota(params.especie ?? '', params.raza ?? ''),
     [params.especie, params.raza]
   );
-  const [especie, setEspecie] = useState(inicial.seleccion);
-  const [otraEspecie, setOtraEspecie] = useState(inicial.otra);
+  // Solo para mostrar. La especie no se manda en el PATCH, asi que no hace
+  // falta un estado editable: sale de dividirEspecieMascota.
+  const datosAnimal = inicial.otra || inicial.seleccion || 'Sin definir';
+  // La raza si se edita: es el unico de los tres que el usuario puede haber
+  // dejado en blanco al crearla y querer completar despues.
   const [raza, setRaza] = useState(params.raza ?? '');
-  const [sexo, setSexo] = useState<SexoMascota | ''>(
+  // El sexo solo se muestra, pero se relee de la API al entrar para que no se vea
+  // viejo si se entro por un link directo.
+  const [sexoDatos, setSexoDatos] = useState<SexoMascota | ''>(
     esSexoMascota(params.sexo) ? params.sexo : ''
   );
+  const sexo = sexoDatos;
   const [edad, setEdad] = useState(params.edad ?? '');
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
@@ -71,7 +67,7 @@ export default function EditarMascota() {
           (item) => typeof item === 'object' && item !== null && 'id' in item && item.id === id
         ) as { foto?: string | null; sexo?: string | null } | undefined;
         setFoto(encontrada?.foto ?? null);
-        if (esSexoMascota(encontrada?.sexo)) setSexo(encontrada.sexo);
+        if (esSexoMascota(encontrada?.sexo)) setSexoDatos(encontrada.sexo);
       } catch {
         // Sin foto se muestra la huella: no es motivo para cortar la pantalla.
       }
@@ -122,16 +118,8 @@ export default function EditarMascota() {
     }
 
     const edadNumero = edad.trim() ? Number(edad) : null;
-    if (!nombre.trim() || !especie) {
-      setMensaje('Completa el nombre y la especie.');
-      return;
-    }
-    if (especie === ESPECIE_OTRO && !otraEspecie.trim()) {
-      setMensaje('Decinos qué tipo de animal es.');
-      return;
-    }
-    if (!sexo) {
-      setMensaje('Elegí si tu mascota es macho o hembra.');
+    if (!nombre.trim()) {
+      setMensaje('El nombre no puede quedar vacío.');
       return;
     }
     if (
@@ -153,15 +141,16 @@ export default function EditarMascota() {
       const response = await fetch(`${API_BASE_URL}/api/mascotas/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nombre: nombre.trim(),
-          especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
-          raza: raza.trim() || null,
-          sexo,
-          edad: edadNumero,
-          foto: foto ?? null,
-          userId: usuario.id,
-        }),
+// Solo van los campos que esta pantalla deja cambiar. El PATCH es parcial, asi
+      // que animal, sexo y raza se quedan como estan: no se mandan y el backend
+      // no los toca.
+      body: JSON.stringify({
+        nombre: nombre.trim(),
+        raza: raza.trim() || null,
+        edad: edadNumero,
+        foto: foto ?? null,
+        userId: usuario.id,
+      }),
       });
       const resultado = await response.json();
 
@@ -220,6 +209,17 @@ export default function EditarMascota() {
         contentContainerStyle={styles.contenido}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.fijoBloque}>
+          <View style={styles.fijoFila}>
+            <Text style={styles.fijoEtiqueta}>Animal</Text>
+            <Text style={styles.fijoValor}>{datosAnimal}</Text>
+          </View>
+          <View style={styles.fijoFila}>
+            <Text style={styles.fijoEtiqueta}>Sexo</Text>
+            <Text style={styles.fijoValor}>{sexo || 'Sin definir'}</Text>
+          </View>
+        </View>
+
         <View style={styles.bloque}>
           <Text style={styles.label}>Nombre</Text>
           <TextInput
@@ -234,109 +234,30 @@ export default function EditarMascota() {
         </View>
 
         <View style={styles.bloque}>
-          <Text style={styles.label}>Animal</Text>
-          <View style={styles.filaEspecies}>
-            {ESPECIES_MASCOTA.map((opcion) => {
-              const seleccionada = especie === opcion;
-              return (
-                <Pressable
-                  key={opcion}
-                  onPress={() => setEspecie(opcion)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={opcion}
-                  accessibilityState={{ selected: seleccionada }}
-                  style={({ pressed }) => [
-                    styles.especieOpcion,
-                    seleccionada && styles.especieOpcionSeleccionada,
-                    pressed && estilos.buttonPressed,
-                  ]}
-                >
-                  <Text
-                    style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}
-                  >
-                    {opcion}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <Text style={styles.label}>Raza (opcional)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej. mestizo"
+            placeholderTextColor="#8b978c"
+            value={raza}
+            onChangeText={setRaza}
+            autoCapitalize="words"
+            returnKeyType="next"
+          />
         </View>
 
         <View style={styles.bloque}>
-          <Text style={styles.label}>Sexo</Text>
-          <View style={styles.filaEspecies}>
-            {SEXOS_MASCOTA.map((opcion) => {
-              const seleccionada = sexo === opcion;
-              return (
-                <Pressable
-                  key={opcion}
-                  onPress={() => setSexo(opcion)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={opcion}
-                  accessibilityState={{ selected: seleccionada }}
-                  style={({ pressed }) => [
-                    styles.especieOpcion,
-                    seleccionada && styles.especieOpcionSeleccionada,
-                    pressed && estilos.buttonPressed,
-                  ]}
-                >
-                  <Ionicons
-                    name={opcion === 'Macho' ? 'male-outline' : 'female-outline'}
-                    size={17}
-                    color={seleccionada ? '#0f3e17' : '#556b58'}
-                  />
-                  <Text style={[styles.especieTexto, seleccionada && styles.especieTextoSeleccionado]}>
-                    {opcion}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {especie === ESPECIE_OTRO ? (
-          <View style={styles.bloque}>
-            <Text style={styles.label}>¿Qué animal es?</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. Canguro"
-              placeholderTextColor="#8b978c"
-              value={otraEspecie}
-              onChangeText={setOtraEspecie}
-              autoCapitalize="words"
-              returnKeyType="next"
-              accessibilityLabel="Tipo de animal"
-            />
-          </View>
-        ) : null}
-
-        <View style={styles.filaCampos}>
-          <View style={[styles.bloque, styles.columnaAncha]}>
-            <Text style={styles.label}>Raza (opcional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. mestizo"
-              placeholderTextColor="#8b978c"
-              value={raza}
-              onChangeText={setRaza}
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-          </View>
-
-          <View style={styles.columnaAngosta}>
-            <Text style={styles.label}>Edad (años)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. 2"
-              placeholderTextColor="#8b978c"
-              value={edad}
-              onChangeText={setEdad}
-              keyboardType="decimal-pad"
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
-            />
-          </View>
+          <Text style={styles.label}>Edad (años)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej. 2"
+            placeholderTextColor="#8b978c"
+            value={edad}
+            onChangeText={setEdad}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+          />
         </View>
 
         <View style={styles.bloque}>
@@ -407,9 +328,8 @@ export default function EditarMascota() {
           accessibilityRole="button"
           accessibilityLabel={`Eliminar a ${nombre.trim() || 'la mascota'}`}
         >
-          <Ionicons name="trash-outline" size={18} color="#a32828" />
-          <Text style={styles.eliminarTexto}>Eliminar mascota</Text>
-        </Pressable>
+                  <Text style={styles.eliminarTexto}>Eliminar mascota</Text>
+                </Pressable>
       </ScrollView>
 
       <Modal
@@ -486,6 +406,24 @@ const styles = {
     paddingBottom: 26,
   },
   bloque: { marginBottom: 10 },
+  // Bloque de solo lectura: los datos que no se cambian desde esta pantalla.
+  fijoBloque: {
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dfe9dc',
+    backgroundColor: '#f3f7f1',
+  },
+  fijoFila: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+    paddingVertical: 3,
+  },
+  fijoEtiqueta: { color: '#69746a', fontSize: 14 },
+  fijoValor: { flex: 1, color: '#0f3e17', fontSize: 14, fontWeight: '600' as const, textAlign: 'right' as const },
   label: {
     marginBottom: 6,
     color: '#4d6154',
@@ -503,25 +441,6 @@ const styles = {
     fontSize: 15,
     color: '#1e3326',
   },
-  filaCampos: { flexDirection: 'row' as const, gap: 8 },
-  columnaAncha: { flex: 1.5, marginBottom: 10 },
-  columnaAngosta: { flex: 1, marginBottom: 10 },
-  filaEspecies: { flexDirection: 'row' as const, gap: 6 },
-  especieOpcion: {
-    flex: 1,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    gap: 7,
-    paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: '#cfdcc9',
-    borderRadius: 12,
-    backgroundColor: '#fffefc',
-  },
-  especieOpcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  especieTexto: { color: '#1e3326', fontSize: 14, fontWeight: '500' as const },
-  especieTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
   filaFoto: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
   fotoMarco: {
     width: 76,
@@ -562,18 +481,16 @@ const styles = {
     backgroundColor: '#0f3e17',
   },
   guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
+  // Mismos valores que "Eliminar sede": es la misma accion, borrar algo.
   eliminar: {
-    flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    gap: 8,
     marginTop: 10,
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderWidth: 1.5,
-    borderColor: '#e0b3b3',
+    borderColor: '#d3a179',
     borderRadius: 12,
-    backgroundColor: '#fffefc',
+    backgroundColor: '#f7ede6',
   },
-  eliminarTexto: { color: '#a32828', fontSize: 15, fontWeight: '600' as const },
+  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
   eliminarConfirmar: { backgroundColor: '#a32828' },
 };

@@ -70,17 +70,6 @@ function fechaCorta(fecha: string): string {
   return `${dia}/${mes}`;
 }
 
-/**
- * El estado de un turno, de mas nuevo a mas viejo.
- *
- * Solo hay dos sellos: "Atendido" y "En la sede". Un turno pendiente comun no
- * lleva nada, se lee solo por su nombre, su tipo y su hora. Los turnos de
- * ejemplo no se marcan: son filas de la base como cualquier otra y marcarlos
- * ensuciaba la agenda.
- *
- * El que llego sin ser atendido sale como "En la sede", que es el que el
- * veterinario tiene que atender primero.
- */
 type SelloTurno = 'atendido' | 'enSede';
 
 function selloDe(turno: TurnoLista): SelloTurno | null {
@@ -130,9 +119,6 @@ export default function TurnosScreen() {
   const [mascotasPropias, setMascotasPropias] = useState<MascotaEjemplo[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
-  // Cancelar un turno desde esta pantalla. Es el mismo pedido que hacia
-  // "Administrar turnos", pero el motivo se escribe aca y no en otra pantalla:
-  // el motivo va en la notificacion del cliente y es lo unico que va a leer.
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [cancelando, setCancelando] = useState(false);
@@ -252,26 +238,12 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     guardado: turno,
   });
 
-  // Turnos que se ven segun el rol.
-  //  - admin: la agenda completa de la veterinaria, tal cual la devuelve la API.
-  //  - cliente: sus propios turnos de la base, los que creo
-  //    clienteTurnosDemo.ts.
-  //
-  // Antes el cliente veia ejemplos armados en el frontend, con ids negativos.
-  // Eso hacia dos cosas malas: no eran filas de la base, asi que el veterinario
-  // no podia cancelarlos desde la misma pantalla que los veia, y la agenda del
-  // admin no los tenia. Los ejemplos quedan de respaldo para cuando todavia no
-  // se corrio ese script, asi que la pantalla nunca queda vacia.
   const turnosVisibles = useMemo(() => {
     if (esAdmin) return turnos;
     if (turnos.length > 0) return turnos;
     return turnosEjemploCliente(mascotasPropias);
   }, [turnos, esAdmin, mascotasPropias]);
 
-  // Los que solo ocupan la agenda (dias completos) no se listan aca. Tampoco los
-  // que ya fueron atendidos, ni los que ya se presentaron: esos quedan esperando
-  // en "Atender pacientes", que es la pantalla hecha para eso. De los que
-  // quedan, entran los que la hora aun no venció; los de ejemplo flotan.
   const proximos = useMemo(
     () =>
       turnosVisibles.filter(
@@ -338,10 +310,6 @@ const puedeCancelar =
    (citaSeleccionada.guardado.llegadaEn === null ||
    citaSeleccionada.guardado.llegadaEn === undefined);
 
-  // Modificar y cancelar son lo mismo en cuanto a si se puede: un turno que ya
-  // se atendio o que se presento no se tocan mas. El backend tambien rechaza el
-  // DELETE de esos dos, asi que en vez de dejar el boton y que falle, no se
-  // ofrece.
   const puedeEditar =
    esAdmin &&
    citaSeleccionada !== null &&
@@ -399,6 +367,14 @@ const puedeCancelar =
     const [year, month] = turno.fecha.split('-').map(Number);
     if (year && month) void cargarDisponibilidad(year, month, turno.sede);
   };
+
+  const horariosOcupadosEfectivos = useMemo(() => {
+    if (!citaSeleccionada) return horariosOcupados;
+    const propio = citaSeleccionada.guardado;
+    return horariosOcupados.filter(
+      (horario) => !(horario.fecha === propio.fecha && horario.hora === propio.hora)
+    );
+  }, [citaSeleccionada, horariosOcupados]);
 
   const guardarCambios = async () => {
     if (!citaSeleccionada || guardando) return;
@@ -572,8 +548,6 @@ const puedeCancelar =
             >
               {cita.mascota} - {cita.motivo}
             </Text>
-            {/* Los sellos son informacion del veterinario: le dicen en que estado
-                esta el turno. Para el cliente es su propio turno y no aporta. */}
             {sello !== null && esAdmin ? (
               <View style={styles.sello}>
                 <Text style={styles.selloTexto}>{TEXTOS_SELLO[sello]}</Text>
@@ -845,9 +819,6 @@ const puedeCancelar =
                 </>
               )}
 
-              {/* El veterinario administra el turno desde aca: si no tiene sello
-                  todavia se puede modificar o cancelar. El dueño solo cancela
-                  el suyo. */}
               {puedeEditar ? (
                 <Pressable
                   style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
@@ -860,11 +831,6 @@ const puedeCancelar =
                 </Pressable>
               ) : null}
 
-              {/* Cancelar, por el dueño o por el veterinario, y solo si el turno
-                  todavia se puede tocar. El motivo se pide en la confirmacion,
-                  porque es lo que lee el dueño en la notificacion. Mismo estilo
-                  que "Eliminar sede": es una accion destructiva y se ve
-                  distinta del verde de guardar. */}
               {puedeCancelar ? (
                 <Pressable
                   style={({ pressed }) => [styles.eliminar, pressed && estilos.buttonPressed]}
@@ -915,8 +881,6 @@ const puedeCancelar =
               {esAdmin ? 'Al dueño le llega la cancelación.' : 'La veterinaria se queda sin este turno.'}
             </Text>
 
-            {/* Solo el veterinario escribe el motivo: va en la notificación que
-                recibe el dueño y es lo único que va a leer. */}
             {esAdmin ? (
               <>
                 <Text style={styles.motivoLabel}>Motivo de la cancelación</Text>
@@ -1095,7 +1059,7 @@ const puedeCancelar =
                   valor={horaForm}
                   onChange={setHoraForm}
                   fechaSeleccionadaValor={fechaForm}
-                  horariosOcupados={horariosOcupados}
+                  horariosOcupados={horariosOcupadosEfectivos}
                   cargandoDisponibilidad={cargandoDisponibilidad}
                   errorDisponibilidad={errorDisponibilidad}
                 />
@@ -1188,8 +1152,6 @@ const styles = {
     backgroundColor: '#0f3e17',
   },
   confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
-  // Boton de modificar: verde oscuro, el mismo que "Guardar cambios". Es la
-  // accion que lleva a editar, no la que borra.
   modificar: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -1220,8 +1182,6 @@ const styles = {
     color: '#1e3326',
   },
   motivoAyuda: { marginTop: 6, color: '#69746a', fontSize: 12, lineHeight: 18 },
-  // Mismos valores que "Eliminar sede" en la pantalla de sedes: es la misma
-  // accion, borrar algo de la agenda.
   eliminar: {
     alignItems: 'center' as const,
     marginTop: 10,

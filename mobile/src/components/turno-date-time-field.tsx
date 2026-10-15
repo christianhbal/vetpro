@@ -244,11 +244,11 @@ export default function TurnoDateTimeField({
             ) : (
               <>
                 <Text style={styles.slotSubtitle}>
-                  {valor
+                  {fechaSeleccionadaValor
                     ? `Horarios para el ${fechaSeleccionada.toLocaleDateString('es-AR')}`
                     : 'Primero selecciona una fecha.'}
                 </Text>
-                {!valor ? (
+                {!fechaSeleccionadaValor ? (
                   <Text style={styles.availabilityMessage}>Selecciona una fecha para ver los horarios.</Text>
                 ) : cargandoDisponibilidad ? (
                   <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>

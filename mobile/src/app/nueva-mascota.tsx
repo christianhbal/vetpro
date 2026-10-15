@@ -170,6 +170,24 @@ export default function NuevaMascota() {
           </View>
         </View>
 
+        {/* Va arriba de Sexo y Raza: es el desglose del boton "Otro", asi que
+            tiene que quedar pegado a la pregunta que lo abre. */}
+        {especie === ESPECIE_OTRO ? (
+          <View style={styles.bloque}>
+            <Text style={styles.label}>¿Qué animal es?</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. Pez"
+              placeholderTextColor="#8b978c"
+              value={otraEspecie}
+              onChangeText={setOtraEspecie}
+              autoCapitalize="words"
+              returnKeyType="next"
+              accessibilityLabel="Tipo de animal"
+            />
+          </View>
+        ) : null}
+
         <View style={styles.bloque}>
           <Text style={styles.label}>Sexo</Text>
           <View style={styles.filaEspecies}>
@@ -201,22 +219,6 @@ export default function NuevaMascota() {
             })}
           </View>
         </View>
-
-        {especie === ESPECIE_OTRO ? (
-          <View style={styles.bloque}>
-            <Text style={styles.label}>¿Qué animal es?</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. Pez"
-              placeholderTextColor="#8b978c"
-              value={otraEspecie}
-              onChangeText={setOtraEspecie}
-              autoCapitalize="words"
-              returnKeyType="next"
-              accessibilityLabel="Tipo de animal"
-            />
-          </View>
-        ) : null}
 
         <View style={styles.filaCampos}>
           <View style={[styles.bloque, styles.columnaAncha]}>
