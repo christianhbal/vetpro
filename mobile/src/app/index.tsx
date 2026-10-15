@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
 import { guardarUsuarioActual } from '../lib/session';
@@ -28,16 +27,11 @@ export default function Index() {
 
   const handleLogin = async () => {
     if (isSubmitting) return;
+    setError('');
     if (!email.trim() || !password) {
-      Alert.alert('Faltan datos', 'Ingresa tu correo y contraseña.');
+      setError('Ingresa tu correo y contraseña.');
       return;
     }
-
-    // El error va escrito en el formulario, no en un cartel del sistema: el
-    // cartel no existe en la web (react-native-web no lo implementa), asi que
-    // en el navegador no se vería nada, y además el dueño ve el motivo al
-    // lado de los campos que tiene que corregir.
-    setError('');
 
     setIsSubmitting(true);
     try {
@@ -92,8 +86,8 @@ export default function Index() {
           pushError instanceof Error ? pushError.message : 'Inténtalo nuevamente más tarde.'
         );
       }
-    } catch (error) {
-      Alert.alert('No hay conexión con la API', apiUnreachableMessage(error));
+    } catch (requestError) {
+      setError(apiUnreachableMessage(requestError));
     } finally {
       setIsSubmitting(false);
     }
@@ -104,7 +98,10 @@ export default function Index() {
       id: 'email',
       placeholder: 'Correo Electrónico',
       value: email,
-      onChangeText: setEmail,
+      onChangeText: (valor) => {
+        setEmail(valor);
+        setError('');
+      },
       keyboardType: 'email-address',
       autoComplete: 'email',
       returnKeyType: 'next',
@@ -113,7 +110,10 @@ export default function Index() {
       id: 'password',
       placeholder: 'Contraseña',
       value: password,
-      onChangeText: setPassword,
+      onChangeText: (valor) => {
+        setPassword(valor);
+        setError('');
+      },
       secureTextEntry: !showPassword,
       autoComplete: 'current-password',
       returnKeyType: 'done',
@@ -170,6 +170,12 @@ export default function Index() {
         )}
         ListFooterComponent={
           <View style={styles.footer}>
+            {error !== '' ? (
+              <Text style={estilos.formError} accessibilityRole="alert">
+                {error}
+              </Text>
+            ) : null}
+
             <Pressable
               style={({ pressed }) => [
                 styles.loginButton,
@@ -186,81 +192,32 @@ export default function Index() {
               </Text>
             </Pressable>
 
-            <View style={styles.olvideRow}>
-              <Text style={styles.olvidePrompt}>¿Olvidaste tu contraseña?</Text>
+            <View style={styles.registerRow}>
+              <Text style={styles.registerPrompt}>¿No tienes una cuenta?</Text>
+              <Pressable
+                style={({ pressed }) => [pressed && estilos.buttonPressed]}
+                onPress={() => router.push('/registro')}
+                accessibilityRole="link"
+                accessibilityLabel="Registrarse"
+                hitSlop={8}
+              >
+                <Text style={styles.registerText}>Registrarse</Text>
+              </Pressable>
+            </View>
+
+            <View style={[styles.olvideRow, styles.accionesCentradas]}>
               <Pressable
                 style={({ pressed }) => [styles.olvideButton, pressed && estilos.buttonPressed]}
                 onPress={() => router.push('/recuperar')}
                 accessibilityRole="link"
-                accessibilityLabel="Haz clic aquí"
+                accessibilityLabel="Olvidaste tu contraseña"
               >
-                <Text style={styles.olvideText}>Haz clic aquí</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.registerRow}>
-              <Text style={styles.registerPrompt}>¿No tienes una cuenta?</Text>
-              <Pressable
-                style={({ pressed }) => [styles.registerButton, pressed && estilos.buttonPressed]}
-                onPress={() => router.push('/registro')}
-                accessibilityRole="link"
-                accessibilityLabel="Registrarse"
-              >
-                <Text style={styles.registerText}>Registrarse</Text>
+                <Text style={styles.olvideText}>¿Olvidaste tu contraseña?</Text>
               </Pressable>
             </View>
           </View>
         }
       />
-
-      {/* El error va en una ventana propia y no en un Alert.alert: ese cartel es
-          del sistema y react-native-web no lo implementa, así que en el
-          navegador no se vería nada. */}
-      <Modal
-        visible={error !== ''}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setError('')}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setError('')}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar el aviso"
-          />
-          <View style={styles.avisoCard} accessibilityRole="alert">
-            <Pressable
-              style={({ pressed }) => [styles.avisoCerrar, pressed && styles.buttonPressed]}
-              onPress={() => setError('')}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar"
-            >
-              <Ionicons name="close" size={22} color="#263b32" />
-            </Pressable>
-
-            <Text style={styles.avisoTitle}>No se pudo iniciar sesión</Text>
-            <Text style={styles.avisoText}>{error}</Text>
-            <Pressable
-              style={({ pressed }) => [
-                estilos.modalButton,
-                estilos.modalButtonPrimary,
-                styles.avisoBoton,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={() => setError('')}
-              accessibilityRole="button"
-              accessibilityLabel="Entendido"
-            >
-              <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                Entendido
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -350,21 +307,14 @@ const styles = StyleSheet.create({
   registerPrompt: {
     ...estilos.linkPrompt,
   },
-  registerButton: {
-    ...estilos.linkPill,
-  },
-  registerText: {
+registerText: {
     ...estilos.linkPillText,
+    textDecorationLine: 'underline',
   },
-  // Las dos salidas quedan como una sola línea: la pregunta en texto plano y
-  // la pastilla con la acción a la derecha. Antes la pastilla abarcaba todo el
-  // texto (pregunta incluida) y salía un botón enorme.
+
   olvideRow: {
     ...estilos.linkRow,
     marginTop: 18,
-  },
-  olvidePrompt: {
-    ...estilos.linkPrompt,
   },
   olvideButton: {
     ...estilos.linkPill,
@@ -381,42 +331,4 @@ const styles = StyleSheet.create({
   // completar y por eso van con el texto a la izquierda, esta es un aviso: no
   // hay nada que completar, se lee y se cierra. Por eso todo va centrado y
   // lleva aire arriba para que la X de la esquina no se monte sobre el título.
-  avisoCard: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: '#fffefc',
-    borderRadius: 16,
-    paddingHorizontal: 24,
-    paddingTop: 56,
-    paddingBottom: 28,
-    alignItems: 'center',
-  },
-  avisoCerrar: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#e1f4df',
-    borderRadius: 18,
-  },
-  avisoTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#0f3e17',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  avisoText: {
-    fontSize: 14,
-    color: '#6b6b6b',
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-  avisoBoton: {
-    marginTop: 24,
-    alignSelf: 'stretch',
-  },
 });

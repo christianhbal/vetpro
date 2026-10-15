@@ -39,18 +39,8 @@ export default function Registro() {
   const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
   const [sesionVerificada, setSesionVerificada] = useState(false);
   const [mostrarConfirmacionAdmin, setMostrarConfirmacionAdmin] = useState(false);
-  /**
-   * Aviso de exito o de error de la pantalla.
-   *
-   * Antes se usaba Alert.alert, que en web abre el dialogo del navegador: un
-   * cartel del sistema operativo en medio de la app, con otro color y otro
-   * boton. Ahora los dos casos usan la misma ventana verde de la app.
-   */
-  const [aviso, setAviso] = useState<{
-    tipo: 'ok' | 'error';
-    titulo: string;
-    mensaje: string;
-  } | null>(null);
+  const [error, setError] = useState('');
+  const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
   const { top } = useSafeAreaInsets();
 
   const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
@@ -70,37 +60,22 @@ export default function Registro() {
 
   const handleRegister = async () => {
     if (isSubmitting || !sesionVerificada) return;
+    setError('');
 
     if (!nombre.trim() || !email.trim() || !telefono.trim() || !password || !confirmPassword) {
-      setAviso({
-        tipo: 'error',
-        titulo: 'Faltan datos',
-        mensaje: 'Completa todos los campos para continuar.',
-      });
+      setError('Completa todos los campos para continuar.');
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setAviso({
-        tipo: 'error',
-        titulo: 'Correo no válido',
-        mensaje: 'Revisa el formato de tu correo electrónico.',
-      });
+      setError('Revisa el formato de tu correo electrónico.');
       return;
     }
     if (password.length < 8) {
-      setAviso({
-        tipo: 'error',
-        titulo: 'Contraseña débil',
-        mensaje: 'Usa al menos 8 caracteres.',
-      });
+      setError('Usa al menos 8 caracteres.');
       return;
     }
     if (password !== confirmPassword) {
-      setAviso({
-        tipo: 'error',
-        titulo: 'Las contraseñas no coinciden',
-        mensaje: 'Vuelve a comprobar ambas contraseñas.',
-      });
+      setError('Vuelve a comprobar ambas contraseñas.');
       return;
     }
 
@@ -126,11 +101,7 @@ export default function Registro() {
       const result = await response.json();
 
       if (!response.ok) {
-        setAviso({
-          tipo: 'error',
-          titulo: 'No se pudo crear la cuenta',
-          mensaje: result.message ?? 'Inténtalo de nuevo.',
-        });
+        setError(result.message ?? 'No se pudo crear la cuenta. Intentá de nuevo.');
         return;
       }
 
@@ -140,17 +111,12 @@ export default function Registro() {
         setMostrarConfirmacionAdmin(true);
       } else {
         setAviso({
-          tipo: 'ok',
           titulo: 'Cuenta creada',
           mensaje: 'Tu usuario quedó registrado en la base de datos.',
         });
       }
-    } catch (error) {
-      setAviso({
-        tipo: 'error',
-        titulo: 'No hay conexión con la API',
-        mensaje: apiUnreachableMessage(error),
-      });
+    } catch (requestError) {
+      setError(apiUnreachableMessage(requestError));
     } finally {
       setIsSubmitting(false);
     }
@@ -161,7 +127,10 @@ export default function Registro() {
       id: 'nombre',
       placeholder: 'Nombre completo',
       value: nombre,
-      onChangeText: setNombre,
+      onChangeText: (valor) => {
+        setNombre(valor);
+        setError('');
+      },
       autoComplete: 'name',
       returnKeyType: 'next',
     },
@@ -169,7 +138,10 @@ export default function Registro() {
       id: 'email',
       placeholder: 'Correo electrónico',
       value: email,
-      onChangeText: setEmail,
+      onChangeText: (valor) => {
+        setEmail(valor);
+        setError('');
+      },
       keyboardType: 'email-address',
       autoComplete: 'email',
       returnKeyType: 'next',
@@ -178,7 +150,10 @@ export default function Registro() {
       id: 'telefono',
       placeholder: 'Teléfono',
       value: telefono,
-      onChangeText: setTelefono,
+      onChangeText: (valor) => {
+        setTelefono(valor);
+        setError('');
+      },
       autoComplete: 'tel',
       keyboardType: 'phone-pad',
       returnKeyType: 'next',
@@ -187,7 +162,10 @@ export default function Registro() {
       id: 'password',
       placeholder: 'Contraseña (mínimo 8 caracteres)',
       value: password,
-      onChangeText: setPassword,
+      onChangeText: (valor) => {
+        setPassword(valor);
+        setError('');
+      },
       secureTextEntry: true,
       autoComplete: 'new-password',
       returnKeyType: 'next',
@@ -196,7 +174,10 @@ export default function Registro() {
       id: 'confirmPassword',
       placeholder: 'Confirmar contraseña',
       value: confirmPassword,
-      onChangeText: setConfirmPassword,
+      onChangeText: (valor) => {
+        setConfirmPassword(valor);
+        setError('');
+      },
       secureTextEntry: true,
       autoComplete: 'new-password',
       returnKeyType: 'done',
@@ -261,6 +242,12 @@ export default function Registro() {
         )}
         ListFooterComponent={
           <View style={styles.footer}>
+            {error !== '' ? (
+              <Text style={estilos.formError} accessibilityRole="alert">
+                {error}
+              </Text>
+            ) : null}
+
             <Pressable
               style={({ pressed }) => [
                 styles.registerButton,
@@ -287,15 +274,13 @@ export default function Registro() {
               <View style={styles.loginRow}>
                 <Text style={styles.loginPrompt}>¿Ya tienes una cuenta?</Text>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.loginLinkButton,
-                    pressed && estilos.buttonPressed,
-                  ]}
+                  style={({ pressed }) => [pressed && estilos.buttonPressed]}
                   onPress={() => router.push('/')}
                   accessibilityRole="link"
-                  accessibilityLabel="Inicia sesión"
+                  accessibilityLabel="Iniciar sesión"
+                  hitSlop={8}
                 >
-                  <Text style={styles.loginLink}>Inicia sesión</Text>
+                  <Text style={styles.loginLink}>Iniciar sesión</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -315,26 +300,10 @@ export default function Registro() {
       >
         <View style={styles.confirmationRoot}>
           <View style={styles.confirmationCard} accessibilityRole="alert">
-            <View
-              style={[
-                styles.avisoIcono,
-                aviso?.tipo === 'error' && styles.avisoIconoError,
-              ]}
-            >
-              <Ionicons
-                name={aviso?.tipo === 'error' ? 'alert-circle-outline' : 'checkmark'}
-                size={30}
-                color={aviso?.tipo === 'error' ? '#a32828' : '#ffffff'}
-              />
+            <View style={styles.avisoIcono}>
+              <Ionicons name="checkmark" size={30} color="#ffffff" />
             </View>
-            <Text
-              style={[
-                styles.confirmationTitle,
-                aviso?.tipo === 'error' && styles.avisoTituloError,
-              ]}
-            >
-              {aviso?.titulo ?? ''}
-            </Text>
+            <Text style={styles.confirmationTitle}>{aviso?.titulo ?? ''}</Text>
             <Text style={styles.avisoMensaje}>{aviso?.mensaje ?? ''}</Text>
             <Pressable
               style={styles.confirmationButton}
@@ -475,11 +444,11 @@ const styles = StyleSheet.create({
   loginPrompt: {
     ...estilos.linkPrompt,
   },
-  loginLinkButton: {
-    ...estilos.linkPill,
-  },
-  loginLink: {
-    ...estilos.linkPillText,
+loginLink: {
+    color: '#1B4D3E',
+    fontSize: 15,
+    fontWeight: 'bold' as const,
+    textDecorationLine: 'underline',
   },
   confirmationRoot: {
     flex: 1,
@@ -512,8 +481,6 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     backgroundColor: '#1f6b33',
   },
-  avisoIconoError: { backgroundColor: '#f7e3e3' },
-  avisoTituloError: { color: '#a32828' },
   avisoMensaje: {
     marginBottom: 22,
     marginTop: -12,
