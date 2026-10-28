@@ -15,10 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { CalendarioTurnos } from '@/components/calendario-turnos';
+import { SelectorCampo } from '@/components/selector-campo';
 import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { estilos } from '@/lib/estilos';
 import {
-  abrirMapa,
   formatearFechaTurno,
   turnoSiguePendiente,
   type SedeVeterinaria,
@@ -100,7 +100,6 @@ function mensajeApi(resultado: unknown): string | null {
 
 export default function TurnosScreen() {
   const { sedes, cargandoSedes, errorSedes } = useSedes();
-  const sedesVeterinaria = sedes.map((sede) => sede.nombre);
   const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
@@ -735,9 +734,11 @@ const puedeCancelar =
                 </Text>
               ) : null}
 
-              {/* La dirección y el boton "Ir" sirven para el cliente y para el
-                  veterinario; en un turno que ya pasó no aportan nada. */}
-              {turnoYaPaso ? null : (
+              {/* Solo para el cliente, y solo si el turno todavia no paso: es el que
+                  tiene que llegar a la sede. El veterinario ya esta ahi y no le
+                  sirve de nada, y de un turno viejo la direccion no sirve para
+                  nada. Igual que en la portada. */}
+              {esAdmin || turnoYaPaso ? null : (
                 <>
                   <View style={styles.modalSede}>
                     <Text style={estilos.modalText}>
@@ -750,6 +751,9 @@ const puedeCancelar =
                     </Text>
                   </View>
 
+                  {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
+                      que en web no existe y en Android se lleva la app afuera.
+                      Cuando se defina a donde lleva, se le pone el onPress. */}
                   <Pressable
                     // Mismo verde y mismo radio que "Escanear QR de llegada": dos
                     // botones distintos al lado en la misma pantalla se ven mal.
@@ -758,15 +762,12 @@ const puedeCancelar =
                       styles.irBoton,
                       pressed && estilos.buttonPressed,
                     ]}
-                    onPress={() =>
-                      abrirMapa(
-                        citaSeleccionada.guardado.sede,
-                        direccionesSedes[citaSeleccionada.guardado.sede]
-                      )
-                    }
+                    onPress={() => {
+                      // Sin accion a proposito.
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel="Ir a la sede"
-                    accessibilityHint="Abre el mapa con la dirección de la sede"
+                    accessibilityHint="Todavía no está disponible"
                   >
                     <Text style={estilos.buttonTextPrimary}>Ir</Text>
                   </Pressable>
@@ -964,38 +965,29 @@ const puedeCancelar =
               </View>
 
               <Text style={styles.label}>Sede</Text>
-              <View style={styles.filaOpciones}>
-                {sedesVeterinaria.map((opcion) => {
-                  const elegida = sedeForm === opcion;
-                  return (
-                    <Pressable
-                      key={opcion}
-                      onPress={() => {
-                        if (opcion === sedeForm) return;
-                        setSedeForm(opcion);
-                        const [year, month] = fechaForm.split('-').map(Number);
-                        if (year && month) void cargarDisponibilidad(year, month, opcion);
-                      }}
-                      accessibilityRole="radio"
-                      accessibilityLabel={opcion}
-                      accessibilityState={{ selected: elegida }}
-                      style={({ pressed }) => [
-                        styles.opcion,
-                        elegida && styles.opcionSeleccionada,
-                        pressed && estilos.buttonPressed,
-                      ]}
-                    >
-                      <Text
-                        style={[styles.opcionTexto, elegida && styles.opcionTextoSeleccionado]}
-                      >
-                        {opcion}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <SelectorCampo
+                label="Sede"
+                ocultarLabel
+                estiloTurno
+                icono="location-outline"
+                placeholder="Elegí una sede"
+                opciones={sedes.map((sede) => ({ valor: sede.nombre, titulo: sede.nombre }))}
+                seleccion={sedes.some((sede) => sede.nombre === sedeForm)
+                  ? { valor: sedeForm, titulo: sedeForm }
+                  : null}
+                cargando={cargandoSedes}
+                vacio={errorSedes || 'No hay sedes disponibles.'}
+                accessibilityLabel="Elegir sede del turno"
+                onSelect={(opcion) => {
+                  if (opcion.valor === sedeForm) return;
+                  setSedeForm(opcion.valor);
+                  const [year, month] = fechaForm.split('-').map(Number);
+                  if (year && month) void cargarDisponibilidad(year, month, opcion.valor);
+                }}
+              />
 
               <View style={styles.bloqueCampo}>
+                <Text style={styles.labelCampo}>Fecha</Text>
                 <TurnoDateTimeField
                   sede={sedes.find((item) => item.nombre === sedeForm)}
                   tipo="fecha"
@@ -1012,6 +1004,7 @@ const puedeCancelar =
               </View>
 
               <View style={styles.bloqueCampo}>
+                <Text style={styles.labelCampo}>Horario</Text>
                 <TurnoDateTimeField
                   sede={sedes.find((item) => item.nombre === sedeForm)}
                   tipo="hora"
@@ -1103,6 +1096,7 @@ const styles = {
   opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
   opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
   bloqueCampo: { marginTop: 12 },
+  labelCampo: { color: '#4d6154', fontSize: 13, fontWeight: '600' as const, marginBottom: 6 },
   confirmar: {
     alignItems: 'center' as const,
     marginTop: 16,

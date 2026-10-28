@@ -7,9 +7,11 @@ type TurnoCalendario = { fecha: string };
 function construirDias(mes: Date): (number | null)[] {
   const primerDia = (new Date(mes.getFullYear(), mes.getMonth(), 1).getDay() + 6) % 7;
   const totalDias = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
+  const espaciosFinales = (7 - ((primerDia + totalDias) % 7)) % 7;
   return [
     ...Array<number | null>(primerDia).fill(null),
     ...Array.from({ length: totalDias }, (_valor, indice) => indice + 1),
+    ...Array<number | null>(espaciosFinales).fill(null),
   ];
 }
 

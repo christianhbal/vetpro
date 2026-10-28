@@ -573,16 +573,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         : null;
     useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar, elegido }));
 
-    // Medidas que se comprimen con la escala para que el formulario entre entero.
-    // En modo compacto los pisos son mas bajos porque la agenda va dentro de otra
-    // pantalla y no hay espacio para holguras.
-    //
-    // Los pisos importan: con 0.30 y 0.31, en una pantalla de 600px de alto el
-    // calendario ya no entraba mas y el formulario se cortaba. Con 24 y 26
-    // sigue entrando y los numeros todavia se leen.
-    const altoDia = Math.max(18, Math.round((compacta ? 32 : 36) * escala));
+    // Mantener el calendario legible también en pantallas chicas.
+    const altoDia = Math.max(36, Math.round((compacta ? 32 : 36) * escala));
     const altoSlot = Math.max(44, Math.round((compacta ? 44 : 46) * escala));
-    const diaText = Math.max(10, Math.round((compacta ? 12 : 13) * escala));
+    const diaText = Math.max(14, Math.round((compacta ? 12 : 13) * escala));
     const slotText = Math.max(12, Math.round((compacta ? 12 : 13) * escala));
     const gapSlot = Math.max(3, Math.round(5 * escala));
 

@@ -236,7 +236,7 @@ export default function TurnoDateTimeField({
                   })}
                 </View>
                 <View style={styles.legend}>
-                  <View style={styles.occupiedDot} />
+                  <View style={styles.legendDot} />
                   <Text style={styles.legendText}>Fecha con horarios ocupados</Text>
                 </View>
                 {cargandoDisponibilidad ? (
@@ -325,7 +325,6 @@ export default function TurnoDateTimeField({
 const styles = StyleSheet.create({
   field: {
     minHeight: 52,
-    marginBottom: 20,
     paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
@@ -359,6 +358,7 @@ const styles = StyleSheet.create({
   disabledDay: { backgroundColor: '#f0f1ee' },
   disabledText: { color: '#a0a69f' },
   occupiedDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#c05a32', position: 'absolute', bottom: 4 },
+  legendDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#c05a32' },
   legend: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   legendText: { color: '#69746a', fontSize: 13 },
   availabilityMessage: { color: '#69746a', fontSize: 14, textAlign: 'center', marginVertical: 18 },

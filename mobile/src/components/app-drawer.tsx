@@ -51,7 +51,7 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
     try {
       const usuario = await obtenerUsuarioActual();
       setEsAdmin(usuario?.esAdmin === true);
-      if (!usuario || usuario.esAdmin) {
+      if (!usuario) {
         setNotificacionesSinLeer(0);
         return;
       }

@@ -52,13 +52,6 @@ export default function AdminUsuariosScreen() {
   const [usuarios, setUsuarios] = useState<UsuarioAdministrado[]>([]);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<UsuarioAdministrado | null>(null);
   const [usuarioEliminado, setUsuarioEliminado] = useState<string | null>(null);
-  const [usuarioAResetear, setUsuarioAResetear] = useState<UsuarioAdministrado | null>(null);
-  const [resetPassword, setResetPassword] = useState<{
-    email: string;
-    password: string;
-  } | null>(null);
-  const [reseteando, setReseteando] = useState(false);
-  const [errorReset, setErrorReset] = useState('');
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [veterinarioCreado, setVeterinarioCreado] = useState<UsuarioAdministrado | null>(null);
   const [nombreNuevo, setNombreNuevo] = useState('');
@@ -134,45 +127,6 @@ export default function AdminUsuariosScreen() {
       Alert.alert('No se pudo eliminar', apiUnreachableMessage(requestError));
     } finally {
       setEliminando(false);
-    }
-  };
-
-  const confirmarReset = async () => {
-    if (!usuarioAResetear || reseteando) return;
-    setReseteando(true);
-    setErrorReset('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/password-reset`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userId: usuarioAResetear.id }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        setErrorReset(mensajeApi(result) ?? 'No se pudo restablecer la contraseña.');
-        return;
-      }
-      if (
-        typeof result !== 'object' ||
-        result === null ||
-        !('password' in result) ||
-        typeof result.password !== 'string' ||
-        !('email' in result) ||
-        typeof result.email !== 'string'
-      ) {
-        setErrorReset('La API no confirmó el cambio de contraseña.');
-        return;
-      }
-
-      setResetPassword({ email: result.email, password: result.password });
-      setUsuarioAResetear(null);
-    } catch (requestError) {
-      setErrorReset(apiUnreachableMessage(requestError));
-    } finally {
-      setReseteando(false);
     }
   };
 
@@ -358,27 +312,14 @@ export default function AdminUsuariosScreen() {
                   </Text>
                 </View>
                 {item.id !== miId ? (
-                  <>
-                    <Pressable
-                      onPress={() => {
-                        setErrorReset('');
-                        setUsuarioAResetear(item);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Restablecer la contraseña de ${item.nombre}`}
-                      style={{ padding: 10 }}
-                    >
-                      <Ionicons name="key-outline" size={22} color="#1B4D3E" />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setUsuarioAEliminar(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Eliminar a ${item.nombre}`}
-                      style={{ padding: 10 }}
-                    >
-                      <Ionicons name="trash-outline" size={22} color="#a32d2d" />
-                    </Pressable>
-                  </>
+                  <Pressable
+                    onPress={() => setUsuarioAEliminar(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Eliminar a ${item.nombre}`}
+                    style={{ padding: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color="#a32d2d" />
+                  </Pressable>
                 ) : null}
               </View>
             </View>
@@ -519,63 +460,6 @@ export default function AdminUsuariosScreen() {
       </Modal>
 
       <Modal
-        visible={usuarioAResetear !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!reseteando) setUsuarioAResetear(null);
-        }}
-        statusBarTranslucent
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => {
-              if (!reseteando) setUsuarioAResetear(null);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Cancelar restablecimiento"
-          />
-          {usuarioAResetear ? (
-            <View style={estilos.modalCard}>
-              <Text style={estilos.modalTitle}>¿Restablecer contraseña?</Text>
-              <Text style={estilos.modalText}>
-                La contraseña de {usuarioAResetear.nombre} va a ser su apellido
-                seguido de 12345. ¿Confirmás el cambio?
-              </Text>
-              {errorReset ? (
-                <Text style={styles.createError} accessibilityRole="alert">
-                  {errorReset}
-                </Text>
-              ) : null}
-              <View style={estilos.modalActions}>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonNeutral]}
-                  onPress={() => setUsuarioAResetear(null)}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
-                    Cancelar
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                  onPress={() => void confirmarReset()}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                    {reseteando ? 'Restableciendo...' : 'Sí, restablecer'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
-        </View>
-      </Modal>
-
-      <Modal
         visible={usuarioAEliminar !== null}
         transparent
         animationType="fade"
@@ -637,24 +521,6 @@ export default function AdminUsuariosScreen() {
         etiquetaBoton="Cerrar el aviso de cuenta eliminada"
         onCerrar={() => setUsuarioEliminado(null)}
       />
-
-      <AvisoExito
-        visible={resetPassword !== null}
-        titulo="¡Contraseña restablecida!"
-        subtitulo={
-          resetPassword !== null
-            ? `Compartila con ${resetPassword.email}.`
-            : undefined
-        }
-        etiquetaBoton="Cerrar el aviso de contraseña restablecida"
-        onCerrar={() => setResetPassword(null)}
-      >
-        {resetPassword !== null ? (
-          <Text style={estilos.resetPassword} selectable>
-            {resetPassword.password}
-          </Text>
-        ) : null}
-      </AvisoExito>
     </AppDrawer>
   );
 }

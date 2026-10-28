@@ -3,15 +3,13 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { estilos } from '@/lib/estilos';
 
-type AvisoProps = {
+type AvisoExitoProps = {
   visible: boolean;
   titulo: string;
   subtitulo?: string;
   textoBoton?: string;
   etiquetaBoton: string;
   onCerrar: () => void;
-  /** "exito" (con tilde verde) o "error" (sobrio, sin ícono). */
-  variante?: 'exito' | 'error';
   children?: ReactNode;
 };
 
@@ -22,11 +20,8 @@ export function AvisoExito({
   textoBoton = 'Listo',
   etiquetaBoton,
   onCerrar,
-  variante = 'exito',
   children,
-}: AvisoProps) {
-  const esError = variante === 'error';
-
+}: AvisoExitoProps) {
   return (
     <Modal
       visible={visible}
@@ -45,14 +40,12 @@ export function AvisoExito({
         />
 
         {visible ? (
-          <View style={styles.aviso} accessibilityRole="alert">
-            {esError ? null : (
-              <View style={styles.icono}>
-                <Ionicons name="checkmark" size={38} color="#fffefc" />
-              </View>
-            )}
+          <View style={styles.aviso}>
+            <View style={styles.icono}>
+              <Ionicons name="checkmark" size={38} color="#fffefc" />
+            </View>
 
-            <Text style={[styles.titulo, esError && styles.tituloError]}>{titulo}</Text>
+            <Text style={styles.titulo}>{titulo}</Text>
             {subtitulo ? <Text style={styles.subtitulo}>{subtitulo}</Text> : null}
 
             {children}
@@ -107,11 +100,6 @@ const styles = StyleSheet.create({
     fontSize: 21,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  // El error va sin ícono: un título en rojo apagado alcanza y no parece un
-  // cartel genérico de alerta.
-  tituloError: {
-    color: '#8f2f2f',
   },
   subtitulo: {
     marginTop: 6,

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { estilos } from '@/lib/estilos';
 
@@ -24,6 +24,8 @@ type SelectorCampoProps = {
   compacto?: boolean;
   /** Saca el texto de arriba. Para cuando el valor ya se entiende solo. */
   ocultarLabel?: boolean;
+  /** Usa el mismo aspecto que los campos de fecha y horario del turno. */
+  estiloTurno?: boolean;
 };
 
 /**
@@ -42,6 +44,7 @@ export function SelectorCampo({
   accessibilityLabel,
   compacto = false,
   ocultarLabel = false,
+  estiloTurno = false,
 }: SelectorCampoProps) {
   const [abierto, setAbierto] = useState(false);
 
@@ -56,6 +59,7 @@ export function SelectorCampo({
           styles.campo,
           compacto && styles.campoCompacto,
           activo && styles.campoConValor,
+          estiloTurno && styles.campoTurno,
           pressed && estilos.buttonPressed,
         ]}
         onPress={() => setAbierto(true)}
@@ -80,8 +84,8 @@ export function SelectorCampo({
             </View>
           )
         ) : (
-          <View style={[styles.campoIcono, compacto && styles.campoIconoCompacto]}>
-            <Ionicons name={icono} size={compacto ? 15 : 18} color="#0f3e17" />
+          <View style={[styles.campoIcono, compacto && styles.campoIconoCompacto, estiloTurno && styles.iconoTurno]}>
+            <Ionicons name={icono} size={estiloTurno ? 20 : compacto ? 15 : 18} color="#0f3e17" />
           </View>
         )}
 
@@ -91,6 +95,7 @@ export function SelectorCampo({
               styles.campoTexto,
               compacto && styles.campoTextoCompacto,
               !activo && styles.campoTextoVacio,
+              estiloTurno && styles.textoTurno,
             ]}
             numberOfLines={1}
           >
@@ -103,7 +108,7 @@ export function SelectorCampo({
           ) : null}
         </View>
 
-        <Ionicons name="chevron-down" size={compacto ? 15 : 18} color="#7b8c7d" />
+        <Ionicons name="chevron-down" size={compacto ? 15 : 18} color={estiloTurno ? '#555d54' : '#7b8c7d'} />
       </Pressable>
 
       {vacio !== undefined && !cargando && opciones.length === 0 ? (
@@ -139,7 +144,7 @@ export function SelectorCampo({
               </Pressable>
             </View>
 
-            <View style={styles.hojaOpciones}>
+            <ScrollView style={styles.hojaLista} contentContainerStyle={styles.hojaOpciones}>
               {opciones.map((opcion) => {
                 const elegida = seleccion?.valor === opcion.valor;
                 return (
@@ -196,7 +201,7 @@ export function SelectorCampo({
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -233,6 +238,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   campoConValor: { borderColor: '#a8c3a4', backgroundColor: '#ffffff' },
+  campoTurno: {
+    minHeight: 52,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#b9cbb6',
+    borderRadius: 10,
+    backgroundColor: '#f3f7f1',
+  },
+  iconoTurno: { width: 20, height: 20, backgroundColor: 'transparent' },
+  textoTurno: { color: '#263b32', fontSize: 16, fontWeight: '400' },
   campoIcono: {
     width: 38,
     height: 38,
@@ -288,6 +303,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     backgroundColor: '#eef4ea',
   },
+  hojaLista: { flexShrink: 1 },
   hojaOpciones: { gap: 8 },
   opcion: {
     flexDirection: 'row',

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
-import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
 import { guardarUsuarioActual } from '../lib/session';
@@ -24,12 +23,13 @@ export default function Index() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [avisoError, setAvisoError] = useState<{ titulo: string; mensaje: string } | null>(null);
+  const [error, setError] = useState('');
 
   const handleLogin = async () => {
     if (isSubmitting) return;
+    setError('');
     if (!email.trim() || !password) {
-      setAvisoError({ titulo: 'Faltan datos', mensaje: 'Ingresa tu correo y contraseña.' });
+      setError('Ingresa tu correo y contraseña.');
       return;
     }
 
@@ -43,13 +43,7 @@ export default function Index() {
       const result = await response.json();
 
       if (!response.ok) {
-        const mensaje = typeof result.message === 'string' ? result.message : 'No se pudo iniciar sesión.';
-        const titulo = /no registrado/i.test(mensaje)
-          ? 'Usuario no registrado'
-          : /contraseña/i.test(mensaje)
-            ? 'Contraseña incorrecta'
-            : 'No se pudo iniciar sesión';
-        setAvisoError({ titulo, mensaje });
+        setError(result.message ?? 'Revisa tus credenciales.');
         return;
       }
 
@@ -60,10 +54,7 @@ export default function Index() {
         typeof result.esAdmin !== 'boolean' ||
         typeof result.accessToken !== 'string'
       ) {
-        setAvisoError({
-          titulo: 'No se pudo iniciar sesión',
-          mensaje: 'La API devolvió datos de usuario inválidos.',
-        });
+        setError('La API devolvió datos de usuario inválidos.');
         return;
       }
 
@@ -78,10 +69,7 @@ export default function Index() {
       router.replace('/app');
       void sincronizarRecordatorios(true);
     } catch (requestError) {
-      setAvisoError({
-        titulo: 'Sin conexión con el servidor',
-        mensaje: apiUnreachableMessage(requestError),
-      });
+      setError(apiUnreachableMessage(requestError));
     } finally {
       setIsSubmitting(false);
     }
@@ -94,6 +82,7 @@ export default function Index() {
       value: email,
       onChangeText: (valor) => {
         setEmail(valor);
+        setError('');
       },
       keyboardType: 'email-address',
       autoComplete: 'email',
@@ -105,6 +94,7 @@ export default function Index() {
       value: password,
       onChangeText: (valor) => {
         setPassword(valor);
+        setError('');
       },
       secureTextEntry: !showPassword,
       autoComplete: 'current-password',
@@ -162,6 +152,12 @@ export default function Index() {
         )}
         ListFooterComponent={
           <View style={styles.footer}>
+            {error !== '' ? (
+              <Text style={estilos.formError} accessibilityRole="alert">
+                {error}
+              </Text>
+            ) : null}
+
             <Pressable
               style={({ pressed }) => [
                 styles.loginButton,
@@ -203,16 +199,6 @@ export default function Index() {
             </View>
           </View>
         }
-      />
-
-      <AvisoExito
-        visible={avisoError !== null}
-        variante="error"
-        titulo={avisoError?.titulo ?? ''}
-        subtitulo={avisoError?.mensaje}
-        textoBoton="Entendido"
-        etiquetaBoton="Cerrar el aviso de error"
-        onCerrar={() => setAvisoError(null)}
       />
     </View>
   );

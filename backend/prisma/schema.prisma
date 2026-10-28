@@ -100,12 +100,6 @@ model Notification {
   // una mascota ni de un turno: la tarjeta lleva el logo de VetPro en vez de la
   // foto del paciente. Se marca para no adivinarlo en la app.
   esGlobal      Boolean   @default(false)
-  // Tipo de aviso que necesita una accion del admin. Hoy solo 'recuperacion':
-  // un usuario pidio restablecer su contraseña. El resto queda en null.
-  tipo              String?
-  // Correo del usuario que hizo la solicitud. Se copia aca para que el admin
-  // pueda restablecer la contraseña sin tener que leer el mensaje.
-  solicitanteEmail  String?
   user      Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
   turno     Turno?   @relation(fields: [turnoId], references: [id], onDelete: SetNull)
 

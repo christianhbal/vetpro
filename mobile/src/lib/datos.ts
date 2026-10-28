@@ -1,5 +1,3 @@
-import { Linking } from 'react-native';
-
 export type TurnoGuardado = {
   id: number;
   tipo: string;
@@ -41,12 +39,6 @@ export function formatearFechaTurno(fecha: string, hora: string): string {
   const [year, month, day] = fecha.split('-').map(Number);
   const date = new Date(year, month - 1, day);
   return `${date.toLocaleDateString('es-AR')} · ${hora}`;
-}
-
-/** Abre Google Maps con el camino a la sede; sirve en web y en el celular. */
-export function abrirMapa(sede: string, direccion: string | undefined): void {
-  const destino = encodeURIComponent([sede, direccion].filter(Boolean).join(', '));
-  void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destino}`);
 }
 
 export function turnoSiguePendiente(turno: Pick<TurnoGuardado, 'fecha' | 'hora'>, ahora: Date): boolean {
