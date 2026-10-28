@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -70,6 +69,7 @@ export default function AdminUsuariosScreen() {
   const [token, setToken] = useState('');
   const [cargando, setCargando] = useState(true);
   const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState('');
   const [error, setError] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtroRol, setFiltroRol] = useState<FiltroRol>('todos');
@@ -116,22 +116,26 @@ export default function AdminUsuariosScreen() {
 
   const confirmarEliminacion = async () => {
     if (!usuarioAEliminar || eliminando) return;
+    const usuario = usuarioAEliminar;
     setEliminando(true);
+    setErrorEliminar('');
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/admin/users/${usuarioAEliminar.id}`,
+        `${API_BASE_URL}/api/admin/users/${usuario.id}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       );
       if (!response.ok) {
         const result: unknown = await response.json();
-        Alert.alert('No se pudo eliminar', mensajeApi(result) ?? 'Inténtalo nuevamente.');
+        setUsuarioAEliminar(null);
+        setErrorEliminar(mensajeApi(result) ?? 'Inténtalo nuevamente.');
         return;
       }
-      setUsuarios((actuales) => actuales.filter((item) => item.id !== usuarioAEliminar.id));
+      setUsuarios((actuales) => actuales.filter((item) => item.id !== usuario.id));
       setUsuarioAEliminar(null);
-      setUsuarioEliminado(usuarioAEliminar.nombre);
+      setUsuarioEliminado(usuario.nombre);
     } catch (requestError) {
-      Alert.alert('No se pudo eliminar', apiUnreachableMessage(requestError));
+      setUsuarioAEliminar(null);
+      setErrorEliminar(apiUnreachableMessage(requestError));
     } finally {
       setEliminando(false);
     }
@@ -636,6 +640,15 @@ export default function AdminUsuariosScreen() {
         }
         etiquetaBoton="Cerrar el aviso de cuenta eliminada"
         onCerrar={() => setUsuarioEliminado(null)}
+      />
+
+      <AvisoExito
+        visible={errorEliminar !== ''}
+        variante="error"
+        titulo="No se pudo eliminar la cuenta"
+        subtitulo={errorEliminar}
+        etiquetaBoton="Cerrar el aviso de error"
+        onCerrar={() => setErrorEliminar('')}
       />
 
       <AvisoExito

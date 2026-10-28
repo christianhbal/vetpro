@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { esCheckInVetPro } from '@/lib/check-in';
@@ -18,6 +19,7 @@ export default function EscanearQr() {
   const [resultado, setResultado] = useState('');
   const [llegadaRegistrada, setLlegadaRegistrada] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [avisoPermiso, setAvisoPermiso] = useState(false);
   const escaneoEnCurso = useRef(false);
   const [vistaCamara, setVistaCamara] = useState({ width: 0, height: 0 });
   const [altoPie, setAltoPie] = useState(0);
@@ -33,6 +35,16 @@ export default function EscanearQr() {
     left: (vistaCamara.width - tamanoMarco) / 2,
     width: tamanoMarco,
     height: tamanoMarco,
+  };
+
+  // En web no existe la pantalla de ajustes del sistema: se evita que el
+  // boton del cartel termine en una promesa rechazada.
+  const abrirAjustes = () => {
+    try {
+      void Linking.openSettings().catch(() => {});
+    } catch {
+      // Sin ajustes disponibles en esta plataforma.
+    }
   };
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
@@ -119,14 +131,7 @@ export default function EscanearQr() {
               onPress={async () => {
                 const pedido = await pedirPermiso();
                 if (!pedido.granted) {
-                  Alert.alert(
-                    'Permiso denegado',
-                    'Sin la cámara no se puede escanear. Podés habilitarla desde los ajustes del sistema.',
-                    [
-                      { text: 'Cancelar', style: 'cancel' },
-                      { text: 'Abrir ajustes', onPress: () => Linking.openSettings() },
-                    ]
-                  );
+                  setAvisoPermiso(true);
                 }
               }}
               accessibilityRole="button"
@@ -138,7 +143,7 @@ export default function EscanearQr() {
             {!permiso.canAskAgain && (
               <Pressable
                 style={({ pressed }) => [estilos.modalButton, pressed && estilos.buttonPressed]}
-                onPress={() => Linking.openSettings()}
+                onPress={abrirAjustes}
                 accessibilityRole="button"
                 accessibilityLabel="Abrir ajustes"
               >
@@ -149,6 +154,34 @@ export default function EscanearQr() {
             )}
           </View>
         </View>
+
+        <AvisoExito
+          visible={avisoPermiso}
+          variante="error"
+          titulo="Permiso denegado"
+          subtitulo="Sin la cámara no se puede escanear. Podés habilitarla desde los ajustes del sistema."
+          etiquetaBoton="Cerrar el aviso de permiso"
+          onCerrar={() => setAvisoPermiso(false)}
+        >
+          <Pressable
+            style={({ pressed }) => [
+              estilos.modalButton,
+              estilos.modalButtonNeutral,
+              { alignSelf: 'stretch', marginTop: 14 },
+              pressed && estilos.buttonPressed,
+            ]}
+            onPress={() => {
+              setAvisoPermiso(false);
+              abrirAjustes();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir ajustes del sistema"
+          >
+            <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
+              Abrir ajustes
+            </Text>
+          </Pressable>
+        </AvisoExito>
       </View>
     );
   }

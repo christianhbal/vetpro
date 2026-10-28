@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
@@ -41,6 +42,7 @@ export default function EditarPerfil() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [avisoError, setAvisoError] = useState<{ titulo: string; mensaje: string } | null>(null);
 
   const contenedor = useMemo(() => [estilos.formContent, { paddingTop: top }], [top]);
 
@@ -90,10 +92,10 @@ export default function EditarPerfil() {
           setTelefono(perfil.telefono ?? '');
         } catch (error) {
           if (activo) {
-            Alert.alert(
-              'No se pudo cargar el perfil',
-              error instanceof Error ? error.message : apiUnreachableMessage(error)
-            );
+            setAvisoError({
+              titulo: 'No se pudo cargar el perfil',
+              mensaje: error instanceof Error ? error.message : apiUnreachableMessage(error),
+            });
           }
         } finally {
           if (activo) setCargando(false);
@@ -109,11 +111,17 @@ export default function EditarPerfil() {
   const handleSubmit = async () => {
     if (guardando) return;
     if (!usuario) {
-      Alert.alert('Perfil no disponible', 'Vuelve a cargar la pantalla e inténtalo nuevamente.');
+      setAvisoError({
+        titulo: 'Perfil no disponible',
+        mensaje: 'Vuelve a cargar la pantalla e inténtalo nuevamente.',
+      });
       return;
     }
     if (!nombre.trim() || !telefono.trim()) {
-      Alert.alert('Faltan datos', 'Completa tu nombre y teléfono.');
+      setAvisoError({
+        titulo: 'Faltan datos',
+        mensaje: 'Completa tu nombre y teléfono.',
+      });
       return;
     }
 
@@ -129,7 +137,10 @@ export default function EditarPerfil() {
       });
       const result: unknown = await response.json();
       if (!response.ok) {
-        Alert.alert('No se pudo actualizar el perfil', mensajeApi(result) ?? 'Inténtalo de nuevo.');
+        setAvisoError({
+          titulo: 'No se pudo actualizar el perfil',
+          mensaje: mensajeApi(result) ?? 'Inténtalo de nuevo.',
+        });
         return;
       }
       if (
@@ -156,10 +167,10 @@ export default function EditarPerfil() {
       });
       setMostrarConfirmacion(true);
     } catch (error) {
-      Alert.alert(
-        'No se pudo actualizar el perfil',
-        error instanceof Error ? error.message : apiUnreachableMessage(error)
-      );
+      setAvisoError({
+        titulo: 'No se pudo actualizar el perfil',
+        mensaje: error instanceof Error ? error.message : apiUnreachableMessage(error),
+      });
     } finally {
       setGuardando(false);
     }
@@ -298,6 +309,15 @@ export default function EditarPerfil() {
           </View>
         </View>
       </Modal>
+
+      <AvisoExito
+        visible={avisoError !== null}
+        variante="error"
+        titulo={avisoError?.titulo ?? ''}
+        subtitulo={avisoError?.mensaje}
+        etiquetaBoton="Cerrar el aviso de error"
+        onCerrar={() => setAvisoError(null)}
+      />
     </View>
   );
 }

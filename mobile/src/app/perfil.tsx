@@ -44,6 +44,7 @@ export default function PerfilScreen() {
   const [guardandoPassword, setGuardandoPassword] = useState(false);
   const [errorPassword, setErrorPassword] = useState('');
   const [mostrarExitoPassword, setMostrarExitoPassword] = useState(false);
+  const [cuentaEliminada, setCuentaEliminada] = useState(false);
   const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
 
   useFocusEffect(
@@ -191,7 +192,7 @@ export default function PerfilScreen() {
       }
       await Promise.allSettled([cancelarRecordatorios(), cerrarSesion()]);
       setModalEliminarCuenta(false);
-      router.replace('/');
+      setCuentaEliminada(true);
     } catch (error) {
       setErrorEliminarCuenta(
         error instanceof TypeError ? apiUnreachableMessage(error) : 'No se pudo eliminar la cuenta.'
@@ -493,6 +494,17 @@ export default function PerfilScreen() {
         subtitulo="Ya podés ingresar con tu nueva contraseña."
         etiquetaBoton="Cerrar aviso de contraseña actualizada"
         onCerrar={() => setMostrarExitoPassword(false)}
+      />
+
+      <AvisoExito
+        visible={cuentaEliminada}
+        titulo="¡Cuenta eliminada!"
+        subtitulo="Tu cuenta, tus mascotas y tus turnos se eliminaron correctamente."
+        etiquetaBoton="Cerrar aviso de cuenta eliminada"
+        onCerrar={() => {
+          setCuentaEliminada(false);
+          router.replace('/');
+        }}
       />
     </AppDrawer>
   );

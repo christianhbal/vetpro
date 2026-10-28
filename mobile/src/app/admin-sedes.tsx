@@ -4,7 +4,6 @@ import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -93,6 +92,9 @@ export default function AdminSedesScreen() {
   const [sedeGuardada, setSedeGuardada] = useState<{ nombre: string; editando: boolean } | null>(
     null
   );
+  // Avisos de eliminacion: exito y error, separados del formulario.
+  const [sedeEliminada, setSedeEliminada] = useState<string | null>(null);
+  const [errorEliminar, setErrorEliminar] = useState('');
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
   const [dias, setDias] = useState<string[]>([]);
@@ -183,7 +185,9 @@ export default function AdminSedesScreen() {
 
   const confirmarEliminacion = async () => {
     if (!sedeAEliminar || guardando) return;
+    const nombreSede = sedeAEliminar.nombre;
     setGuardando(true);
+    setErrorEliminar('');
     try {
       const usuario = await obtenerUsuarioActual();
       if (!usuario?.esAdmin) { router.replace('/app'); return; }
@@ -195,9 +199,10 @@ export default function AdminSedesScreen() {
       setSedeAEliminar(null);
       cerrarEdicion();
       await cargarSedes();
+      setSedeEliminada(nombreSede);
     } catch (error) {
       setSedeAEliminar(null);
-      Alert.alert('No se pudo eliminar la sede', error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'Inténtalo nuevamente.');
+      setErrorEliminar(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'Inténtalo nuevamente.');
     } finally { setGuardando(false); }
   };
 
@@ -444,6 +449,25 @@ export default function AdminSedesScreen() {
         }
         etiquetaBoton="Cerrar el aviso de sede guardada"
         onCerrar={() => setSedeGuardada(null)}
+      />
+
+      <AvisoExito
+        visible={sedeEliminada !== null}
+        titulo="¡Sede eliminada!"
+        subtitulo={
+          sedeEliminada !== null ? `${sedeEliminada} se eliminó correctamente.` : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de sede eliminada"
+        onCerrar={() => setSedeEliminada(null)}
+      />
+
+      <AvisoExito
+        visible={errorEliminar !== ''}
+        variante="error"
+        titulo="No se pudo eliminar la sede"
+        subtitulo={errorEliminar}
+        etiquetaBoton="Cerrar el aviso de error"
+        onCerrar={() => setErrorEliminar('')}
       />
     </AppDrawer>
   );
