@@ -6,7 +6,7 @@ import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { sedeDeCheckIn } from '@/lib/check-in';
+import { esCheckInVetPro } from '@/lib/check-in';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { sincronizarRecordatorios } from '@/lib/recordatorios';
 
@@ -42,8 +42,7 @@ export default function EscanearQr() {
     setProcesando(true);
     setLlegadaRegistrada(false);
     try {
-      const sedeEscaneada = sedeDeCheckIn(data);
-      if (sedeEscaneada === null) {
+      if (!esCheckInVetPro(data)) {
         throw new Error('Este no es un código QR de llegada de VetPro.');
       }
       const usuario = await obtenerUsuarioActual();

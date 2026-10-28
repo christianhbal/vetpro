@@ -19,21 +19,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { toString } from 'qrcode';
 import type { DimensionValue } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
-import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
+  abrirMapa,
   descripcionEspecieMascota,
   nombreEspecieMascota,
   turnoSiguePendiente,
-  type SedeVeterinaria,
   type TurnoGuardado,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import QRCode from 'react-native-qrcode-svg';
-import { checkInDeSede } from '@/lib/check-in';
-import { guardarFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
+import { checkInVetPro } from '@/lib/check-in';
+import { useSedes } from '@/lib/sede';
 
 type Mascota = {
   id: number;
@@ -98,8 +97,7 @@ const accesosRapidos = [
 ] as const;
 
 export default function InicioScreen() {
-  const { sedes, errorSedes } = useSedes();
-  const sedesVeterinaria = sedes.map((sede) => sede.nombre);
+  const { sedes } = useSedes();
   const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [mascotaSeleccionada, setMascotaSeleccionada] = useState<Mascota | null>(null);
@@ -118,22 +116,11 @@ export default function InicioScreen() {
   const [modalQr, setModalQr] = useState(false);
   const [imprimiendoQr, setImprimiendoQr] = useState(false);
   const [qrAviso, setQrAviso] = useState('');
-  const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('');
-  // La sede es la misma que en la pantalla de Turnos: el hook la guarda en el
-  // dispositivo, asi no hay que elegirla de nuevo en cada pantalla.
-const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
   const accesos = esAdmin
     ? accesosRapidos.filter((acceso) => acceso.href !== '/mascotas')
     : accesosRapidos;
 
-  const opcionesSede: OpcionSelector[] = sedesVeterinaria.map((nombre) => ({
-    valor: nombre,
-    titulo: nombre,
-  }));
-
-  const sedeSeleccionadaOpcion =
-    opcionesSede.find((opcion) => opcion.valor === sedeSeleccionada) ?? null;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fotoModalSize = Math.max(
     0,
@@ -238,7 +225,6 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // Nube) que no tenian nada que ver con la sede elegida.
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
-        .filter((turno) => turno.sede === sedeSeleccionada)
         .slice(0, COTAS_ADMIN)
         .map((turno) => ({
           id: turno.id,
@@ -246,7 +232,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           mascota: turno.mascota.nombre,
           motivo: turno.tipo,
           cuando: `${fechaRelativaCorta(turno.fecha, ahora)} - ${turno.hora} hs`,
-          detalle: turno.user?.nombre ?? null,
+          detalle: [turno.user?.nombre, turno.sede].filter(Boolean).join(' · ') || null,
           dueno: turno.user?.nombre ?? null,
           guardado: turno,
         }))
@@ -336,17 +322,15 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
   // ------------------------------------------------------------------
   // El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
   // arma una hoja simple con el mismo valor que muestra el cartel.
-  const imprimirQr = async (sede: SedeVeterinaria) => {
+  const imprimirQr = async () => {
     if (imprimiendoQr) return;
-    const sedeActual = sedes.find((item) => item.nombre === sede);
-    if (!sedeActual) { setQrAviso('La sede ya no está disponible.'); return; }
     setQrAviso('');
     setImprimiendoQr(true);
 
     try {
       // El SVG del QR se arma aca y no con un script de internet: antes la hoja
       // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
-      const svgQr = await toString(checkInDeSede(sedeActual.id), {
+      const svgQr = await toString(checkInVetPro(), {
         type: 'svg',
         errorCorrectionLevel: 'M',
         margin: 0,
@@ -354,7 +338,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
       });
 
       const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>QR ${sede}</title>
+<html><head><meta charset="utf-8" /><title>QR VetPro</title>
 <style>
   body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
   h1 { color: #0f3e17; }
@@ -365,7 +349,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
   <h2>Codigo QR de llegada</h2>
   <p>Presentá este código para que los usuarios registren su llegada.</p>
   <div>${svgQr}</div>
-  <h3 style="color: #0f3e17;">${sede}</h3>
+  <p>Válido para todas las sedes.</p>
 </body></html>`;
 
       // expo-print es nativo y no existe en web: ahi se usa el dialogo del
@@ -473,25 +457,6 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                 techo de la pantalla. */}
             {esAdmin ? null : <View style={styles.empujeEncabezado} />}
 
-            {esAdmin ? (
-              <View style={styles.bloqueSede}>
-                <SelectorCampo
-                  label="Sede"
-                  icono="location-outline"
-                  placeholder="Elegí una sede"
-                  opciones={opcionesSede}
-                  seleccion={sedeSeleccionadaOpcion}
-                  onSelect={(opcion) => {
-                    setSedeSeleccionada(opcion.valor as SedeVeterinaria);
-                    if (esAdmin) void guardarFiltroTurnos(opcion.valor).catch(() => {});
-                  }}
-                  compacto
-                  ocultarLabel
-                  accessibilityLabel="Elegir sede de la veterinaria"
-                />
-              </View>
-            ) : null}
-
             {esAdmin ? null : (
               <>
                 <Text style={styles.tituloSeccion}>Tus Mascotas</Text>
@@ -521,14 +486,12 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               <View style={styles.qrAdminBloque}>
                 <Pressable
                   style={({ pressed }) => [styles.qrBotonCompacto, pressed && estilos.buttonPressed]}
-                  disabled={!sedeSeleccionada}
                   onPress={() => {
-                    setSedeQr(sedeSeleccionada);
                     setQrAviso('');
                     setModalQr(true);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Mostrar el código QR de llegada de ${sedeSeleccionada}`}
+                  accessibilityLabel="Mostrar el código QR de llegada"
                 >
                   <View style={estilos.qrBotonFila}>
                     <Ionicons name="qr-code-outline" size={22} color="#fffefc" />
@@ -699,28 +662,26 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                 </Text>
               </View>
 
-              {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
-                  que en web no existe y en Android se lleva la app afuera.
-                  Cuando se defina a donde lleva, se le pone el onPress. */}
-              {!esAdmin ? (
-                <Pressable
-                  // Mismo verde y mismo radio que "Escanear QR de llegada": dos
-                  // botones distintos al lado en la misma pantalla se ven mal.
-                  style={({ pressed }) => [
-                    estilos.qrBoton,
-                    styles.irBoton,
-                    pressed && estilos.buttonPressed,
-                  ]}
-                  onPress={() => {
-                    // Sin accion a proposito.
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Ir a la sede"
-                  accessibilityHint="Todavía no está disponible"
-                >
-                  <Text style={estilos.buttonTextPrimary}>Ir</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                // Mismo verde y mismo radio que "Escanear QR de llegada": dos
+                // botones distintos al lado en la misma pantalla se ven mal.
+                style={({ pressed }) => [
+                  estilos.qrBoton,
+                  styles.irBoton,
+                  pressed && estilos.buttonPressed,
+                ]}
+                onPress={() =>
+                  abrirMapa(
+                    citaSeleccionada.guardado.sede,
+                    direccionesSedes[citaSeleccionada.guardado.sede]
+                  )
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Ir a la sede"
+                accessibilityHint="Abre el mapa con la dirección de la sede"
+              >
+                <Text style={estilos.buttonTextPrimary}>Ir</Text>
+              </Pressable>
 
               {/* Sin descripcion: son turnos proximos, todavia no fueron
                   atendidos. La descripcion la carga el veterinario al completar
@@ -762,9 +723,9 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
 
             <View style={styles.qrAdminMarco}>
               <View style={styles.qrAdminSvg}>
-                {sedes.find((item) => item.nombre === sedeQr) ? <QRCode value={checkInDeSede(sedes.find((item) => item.nombre === sedeQr)!.id)} size={220} /> : <Text>{errorSedes || 'No hay una sede seleccionada.'}</Text>}
+                <QRCode value={checkInVetPro()} size={220} />
               </View>
-              <Text style={styles.qrAdminSede}>{sedeQr}</Text>
+              <Text style={styles.qrAdminSede}>Válido para todas las sedes</Text>
             </View>
 
             {/* Boton de imprimir. Solo aparece en esta ventana, que es la unica
@@ -776,14 +737,14 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                 pressed && estilos.buttonPressed,
                 imprimiendoQr && styles.qrAdminBotonOcupado,
               ]}
-              onPress={() => void imprimirQr(sedeQr)}
-              disabled={imprimiendoQr || !sedes.some((item) => item.nombre === sedeQr)}
+              onPress={() => void imprimirQr()}
+              disabled={imprimiendoQr}
               accessibilityRole="button"
-              accessibilityLabel={`Imprimir el código QR de ${sedeQr}`}
+              accessibilityLabel="Imprimir el código QR de llegada"
             >
               <Ionicons name="print-outline" size={19} color="#fffefc" />
               <Text style={estilos.buttonTextPrimary}>
-                {imprimiendoQr ? 'Preparando...' : `Imprimir QR - ${sedeQr}`}
+                {imprimiendoQr ? 'Preparando...' : 'Imprimir QR'}
               </Text>
             </Pressable>
 
@@ -973,7 +934,6 @@ saludo: {
     fontWeight: '600' as const,
     textAlign: 'center' as const,
   },
-  bloqueSede: { marginTop: 4 },
   // El alto va en la lista y no en la card: con el alto fijo y el overflow
   // hidden en la card, una raza larga que hacia dos lineas la cortaba.
   listaMascotas: { height: ALTO_CARD_MASCOTA, marginBottom: 0 },

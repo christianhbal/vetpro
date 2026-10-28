@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+function mensajeApi(resultado: unknown): string | null {
+  if (typeof resultado !== 'object' || resultado === null || !('message' in resultado)) {
+    return null;
+  }
+  return typeof resultado.message === 'string' ? resultado.message : null;
+}
 
 export default function Recuperar() {
   const [email, setEmail] = useState('');
@@ -30,10 +38,25 @@ export default function Recuperar() {
 
     setEnviando(true);
     try {
-      setAviso({
-        titulo: 'Correo enviado',
-        mensaje: `Si ${email.trim()} está registrado, te llega un código para crear una contraseña nueva.`,
+      const response = await fetch(`${API_BASE_URL}/api/password-reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
       });
+      const resultado: unknown = await response.json();
+      if (!response.ok) {
+        setError(mensajeApi(resultado) ?? 'No se pudo enviar la solicitud.');
+        return;
+      }
+
+      setAviso({
+        titulo: 'Solicitud enviada',
+        mensaje:
+          'Si el correo está registrado, la veterinaria recibe tu solicitud. ' +
+          'Cuando la confirme, tu contraseña va a ser tu apellido seguido de 12345.',
+      });
+    } catch (requestError) {
+      setError(apiUnreachableMessage(requestError));
     } finally {
       setEnviando(false);
     }
@@ -53,7 +76,8 @@ export default function Recuperar() {
           />
           <Text style={styles.title}>Recuperar contraseña</Text>
           <Text style={styles.subtitle}>
-            Escribí tu correo y te enviamos un código para crear una contraseña nueva.
+            Escribí tu correo y la veterinaria va a recibir tu solicitud. El cambio
+            se hace recién cuando un veterinario lo confirma.
           </Text>
         </View>
 
@@ -88,9 +112,11 @@ export default function Recuperar() {
           onPress={enviarRecuperacion}
           disabled={enviando}
           accessibilityRole="button"
-          accessibilityLabel="Enviar el código por correo"
+          accessibilityLabel="Enviar la solicitud de recuperación"
         >
-          <Text style={styles.enviarButtonText}>{enviando ? 'Enviando...' : 'Enviar'}</Text>
+          <Text style={styles.enviarButtonText}>
+            {enviando ? 'Enviando...' : 'Enviar solicitud'}
+          </Text>
         </Pressable>
 
         <View style={styles.loginRow}>
