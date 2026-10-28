@@ -99,6 +99,20 @@ function createAccessToken(userId: number, password: string): string {
   return `${userId}.${signature}`;
 }
 
+// Contraseña temporal que genera el veterinario al confirmar una recuperación:
+// el apellido del usuario (última palabra del nombre) seguido de 12345.
+function passwordTemporal(nombre: string): string {
+  const apellido = nombre
+    .trim()
+    .split(/\s+/)
+    .pop()
+    ?.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return `${apellido || 'vetpro'}12345`;
+}
+
 async function requireAuthenticatedUser(
   request: express.Request,
   response: express.Response
@@ -522,18 +536,12 @@ app.delete('/api/mascotas/:id', async (request, response) => {
 const PREFIJO_CHECK_IN = 'vetpro://check-in';
 
 /**
- * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
- * Devuelve null si el QR no es de VetPro o si la sede no existe.
+ * Acepta el QR genérico de VetPro y también los viejos que llevaban ?sedeId=...
+ * para no romper con los carteles ya impresos. La sede no se usa: el turno del
+ * cliente ya dice dónde es.
  */
-async function sedeDeCheckIn(code: unknown): Promise<string | null> {
-  if (typeof code !== 'string') return null;
-  const [base, consulta] = code.split('?');
-  if (base !== PREFIJO_CHECK_IN) return null;
-  const params = new URLSearchParams(consulta ?? '');
-  const id = parseId(params.get('sedeId') ?? undefined);
-  const nombre = params.get('sede');
-  const sede = id !== null ? await prisma.sede.findUnique({ where: { id } }) : nombre ? await prisma.sede.findUnique({ where: { nombre } }) : null;
-  return sede?.nombre ?? null;
+function esCheckInVetPro(code: unknown): boolean {
+  return typeof code === 'string' && code.split('?')[0] === PREFIJO_CHECK_IN;
 }
 
 // GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
@@ -650,8 +658,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
     return response.status(403).json({ message: 'El registro de llegada es para cuentas de usuario.' });
   }
 
-  const sede = await sedeDeCheckIn(request.body?.code);
-  if (sede === null) {
+  if (!esCheckInVetPro(request.body?.code)) {
     return response.status(400).json({ message: 'El código QR no es válido.' });
   }
 
@@ -663,16 +670,24 @@ app.post('/api/turnos/check-in', async (request, response) => {
   ].join('-');
 
   try {
-    const turno = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
+    const turnos = await prisma.turno.findMany({
+      where: { userId: user.id, fecha: fechaActual, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
       orderBy: [{ hora: 'asc' }, { id: 'asc' }],
     });
+    // Con un solo QR para todas las sedes puede haber más de un turno hoy. Se
+    // registra el más cercano a la hora actual y no siempre el primero del día.
+    const turno = turnos.reduce<(typeof turnos)[number] | null>((elegido, candidato) => {
+      if (!elegido) return candidato;
+      const distancia = (item: (typeof turnos)[number]) =>
+        Math.abs(new Date(`${item.fecha}T${item.hora}:00`).getTime() - ahora.getTime());
+      return distancia(candidato) < distancia(elegido) ? candidato : elegido;
+    }, null);
     if (!turno) {
       return response.status(404).json({
-        message: `No tienes turnos para hoy en ${await sedeConDireccion(sede)}.`,
+        message: 'No tienes turnos pendientes para hoy.',
       });
     }
 
@@ -687,7 +702,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
 
     return response.json({
       turno: { ...turno, llegadaEn },
-      sede,
+      sede: turno.sede,
       yaRegistrado: false,
     });
   } catch (error) {
@@ -921,7 +936,7 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
-      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
+      orderBy: [{ llegadaEn: 'asc' }, { hora: 'asc' }],
     });
     return response.json(turnos);
   } catch (error) {
@@ -1515,6 +1530,37 @@ app.get('/api/users/:id', async (request, response) => {
   }
 });
 
+// DELETE /api/users/:id
+// El usuario autenticado solo puede eliminar su propia cuenta.
+app.delete('/api/users/:id', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
+  const id = parseId(request.params.id);
+  if (id === null) {
+    return response.status(400).json({ message: 'El id de usuario no es válido.' });
+  }
+  if (id !== autenticado.id) {
+    return response.status(403).json({ message: 'Solo puedes eliminar tu propia cuenta.' });
+  }
+  if (
+    autenticado.role === 'ADMIN' &&
+    (await prisma.usuario.count({ where: { role: 'ADMIN' } })) <= 1
+  ) {
+    return response.status(400).json({ message: 'No se puede eliminar al último administrador.' });
+  }
+
+  try {
+    await prisma.usuario.delete({ where: { id } });
+    return response.status(204).send();
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+    console.error('No se pudo eliminar la cuenta:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar la cuenta.' });
+  }
+});
+
 // PATCH /api/users/:id
 // Actualiza los datos de contacto opcionales y básicos del usuario.
 app.patch('/api/users/:id', async (request, response) => {
@@ -1630,6 +1676,115 @@ app.patch('/api/users/:id/password', async (request, response) => {
     }
     console.error('No se pudo cambiar la contraseña:', error);
     return response.status(500).json({ message: 'No se pudo cambiar la contraseña.' });
+  }
+});
+
+// POST /api/password-reset/request
+// El usuario pide recuperar su contraseña. No se cambia nada: se avisa a los
+// veterinarios y recién cuando uno confirma se genera la contraseña temporal.
+app.post('/api/password-reset/request', async (request, response) => {
+  const { email } = request.body ?? {};
+  if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+    return response.status(400).json({ message: 'Escribe un correo válido.' });
+  }
+
+  const correo = email.trim().toLowerCase();
+  const respuestaGenerica = {
+    message: 'Si el correo está registrado, la veterinaria va a recibir la solicitud.',
+  };
+
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { email: correo },
+      select: { id: true, nombre: true, email: true },
+    });
+    // Si el correo no existe se contesta lo mismo igual: no conviene revelar
+    // qué correos están registrados. Sin usuario no hay aviso ni recuperación.
+    if (!user) return response.json(respuestaGenerica);
+
+    // Le llega a todos los administradores, incluido el que pidió la
+    // recuperación si su cuenta es de veterinario. Así, en una demo con un solo
+    // admin, la solicitud igual aparece en su propia campanita y puede
+    // confirmarla. Si el que pidió es un cliente, le llega a todos igual.
+    const admins = await prisma.usuario.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    });
+
+    await Promise.all(
+      admins.map(async (admin) => {
+        const pendiente = await prisma.notification.findFirst({
+          where: {
+            userId: admin.id,
+            tipo: 'recuperacion',
+            solicitanteEmail: user.email,
+            readAt: null,
+          },
+        });
+        if (pendiente) return;
+        await prisma.notification.create({
+          data: {
+            userId: admin.id,
+            title: 'Recuperación de contraseña',
+            message: `${user.nombre} quiere recuperar su contraseña.`,
+            tipo: 'recuperacion',
+            solicitanteEmail: user.email,
+          },
+        });
+      })
+    );
+
+    return response.json(respuestaGenerica);
+  } catch (error) {
+    console.error('No se pudo registrar la solicitud de recuperación:', error);
+    return response.status(500).json({ message: 'No se pudo enviar la solicitud.' });
+  }
+});
+
+// POST /api/admin/password-reset
+// El veterinario confirma la recuperación. La contraseña queda en
+// apellido12345 y se marcan como leídas las solicitudes pendientes de ese
+// correo. El token viejo deja de servir porque la firma usa la contraseña.
+app.post('/api/admin/password-reset', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+
+  const { userId, email } = request.body ?? {};
+  const id = typeof userId === 'number' ? userId : null;
+  const correo = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (id === null && !correo) {
+    return response.status(400).json({ message: 'Indica el usuario a restablecer.' });
+  }
+
+  try {
+    const user = await prisma.usuario.findFirst({
+      where: id !== null ? { id } : { email: correo },
+      select: { id: true, nombre: true, email: true },
+    });
+    if (!user) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+
+    // No se bloquea el cambio sobre la propia cuenta: el admin puede confirmar
+    // una solicitud que él mismo generó desde la campanita. Desde Administrar
+    // usuarios la llave no aparece para uno mismo, así que ese camino sigue
+    // reservado a Perfil.
+    const password = passwordTemporal(user.nombre);
+    await prisma.$transaction([
+      prisma.usuario.update({ where: { id: user.id }, data: { password } }),
+      prisma.notification.updateMany({
+        where: { tipo: 'recuperacion', solicitanteEmail: user.email, readAt: null },
+        data: { readAt: new Date().toISOString() },
+      }),
+    ]);
+
+    return response.json({ nombre: user.nombre, email: user.email, password });
+  } catch (error) {
+    if (isMissingRecord(error)) {
+      return response.status(404).json({ message: 'No se encontró el usuario.' });
+    }
+    console.error('No se pudo restablecer la contraseña:', error);
+    return response.status(500).json({ message: 'No se pudo restablecer la contraseña.' });
   }
 });
 
