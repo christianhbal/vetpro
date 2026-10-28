@@ -212,6 +212,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const [mascotaId, setMascotaId] = useState<number | null>(null);
     const [tipo, setTipo] = useState<TipoTurno | ''>('');
     const [horaSeleccionada, setHoraSeleccionada] = useState('');
+    const [anchoHorarios, setAnchoHorarios] = useState(0);
 
     const [guardando, setGuardando] = useState(false);
     const [mensajeError, setMensajeError] = useState('');
@@ -396,11 +397,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       setMesVisible((actual) => new Date(actual.getFullYear(), actual.getMonth() + cantidad, 1));
     };
 
-    const hayHorasLibres = horariosDisponibles.some(
-      (hora) =>
-        !ocupadosDia.has(hora) &&
-        !(fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos)
+    const horariosVisibles = horariosDisponibles.filter(
+      (hora) => fechaSeleccionada !== hoyValor || horaComoMinutos(hora) > ahoraMinutos
     );
+    const hayHorasLibres = horariosVisibles.some((hora) => !ocupadosDia.has(hora));
 
     // El dia bloqueado se puede abrir pero no tiene ningun horario bookeable.
     // Sin esto, abrir el miercoles dejaba los slots habilitados y el boton de
@@ -581,9 +581,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     // calendario ya no entraba mas y el formulario se cortaba. Con 24 y 26
     // sigue entrando y los numeros todavia se leen.
     const altoDia = Math.max(18, Math.round((compacta ? 32 : 36) * escala));
-    const altoSlot = Math.max(20, Math.round((compacta ? 32 : 36) * escala));
+    const altoSlot = Math.max(44, Math.round((compacta ? 44 : 46) * escala));
     const diaText = Math.max(10, Math.round((compacta ? 12 : 13) * escala));
-    const slotText = Math.max(9, Math.round((compacta ? 11 : 12) * escala));
+    const slotText = Math.max(12, Math.round((compacta ? 12 : 13) * escala));
     const gapSlot = Math.max(3, Math.round(5 * escala));
 
     // Los margenes tambien se comprimen. Antes eran fijos: en un iPhone SE
@@ -694,7 +694,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         {/* Direccion de la sede elegida. Va en una linea propia y en letra chica
             para no desarmar la fila de dos columnas: dentro de la columna de Sede
             los dos selectores quedaban desalineados. */}
-        {compacta || sedeFija ? null : (
+        {compacta || sedeFija || !configuracionSede ? null : (
           <View style={[styles.direccionSede, { marginTop: hueco(7), marginBottom: hueco(10) }]}>
             <Ionicons name="location-outline" size={12} color="#0f3e17" />
             <Text style={styles.direccionTexto} numberOfLines={1} ellipsizeMode="tail">
@@ -782,16 +782,16 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const value = fechaComoValor(date);
             const ocupados = ocupadosPorDia.get(value) ?? 0;
             const esPasado = value < hoyValor;
-            const esDomingo = !atiendeDia(configuracionSede, date);
+            const esDomingo = Boolean(configuracionSede) && !atiendeDia(configuracionSede, date);
             // Los miercoles la veterinaria esta completa: no se atienden turnos.
             // NO va en `deshabilitado`: el dia se puede abrir para ver que esta
             // lleno, pero adentro no hay ningun horario bookeable.
-            const esDiaBloqueado = !atiendeDia(configuracionSede, date);
+            const esDiaBloqueado = Boolean(configuracionSede) && !atiendeDia(configuracionSede, date);
             const completos = horariosDisponibles.length > 0 && ocupados >= horariosDisponibles.length;
             // Un dia sin horarios igual se puede abrir para ver que esta lleno,
             // asi que no cuenta como deshabilitado: solo se ve distinto.
-            const deshabilitado = esPasado || esDomingo || cargando || Boolean(error);
-            const seleccionado = fechaSeleccionada === value;
+            const deshabilitado = !configuracionSede || esPasado || esDomingo || cargando || Boolean(error);
+            const seleccionado = Boolean(configuracionSede) && fechaSeleccionada === value;
             // La celda reserva la franja de abajo para el puntito, asi el numero
             // sube y no queda pegado a el. Solo lo llevan los dias bloqueados
             // (los miercoles): el puntito verde de "este dia ya tiene horarios
@@ -816,7 +816,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 disabled={deshabilitado}
                 accessibilityRole="button"
                 accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                accessibilityLabel={`${dia} de ${nombreMes}${esDiaBloqueado ? ', sin turnos, día completo' : completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', la sede no atiende' : ''}${esPasado ? ', fecha pasada' : ''}`}
+                accessibilityLabel={`${dia} de ${nombreMes}${!configuracionSede ? ', elegí una sede' : esDiaBloqueado ? ', sin atención' : completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esPasado ? ', fecha pasada' : ''}`}
               >
                 <Text
                   style={[
@@ -866,36 +866,41 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
               titulo con la fecha es al第四次. */}
           {compacta ? null : (
             <Text style={styles.timesTitle}>
-              Horarios del{' '}
-              {fechaSeleccionada
-                ? new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR')
-                : 'día seleccionado'}
+              {configuracionSede && fechaSeleccionada
+                ? `Horarios del ${new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR')}`
+                : 'Horarios'}
             </Text>
           )}
           {cargando ? (
             <ActivityIndicator color="#0f3e17" style={styles.cargandoBloque} />
           ) : error ? (
             <Text style={estilos.cardSubtitle}>{error}</Text>
+          ) : !configuracionSede ? (
+            <Text style={estilos.cardSubtitle}>Elegí una sede para ver los horarios.</Text>
           ) : !fechaSeleccionada ? (
             <Text style={estilos.cardSubtitle}>Elegí una fecha para ver los horarios.</Text>
           ) : (
             <View>
               {seleccionBloqueada ? (
                 <Text style={styles.sinHoras}>
-                  Los miércoles están completos y no se atienden turnos. Probá con
-                  otro día.
+                  La sede no atiende este día. Probá con otro día.
+                </Text>
+              ) : fechaSeleccionada === hoyValor && horariosVisibles.length === 0 ? (
+                <Text style={styles.sinHoras}>
+                  Ya no quedan horarios disponibles para hoy. Elegí otro día.
                 </Text>
               ) : !hayHorasLibres ? (
                 <Text style={styles.sinHoras}>
                   No hay ningún horario libre para esta fecha. Probá con otro día.
                 </Text>
               ) : null}
-              <View style={[styles.slotsGrid, { gap: gapSlot }]}>
-                {horariosDisponibles.map((hora) => {
+              <View
+                style={[styles.slotsGrid, { gap: gapSlot }]}
+                onLayout={(event) => setAnchoHorarios(event.nativeEvent.layout.width)}
+              >
+                {horariosVisibles.map((hora) => {
                   const ocupado = ocupadosDia.has(hora) || seleccionBloqueada;
-                  const pasado =
-                    fechaSeleccionada === hoyValor && horaComoMinutos(hora) <= ahoraMinutos;
-                  const deshabilitado = ocupado || pasado || guardando;
+                  const deshabilitado = ocupado || guardando;
                   const seleccionado = horaSeleccionada === hora;
                   return (
                     <Pressable
@@ -907,15 +912,19 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                       }}
                       style={({ pressed }) => [
                         styles.slot,
-                        { minHeight: altoSlot },
+                        {
+                          minHeight: altoSlot,
+                          ...(anchoHorarios > 0
+                            ? { width: Math.floor(((anchoHorarios - gapSlot * 3) / 4) * 100) / 100 }
+                            : {}),
+                        },
                         seleccionado && styles.slotSeleccionado,
                         ocupado && styles.slotOcupado,
-                        pasado && !ocupado && styles.slotVencido,
                         pressed && !deshabilitado && estilos.buttonPressed,
                       ]}
                       accessibilityRole="button"
                       accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                      accessibilityLabel={`${hora}${ocupado ? ', ocupado' : pasado ? ', no disponible' : ', disponible'}`}
+                      accessibilityLabel={`${hora}${ocupado ? ', ocupado' : ', disponible'}`}
                     >
                       <Text
                         style={[
@@ -1218,14 +1227,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 5 },
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 5 },
   slot: {
-    // 15% y no 15.5: con 15.5% entran 5 por fila y los 18 horarios quedan en
-// 5+5+5+3, con la ultima fila de 3 repartida con space-between y un hueco
-// enorme en el medio. Con 15% entran 6 por fila justas (6 x 15% = 90% y 7 x 15%
-// no entra), o sea 3 filas parejas de 6, sin huecos raros.
-width: '15%',
-    minHeight: 34,
+    width: '23%',
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,

@@ -58,7 +58,13 @@ export default function TurnoDateTimeField({
   onMonthChange,
 }: Props) {
   const horariosDisponibles = horariosDeSede(sede);
+  const ahora = new Date();
+  const horaActual = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const horariosVisibles = horariosDisponibles.filter(
+    (horario) => fechaSeleccionadaValor !== fechaComoValor(ahora) || horario > horaActual
+  );
   const [abierto, setAbierto] = useState(false);
+  const [anchoHorarios, setAnchoHorarios] = useState(0);
   const [mesVisible, setMesVisible] = useState(() => fechaDesdeValor(valor));
   const esFecha = tipo === 'fecha';
   const fechaSeleccionada = useMemo(
@@ -252,19 +258,25 @@ export default function TurnoDateTimeField({
                   <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>
                 ) : errorDisponibilidad ? (
                   <Text style={styles.availabilityMessage}>{errorDisponibilidad}</Text>
-                ) : horariosDisponibles.every((horario) => horariosOcupadosDia.has(horario)) ? (
-                  <Text style={styles.availabilityMessage}>No quedan horarios disponibles para esta fecha.</Text>
+                ) : horariosVisibles.length === 0 ? (
+                  <Text style={styles.availabilityMessage}>
+                    {fechaSeleccionadaValor === fechaComoValor(ahora)
+                      ? 'Ya no quedan horarios disponibles para hoy. Elegí otro día.'
+                      : 'No quedan horarios disponibles para esta fecha.'}
+                  </Text>
                 ) : (
                   <ScrollView style={styles.slotsScroll}>
-                    <View style={styles.slotsGrid}>
-                      {horariosDisponibles.map((horario) => {
+                    {horariosVisibles.every((horario) => horariosOcupadosDia.has(horario)) ? (
+                      <Text style={styles.availabilityMessage}>No quedan horarios disponibles para esta fecha.</Text>
+                    ) : null}
+                    <View
+                      style={styles.slotsGrid}
+                      onLayout={(event) => setAnchoHorarios(event.nativeEvent.layout.width)}
+                    >
+                      {horariosVisibles.map((horario) => {
                         const ocupado = horariosOcupadosDia.has(horario);
-                        const pasadoHoy =
-                          fechaSeleccionadaValor === fechaComoValor(new Date()) &&
-                          horario <= `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
                         const deshabilitado =
                           ocupado ||
-                          pasadoHoy ||
                           cargandoDisponibilidad ||
                           Boolean(errorDisponibilidad);
                         const seleccionado = valor === horario;
@@ -278,6 +290,7 @@ export default function TurnoDateTimeField({
                             }}
                             style={[
                               styles.slot,
+                              anchoHorarios > 0 && { width: Math.floor(((anchoHorarios - 16) / 3) * 100) / 100 },
                               seleccionado && styles.selectedDay,
                               deshabilitado && styles.disabledSlot,
                             ]}
@@ -351,8 +364,8 @@ const styles = StyleSheet.create({
   availabilityMessage: { color: '#69746a', fontSize: 14, textAlign: 'center', marginVertical: 18 },
   slotSubtitle: { color: '#69746a', fontSize: 14, marginTop: 12 },
   slotsScroll: { maxHeight: 300, marginTop: 12 },
-  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
-  slot: { width: '30%', minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#e1f4df' },
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8 },
+  slot: { width: '30%', minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#e1f4df' },
   disabledSlot: { backgroundColor: '#f0f1ee' },
   slotText: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   selectedDay: { backgroundColor: '#0f3e17' },
