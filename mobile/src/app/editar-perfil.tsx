@@ -55,7 +55,7 @@ export default function EditarPerfil() {
             router.replace('/');
             return;
           }
-          const response = await fetch(`${API_BASE_URL}/api/users/${sesion.id}`);
+          const response = await fetch(`${API_BASE_URL}/api/users/${sesion.id}`, { headers: { Authorization: `Bearer ${sesion.accessToken}` } });
           const result: unknown = await response.json();
           if (!response.ok) {
             throw new Error(mensajeApi(result) ?? 'No se pudo cargar el perfil.');
@@ -121,7 +121,7 @@ export default function EditarPerfil() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/${usuario.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.accessToken}` },
         body: JSON.stringify({
           nombre: nombre.trim(),
           telefono: telefono.trim(),

@@ -1,17 +1,3 @@
-export type Mascota = {
-  id: number;
-  nombre: string;
-  especie: string;
-  edad: string;
-};
-
-export type Cita = {
-  id: number;
-  mascota: string;
-  motivo: string;
-  fecha: string;
-};
-
 export type TurnoGuardado = {
   id: number;
   tipo: string;
@@ -30,20 +16,23 @@ export type TurnoGuardado = {
   };
 };
 
-export const sedesVeterinaria = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
-
-export type SedeVeterinaria = (typeof sedesVeterinaria)[number];
-
-export const direccionesSedes: Record<SedeVeterinaria, string> = {
-  Recoleta: 'Av. Recoleta 1234',
-  'San Isidro': 'Av. Centenario 2450',
-  'Vicente López': 'Av. del Libertador 1580',
-};
-
+export type SedeVeterinaria = string;
+export type Sede = { id: number; nombre: string; direccion: string; dias: string[]; horaDesde: string; horaHasta: string };
 export const DIAS_SEMANA = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const;
-
 export function esSedeVeterinaria(value: unknown): value is SedeVeterinaria {
-  return typeof value === 'string' && sedesVeterinaria.some((sede) => sede === value);
+  return typeof value === 'string' && value.trim().length > 0;
+}
+export function horariosDeSede(sede: Sede | undefined): string[] {
+  if (!sede) return [];
+  const minutos = (hora: string) => { const [h, m] = hora.split(':').map(Number); return h * 60 + m; };
+  const desde = minutos(sede.horaDesde), hasta = minutos(sede.horaHasta);
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta) || hasta <= desde) return [];
+  const horarios: string[] = [];
+  for (let valor = desde; valor + 30 <= hasta; valor += 30) horarios.push(`${String(Math.floor(valor / 60)).padStart(2, '0')}:${String(valor % 60).padStart(2, '0')}`);
+  return horarios;
+}
+export function atiendeDia(sede: Sede | undefined, fecha: Date): boolean {
+  return Boolean(sede?.dias.includes(['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][fecha.getDay()]));
 }
 
 export function formatearFechaTurno(fecha: string, hora: string): string {
@@ -120,25 +109,3 @@ export function dividirEspecieMascota(
   }
   return { seleccion: ESPECIE_OTRO, otra: valor };
 }
-
-export const usuario = {
-  id: 1,
-  nombre: 'Juan Perez',
-  email: 'juan@gmail.com',
-};
-
-export const fotoMascota =
-  'https://images.unsplash.com/photo-1552053831-71594a27632d?w=900&auto=format&fit=crop&q=85';
-
-export const mascotas: Mascota[] = [
-  { id: 1, nombre: 'Lola', especie: 'Perro', edad: '3 años' },
-  { id: 2, nombre: 'Mora', especie: 'Gato', edad: '2 años' },
-  { id: 3, nombre: 'Tito', especie: 'Perro', edad: '5 años' },
-  { id: 4, nombre: 'Pepe', especie: 'Perro', edad: '4 años' },
-];
-
-export const citas: Cita[] = [
-  { id: 1, mascota: 'Lola', motivo: 'Vacuna Antirrábica', fecha: '28 Sept - 10:00 AM' },
-  { id: 2, mascota: 'Mora', motivo: 'Control de rutina', fecha: '02 Oct - 16:30 PM' },
-  { id: 3, mascota: 'Pepe', motivo: 'Control de rutina', fecha: '12 Oct - 6:30 AM' },
-];

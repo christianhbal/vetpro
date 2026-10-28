@@ -18,20 +18,15 @@ import { CalendarioTurnos } from '@/components/calendario-turnos';
 import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { estilos } from '@/lib/estilos';
 import {
-  direccionesSedes,
   formatearFechaTurno,
-  sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
   type TurnoGuardado,
 } from '@/lib/datos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
-import { useSedeSeleccionada } from '@/lib/sede';
-import {
-  turnosEjemploCliente,
-  type MascotaEjemplo,
-} from '@/lib/turnos-ejemplo';
+import { useSedeSeleccionada, useSedes } from '@/lib/sede';
+
 
 // La respuesta del admin trae turno ajeno y estado de atención; el usuario
 // normal solo ve los suyos.
@@ -101,22 +96,11 @@ function mensajeApi(resultado: unknown): string | null {
   return typeof resultado.message === 'string' ? resultado.message : null;
 }
 
-// Mascota del usuario: el tipo vive en lib/turnos-ejemplo, que es donde se
-// arman los ejemplos compartidos con la portada.
-
-// Los dias ya pasaron se muestran con los turnos reales que trae la API (los
-// cria el generador de datos de ejemplo del backend, con la mascota y el dueno
-// de verdad). Antes se armaban aca con nombres inventados y duenos que no eran
-// de nadie: la agenda es del veterinario y tiene que mostrar pacientes reales.
-
-// Ejemplos de la agenda del ADMIN: son de una agenda compartida (Lola, Mora,
-// Tito, Roco de otros clientes) y solo se ven si el usuario atiende.
-
-
-
 export default function TurnosScreen() {
+  const { sedes } = useSedes();
+  const sedesVeterinaria = sedes.map((sede) => sede.nombre);
+  const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
-  const [mascotasPropias, setMascotasPropias] = useState<MascotaEjemplo[]>([]);
   const [ahora, setAhora] = useState(() => new Date());
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
@@ -133,7 +117,7 @@ export default function TurnosScreen() {
   // Modificar un turno: solo el admin, y solo sobre los que no tienen sello.
   const [editando, setEditando] = useState(false);
   const [tipo, setTipo] = useState('Control');
-  const [sedeForm, setSedeForm] = useState<SedeVeterinaria>('Recoleta');
+  const [sedeForm, setSedeForm] = useState<SedeVeterinaria>('');
   const [fechaForm, setFechaForm] = useState('');
   const [horaForm, setHoraForm] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -189,23 +173,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
       }
       setTurnos(resultado);
 
-      // Los ejemplos de la agenda del cliente se arman con sus mascotas. Si la
-      // consulta falla no se corta la pantalla: los turnos reales ya estan
-      // cargados y solo se pierde el relleno del calendario.
-      if (!usuario.esAdmin) {
-        try {
-          const responseMascotas = await fetch(
-            `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
-          );
-          if (responseMascotas.ok) {
-            const datos = await responseMascotas.json();
-            if (Array.isArray(datos)) setMascotasPropias(datos);
-          }
-        } catch {
-          // Sin mascotas no hay ejemplos propios: la agenda real sigue igual.
-        }
-      }
-
       setAhora(new Date());
     } catch (fetchError) {
       setError(apiUnreachableMessage(fetchError));
@@ -238,11 +205,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     guardado: turno,
   });
 
-  const turnosVisibles = useMemo(() => {
-    if (esAdmin) return turnos;
-    if (turnos.length > 0) return turnos;
-    return turnosEjemploCliente(mascotasPropias);
-  }, [turnos, esAdmin, mascotasPropias]);
+  const turnosVisibles = useMemo(() => turnos.filter((turno) => !turno.esDemo), [turnos]);
 
   const proximos = useMemo(
     () =>
@@ -251,7 +214,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           !turno.ocultoEnAgenda &&
           (turno.atendidoEn === null || turno.atendidoEn === undefined) &&
           (turno.llegadaEn === null || turno.llegadaEn === undefined) &&
-          (turno.esDemo === true || turnoSiguePendiente(turno, ahora))
+          turnoSiguePendiente(turno, ahora)
       ),
     [turnosVisibles, ahora]
   );
@@ -265,10 +228,10 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     [turnosVisibles]
   );
 
-  const sedesDisponibles = useMemo(() => {
-    const conTurnos = new Set(porDia.map((turno) => turno.sede));
-    return ['Todas', ...sedesVeterinaria.filter((sede) => conTurnos.has(sede))];
-  }, [porDia]);
+  const sedesDisponibles = useMemo(
+    () => ['Todas', ...sedes.map((sede) => sede.nombre)],
+    [sedes]
+  );
 
   const turnosDelDia = useMemo(() => {
     const idsProximos = new Set(proximos.map((turno) => turno.id));
@@ -369,12 +332,12 @@ const puedeCancelar =
   };
 
   const horariosOcupadosEfectivos = useMemo(() => {
-    if (!citaSeleccionada) return horariosOcupados;
+    if (!citaSeleccionada || sedeForm !== citaSeleccionada.guardado.sede) return horariosOcupados;
     const propio = citaSeleccionada.guardado;
     return horariosOcupados.filter(
       (horario) => !(horario.fecha === propio.fecha && horario.hora === propio.hora)
     );
-  }, [citaSeleccionada, horariosOcupados]);
+  }, [citaSeleccionada, horariosOcupados, sedeForm]);
 
   const guardarCambios = async () => {
     if (!citaSeleccionada || guardando) return;
@@ -650,7 +613,11 @@ const puedeCancelar =
         <View style={styles.cabecera}>
           <View style={styles.bloqueSede}>
             <Text style={styles.labelSede}>Sede</Text>
-            <View style={styles.filaSedes}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filaSedes}
+            >
               {sedesDisponibles.map((opcion) => {
                 const seleccionada = filtroSede === opcion;
                 return (
@@ -675,7 +642,7 @@ const puedeCancelar =
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
 
           <CalendarioTurnos
@@ -706,7 +673,7 @@ const puedeCancelar =
                   // Con "Todas" no hay una sede real todavia, asi que no se pasa
                   // ninguna y la pantalla usa su valor por defecto.
                   filtroSede === 'Todas'
-                  ? '/admin-turnos-activos'
+                  ? { pathname: '/admin-turnos-activos', params: { sede: sedeCompartida } }
                   : { pathname: '/admin-turnos-activos', params: { sede: filtroSede } }
                 : '/nuevo-turno'
               )
@@ -1043,7 +1010,11 @@ const puedeCancelar =
 
               <View style={styles.bloqueCampo}>
                 <TurnoDateTimeField
+                  sede={sedes.find((item) => item.nombre === sedeForm)}
                   tipo="fecha"
+                  horariosOcupados={horariosOcupadosEfectivos}
+                  cargandoDisponibilidad={cargandoDisponibilidad}
+                  errorDisponibilidad={errorDisponibilidad}
                   valor={fechaForm}
                   onChange={(valor) => {
                     setFechaForm(valor);
@@ -1055,6 +1026,7 @@ const puedeCancelar =
 
               <View style={styles.bloqueCampo}>
                 <TurnoDateTimeField
+                  sede={sedes.find((item) => item.nombre === sedeForm)}
                   tipo="hora"
                   valor={horaForm}
                   onChange={setHoraForm}
@@ -1207,7 +1179,7 @@ const styles = {
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   bloqueSede: { marginBottom: 12 },
   labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
-  filaSedes: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 },
+  filaSedes: { flexDirection: 'row' as const, gap: 8 },
   sedeChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,

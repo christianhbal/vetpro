@@ -20,9 +20,10 @@ import {
   type TurnoElegido,
 } from '@/components/availability-calendar';
 import { estilos } from '@/lib/estilos';
-import { apiUnreachableMessage } from '@/lib/api';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { esSedeVeterinaria } from '@/lib/datos';
+import { useSedeSeleccionada } from '@/lib/sede';
 
 const MAX_DESCRIPCION = 500;
 
@@ -68,14 +69,11 @@ export default function MarcarTurnoScreen() {
 
   const turnoId = Number(params.id);
   const mascotaId = Number(params.mascotaId);
-  // Atendido viene del backend, no de la descripcion: un turno pendiente puede
-// tener una nota cargada y aun asi no estar atendido.
-const yaAtendido = params.atendido === 'true';
-
   // Volver a la lista de pacientes tiene que conservar la sede: sin pasarla, la
   // pantalla caia siempre en Recoleta y el veterinario atendia en una sede y
   // volvia a ver los pacientes de otra.
-  const sedeDeOrigen = esSedeVeterinaria(params.sede) ? params.sede : 'Recoleta';
+  const [sedeCompartida] = useSedeSeleccionada();
+const sedeDeOrigen = esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
   const esperaDeLaSede = {
     pathname: '/admin-turnos-activos',
     params: { sede: sedeDeOrigen },
@@ -89,9 +87,6 @@ const yaAtendido = params.atendido === 'true';
     router.replace(esperaDeLaSede);
   };
 
-// OJO: todavia no se escribe nada en la base. Esta pantalla se esta probando
-  // y sincronizar el turno atendido todavia no hace falta, asi que completar
-  // el turno es solo una simulacion local: valida, avisa y vuelve.
   const guardar = async () => {
     if (guardando) return;
     setError('');
@@ -111,7 +106,7 @@ const yaAtendido = params.atendido === 'true';
     }
     // Si pidio seguimiento, la fecha y la hora tienen que estar elegidas antes
     // de completar el turno.
-    if (agendarSeguimiento && agenda.current && !agenda.current.listo) {
+    if (agendarSeguimiento && (!agenda.current || !agenda.current.listo || !agenda.current.elegido)) {
       setAviso({
         titulo: 'Faltan datos para agendar',
         mensaje: 'Elegí el tipo, fecha y la hora del nuevo turno.',
@@ -127,12 +122,16 @@ const yaAtendido = params.atendido === 'true';
 
     setGuardando(true);
     try {
-      // La agenda corre en modo simulacion: elige horario pero no agenda nada.
-      let seguimiento = null;
-      if (agendarSeguimiento && agenda.current) {
-        const guardado = await agenda.current.guardar();
-        if (!guardado) return;
-        seguimiento = agenda.current.elegido;
+      const seguimiento = agendarSeguimiento ? agenda.current?.elegido ?? null : null;
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${turnoId}/atendido`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sesion.accessToken}` },
+        body: JSON.stringify({ descripcion: descripcion.trim(), seguimiento }),
+      });
+      const resultado: unknown = await response.json();
+      if (!response.ok) {
+        const mensaje = typeof resultado === 'object' && resultado !== null && 'message' in resultado && typeof resultado.message === 'string' ? resultado.message : 'No se pudo completar el turno.';
+        throw new Error(mensaje);
       }
       setExito({ conSeguimiento: seguimiento !== null, seguimiento });
     } catch (requestError) {
@@ -146,15 +145,6 @@ const yaAtendido = params.atendido === 'true';
     } finally {
       setGuardando(false);
     }
-  };
-
-// Tampoco va a la base: si completar el turno es una simulacion, desmarcarlo
-  // solo limpia la pantalla. Cuando se conecte, aca vuelve el PATCH.
-  const desmarcar = async () => {
-    if (guardando) return;
-    setError('');
-    setDescripcion('');
-    router.replace(esperaDeLaSede);
   };
 
   const restantes = MAX_DESCRIPCION - descripcion.trim().length;
@@ -258,7 +248,6 @@ const yaAtendido = params.atendido === 'true';
               ocultarBotonGuardar
               ocultarAviso
               comoAdmin
-              simular
               mascotaIdFija={
                 Number.isInteger(mascotaId) && mascotaId > 0 ? mascotaId : null
               }
@@ -285,21 +274,10 @@ const yaAtendido = params.atendido === 'true';
           accessibilityState={{ disabled: guardando, busy: guardando }}
         >
           <Text style={styles.guardarTexto}>
-            {guardando ? 'Guardando...' : yaAtendido ? 'Actualizar atención' : 'Completar turno'}
+            {guardando ? 'Guardando...' : 'Completar turno'}
           </Text>
         </Pressable>
 
-        {yaAtendido ? (
-          <Pressable
-            style={({ pressed }) => [styles.desmarcar, pressed && estilos.buttonPressed]}
-            onPress={() => void desmarcar()}
-            disabled={guardando}
-            accessibilityRole="button"
-            accessibilityLabel="Desmarcar el turno como atendido"
-          >
-            <Text style={styles.desmarcarTexto}>Desmarcar turno</Text>
-          </Pressable>
-        ) : null}
       </ScrollView>
 
       <Modal

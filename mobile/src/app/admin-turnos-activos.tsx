@@ -15,6 +15,7 @@ import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import { esSedeVeterinaria, formatearFechaTurno, type SedeVeterinaria } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { useSedeSeleccionada } from '@/lib/sede';
 
 type TurnoActivo = {
   id: number;
@@ -73,7 +74,8 @@ export default function AdminTurnosActivosScreen() {
   // La sede se elige en la pantalla de Turnos y llega por parametro. Acá no
   // se modifica: si el usuario cambia de sede, tiene que volver a Turnos.
   const params = useLocalSearchParams<{ sede?: string }>();
-  const sedeSeleccionada = esSedeVeterinaria(params.sede) ? params.sede : 'Recoleta';
+  const [sedeCompartida] = useSedeSeleccionada();
+  const sedeSeleccionada = esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
 
   // Esta pantalla se entra desde Turnos o desde la portada, asi que la
   // cabecera muestra la flecha de volver en lugar del menu.
@@ -150,8 +152,6 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
   useFocusEffect(
     useCallback(() => {
       void cargarTurnos();
-      const intervalo = setInterval(() => void cargarTurnos(), 15_000);
-      return () => clearInterval(intervalo);
     }, [cargarTurnos])
   );
 

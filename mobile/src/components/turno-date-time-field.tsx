@@ -8,9 +8,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { DIAS_SEMANA } from '@/lib/datos';
+import { DIAS_SEMANA, horariosDeSede, atiendeDia, type Sede } from '@/lib/datos';
 
 type Props = {
+  sede?: Sede;
   tipo: 'fecha' | 'hora';
   valor: string;
   onChange: (value: string) => void;
@@ -20,11 +21,6 @@ type Props = {
   errorDisponibilidad?: string;
   onMonthChange?: (year: number, month: number) => void;
 };
-
-const horariosDisponibles = Array.from({ length: 18 }, (_value, index) => {
-  const minutos = 10 * 60 + index * 30;
-  return `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
-});
 
 function fechaDesdeValor(valor: string): Date {
   const [year, month, day] = valor.split('-').map(Number);
@@ -52,6 +48,7 @@ function diasDelMes(fecha: Date): (number | null)[] {
 
 export default function TurnoDateTimeField({
   tipo,
+  sede,
   valor,
   onChange,
   fechaSeleccionadaValor = '',
@@ -60,6 +57,7 @@ export default function TurnoDateTimeField({
   errorDisponibilidad = '',
   onMonthChange,
 }: Props) {
+  const horariosDisponibles = horariosDeSede(sede);
   const [abierto, setAbierto] = useState(false);
   const [mesVisible, setMesVisible] = useState(() => fechaDesdeValor(valor));
   const esFecha = tipo === 'fecha';
@@ -178,7 +176,7 @@ export default function TurnoDateTimeField({
                       new Date().getMonth(),
                       new Date().getDate()
                     );
-                    const esDomingo = fechaDia.getDay() === 0;
+                    const esDomingo = !atiendeDia(sede, fechaDia);
                     const horariosDelDia = new Set(
                       horariosOcupados
                         .filter(

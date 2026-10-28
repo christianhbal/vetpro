@@ -50,22 +50,9 @@ function formatearFechaLarga(fecha: string): string {
   return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : fecha;
 }
 
-const SEDES_VALIDAS = ['Recoleta', 'San Isidro', 'Vicente López'] as const;
-
-type Sede = (typeof SEDES_VALIDAS)[number];
-
-// Provisional: la direccion vive en el frontend (admin-sedes). Cuando exista el
-// modelo Sede, esto se reemplaza por una consulta a la base.
-const DIRECCIONES_SEDE: Record<string, string> = {
-  Recoleta: 'Av. Recoleta 1234',
-  'San Isidro': 'Av. Centenario 2450',
-  'Vicente López': 'Av. del Libertador 1580',
-};
-
-/** "Recoleta" -> "Recoleta (Av. Recoleta 1234)". */
-function sedeConDireccion(sede: string): string {
-  const direccion = DIRECCIONES_SEDE[sede];
-  return direccion ? `${sede} (${direccion})` : sede;
+async function sedeConDireccion(sede: string): Promise<string> {
+  const registro = await prisma.sede.findUnique({ where: { nombre: sede } });
+  return registro ? `${sede} (${registro.direccion})` : sede;
 }
 
 function isValidDateOnly(value: unknown): value is string {
@@ -81,26 +68,18 @@ function isValidDateOnly(value: unknown): value is string {
   );
 }
 
-function isValidAppointmentSlot(fecha: string, hora: string): boolean {
+function isValidAppointmentSlot(fecha: string, hora: string, sede: { dias: string; horaDesde: string; horaHasta: string }): boolean {
+  if (!isValidDateOnly(fecha) || !/^([01]\d|2[0-3]):(00|30)$/.test(hora)) return false;
   const [year, month, day] = fecha.split('-').map(Number);
   const date = new Date(year, month - 1, day);
-  const [hour, minute] = hora.split(':').map(Number);
-  const slotMinutes = hour * 60 + minute;
-  const ahora = new Date();
-  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-  return (
-    date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day &&
-    date.getDay() >= 1 &&
-    date.getDay() <= 6 &&
-    date >= hoy &&
-    slotMinutes >= 10 * 60 &&
-    slotMinutes <= 18 * 60 + 30 &&
-    minute % 30 === 0 &&
-    (date.getTime() !== hoy.getTime() ||
-      slotMinutes > ahora.getHours() * 60 + ahora.getMinutes())
-  );
+  const dia = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][date.getDay()];
+  let dias: unknown;
+  try { dias = JSON.parse(sede.dias); } catch { return false; }
+  if (!Array.isArray(dias) || !dias.includes(dia)) return false;
+  const minutos = (valor: string) => { const [h, m] = valor.split(':').map(Number); return h * 60 + m; };
+  const inicio = minutos(hora), desde = minutos(sede.horaDesde), hasta = minutos(sede.horaHasta);
+  const [h, m] = hora.split(':').map(Number);
+  return inicio >= desde && inicio + 30 <= hasta && (inicio - desde) % 30 === 0 && new Date(year, month - 1, day, h, m) > new Date();
 }
 
 // Prisma usa P2025 cuando se intenta actualizar o borrar un registro inexistente.
@@ -274,7 +253,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
             mascotaNombre: turno.mascota.nombre,
             mascotaFoto: turno.mascota.foto,
             title: TITULO_RECORDATORIO_TURNO,
-            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sedeConDireccion(turno.sede)}.`,
+            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${await sedeConDireccion(turno.sede)}.`,
           },
         });
       });
@@ -323,15 +302,94 @@ app.get('/api/health', async (_request, response) => {
   }
 });
 
+// Las sedes se consultan con sesión; solo un administrador puede modificarlas.
+app.get('/api/sedes', async (request, response) => {
+  if (!(await requireAuthenticatedUser(request, response))) return;
+  try {
+    const sedes = await prisma.sede.findMany({ orderBy: { nombre: 'asc' } });
+    return response.json(sedes.map((sede) => ({ ...sede, dias: JSON.parse(sede.dias) })));
+  } catch (error) {
+    console.error('No se pudieron consultar las sedes:', error);
+    return response.status(500).json({ message: 'No se pudieron consultar las sedes.' });
+  }
+});
+
+async function guardarSede(request: express.Request, response: express.Response): Promise<void> {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = typeof request.params.id === 'string' ? parseId(request.params.id) : null;
+  if (request.params.id !== undefined && id === null) {
+    response.status(400).json({ message: 'El id de sede no es válido.' }); return;
+  }
+  const { nombre, direccion, dias, horaDesde, horaHasta } = request.body ?? {};
+  const diasValidos = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+  const horaValida = (valor: unknown): valor is string =>
+    typeof valor === 'string' && /^([01]\d|2[0-3]):(00|30)$/.test(valor);
+  if (typeof nombre !== 'string' || nombre.trim().length < 3 ||
+      typeof direccion !== 'string' || !direccion.trim() || !Array.isArray(dias) ||
+      dias.length === 0 || !dias.every((dia: unknown) => typeof dia === 'string' && diasValidos.includes(dia)) ||
+      new Set(dias).size !== dias.length || !horaValida(horaDesde) || !horaValida(horaHasta) || horaDesde >= horaHasta) {
+    response.status(400).json({ message: 'Revisa nombre, dirección, días y horarios de la sede.' }); return;
+  }
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const repetida = await tx.sede.findFirst({ where: { nombre: nombre.trim(), ...(id === null ? {} : { id: { not: id } }) } });
+      if (repetida) return 'duplicada' as const;
+      const data = { nombre: nombre.trim(), direccion: direccion.trim(), dias: JSON.stringify(dias), horaDesde, horaHasta };
+      if (id === null) return tx.sede.create({ data });
+      const anterior = await tx.sede.findUnique({ where: { id } });
+      if (!anterior) return null;
+      const sede = await tx.sede.update({ where: { id }, data });
+      if (anterior.nombre !== sede.nombre) {
+        await tx.turno.updateMany({ where: { sede: anterior.nombre }, data: { sede: sede.nombre } });
+        await tx.notification.updateMany({ where: { sede: anterior.nombre }, data: { sede: sede.nombre } });
+      }
+      return sede;
+    });
+    if (resultado === 'duplicada') { response.status(409).json({ message: 'Ya existe una sede con ese nombre.' }); return; }
+    if (!resultado) { response.status(404).json({ message: 'No se encontró la sede.' }); return; }
+    response.status(id === null ? 201 : 200).json({ ...resultado, dias: JSON.parse(resultado.dias) });
+  } catch (error) {
+    console.error('No se pudo guardar la sede:', error);
+    response.status(500).json({ message: 'No se pudo guardar la sede.' });
+  }
+}
+
+app.post('/api/admin/sedes', guardarSede);
+app.patch('/api/admin/sedes/:id', guardarSede);
+app.delete('/api/admin/sedes/:id', async (request, response) => {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id de sede no es válido.' });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const sede = await tx.sede.findUnique({ where: { id } });
+      if (!sede) return 'no-existe';
+      if (await tx.turno.count({ where: { sede: sede.nombre } })) return 'tiene-turnos';
+      await tx.sede.delete({ where: { id } });
+      return 'eliminada';
+    });
+    if (resultado === 'no-existe') return response.status(404).json({ message: 'No se encontró la sede.' });
+    if (resultado === 'tiene-turnos') return response.status(409).json({ message: 'La sede tiene turnos asociados y no se puede eliminar.' });
+    return response.status(204).send();
+  } catch (error) {
+    console.error('No se pudo eliminar la sede:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar la sede.' });
+  }
+});
+
 // GET /api/mascotas?userId=1
 // Devuelve solo las mascotas vinculadas al usuario indicado.
 app.get('/api/mascotas', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const userId = parseId(
     typeof request.query.userId === 'string' ? request.query.userId : undefined
   );
   if (userId === null) {
     return response.status(400).json({ message: 'Indica un userId valido.' });
   }
+
+  if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes acceder a datos de otro usuario.' });
 
   try {
     const mascotas = await prisma.mascota.findMany({
@@ -348,6 +406,8 @@ app.get('/api/mascotas', async (request, response) => {
 // POST /api/mascotas
 // Valida y guarda una mascota relacionada con su usuario.
 app.post('/api/mascotas', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const { nombre, especie, raza, sexo, edad, foto, userId } = request.body ?? {};
   const parsedAge = edad === undefined || edad === null || edad === '' ? null : Number(edad);
 
@@ -363,6 +423,8 @@ app.post('/api/mascotas', async (request, response) => {
       message: 'Ingresa el nombre, la especie y un usuario valido para la mascota.',
     });
   }
+  if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes crear mascotas para otro usuario.' });
+
   if (raza !== undefined && raza !== null && typeof raza !== 'string') {
     return response.status(400).json({ message: 'La raza no es valida.' });
   }
@@ -412,6 +474,8 @@ app.post('/api/mascotas', async (request, response) => {
 // PATCH /api/mascotas/:id
 // Actualiza solamente los campos enviados.
 app.patch('/api/mascotas/:id', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const id = parseId(request.params.id);
   const userId = parseId(
     typeof request.body?.userId === 'number' ? String(request.body.userId) : undefined
@@ -419,6 +483,8 @@ app.patch('/api/mascotas/:id', async (request, response) => {
   if (id === null || userId === null) {
     return response.status(400).json({ message: 'Indica un id de mascota y userId validos.' });
   }
+
+  if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes acceder a datos de otro usuario.' });
 
   const { nombre, especie, raza, sexo, edad, foto } = request.body ?? {};
   const parsedAge = edad === undefined ? undefined : edad === null || edad === '' ? null : Number(edad);
@@ -502,6 +568,8 @@ app.patch('/api/mascotas/:id', async (request, response) => {
 // DELETE /api/mascotas/:id
 // Elimina una mascota por su id.
 app.delete('/api/mascotas/:id', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const id = parseId(request.params.id);
   const userId = parseId(
     typeof request.query.userId === 'string' ? request.query.userId : undefined
@@ -509,6 +577,8 @@ app.delete('/api/mascotas/:id', async (request, response) => {
   if (id === null || userId === null) {
     return response.status(400).json({ message: 'Indica un id de mascota y userId validos.' });
   }
+
+  if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes acceder a datos de otro usuario.' });
 
   try {
     const resultado = await prisma.mascota.deleteMany({ where: { id, userId } });
@@ -535,13 +605,15 @@ const PREFIJO_CHECK_IN = 'vetpro://check-in';
  * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
  * Devuelve null si el QR no es de VetPro o si la sede no existe.
  */
-function sedeDeCheckIn(code: unknown): Sede | null {
+async function sedeDeCheckIn(code: unknown): Promise<string | null> {
   if (typeof code !== 'string') return null;
   const [base, consulta] = code.split('?');
   if (base !== PREFIJO_CHECK_IN) return null;
-
-  const valor = new URLSearchParams(consulta ?? '').get('sede');
-  return SEDES_VALIDAS.find((sede) => sede === valor) ?? null;
+  const params = new URLSearchParams(consulta ?? '');
+  const id = parseId(params.get('sedeId') ?? undefined);
+  const nombre = params.get('sede');
+  const sede = id !== null ? await prisma.sede.findUnique({ where: { id } }) : nombre ? await prisma.sede.findUnique({ where: { nombre } }) : null;
+  return sede?.nombre ?? null;
 }
 
 // GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
@@ -558,14 +630,13 @@ app.get('/api/turnos/disponibilidad', async (request, response) => {
     return response.status(400).json({ message: 'Indica un mes válido en formato AAAA-MM.' });
   }
   const sede = request.query.sede;
-  if (typeof sede !== 'string' || !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)) {
+  if (typeof sede !== 'string' || !(await prisma.sede.findUnique({ where: { nombre: sede } }))) {
     return response.status(400).json({ message: 'Indica una sede válida para consultar disponibilidad.' });
   }
 
   try {
     const turnos = await prisma.turno.findMany({
-      // Los turnos de ejemplo no ocupan agenda real.
-      where: { fecha: { startsWith: mes }, sede, esDemo: false },
+      where: { fecha: { startsWith: mes }, sede },
       select: { fecha: true, hora: true },
     });
     return response.json(turnos);
@@ -609,12 +680,16 @@ app.get('/api/mascotas/fotos-ejemplo', async (request, response) => {
 // GET /api/turnos?userId=1
 // Devuelve los turnos del usuario junto con el nombre de cada mascota.
 app.get('/api/turnos', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const userId = parseId(
     typeof request.query.userId === 'string' ? request.query.userId : undefined
   );
   if (userId === null) {
     return response.status(400).json({ message: 'Indica un userId valido.' });
   }
+
+  if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes acceder a datos de otro usuario.' });
 
   try {
     const turnos = await prisma.turno.findMany({
@@ -686,7 +761,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
     return response.status(403).json({ message: 'El registro de llegada es para cuentas de usuario.' });
   }
 
-  const sede = sedeDeCheckIn(request.body?.code);
+  const sede = await sedeDeCheckIn(request.body?.code);
   if (sede === null) {
     return response.status(400).json({ message: 'El código QR no es válido.' });
   }
@@ -699,19 +774,8 @@ app.post('/api/turnos/check-in', async (request, response) => {
   ].join('-');
 
   try {
-    const turnoLlegado = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: { not: null } },
-      include: {
-        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
-      },
-      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
-    });
-    if (turnoLlegado) {
-      return response.json({ turno: turnoLlegado, sede, yaRegistrado: true });
-    }
-
     const turno = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null },
+      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
@@ -719,7 +783,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
     });
     if (!turno) {
       return response.status(404).json({
-        message: `No tienes turnos para hoy en ${sedeConDireccion(sede)}.`,
+        message: `No tienes turnos para hoy en ${await sedeConDireccion(sede)}.`,
       });
     }
 
@@ -764,16 +828,17 @@ app.post('/api/turnos', async (request, response) => {
   }
   if (
     typeof sede !== 'string' ||
-    !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+    !(await prisma.sede.findUnique({ where: { nombre: sede } }))
   ) {
     return response.status(400).json({ message: 'Selecciona una sede válida.' });
   }
   if (!isValidDateOnly(fecha)) {
     return response.status(400).json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
   }
-  if (typeof hora !== 'string' || !isValidAppointmentSlot(fecha, hora)) {
+  const sedeConfigurada = await prisma.sede.findUnique({ where: { nombre: sede } });
+  if (typeof hora !== 'string' || !sedeConfigurada || !isValidAppointmentSlot(fecha, hora, sedeConfigurada)) {
     return response.status(400).json({
-      message: 'Elige un horario futuro de lunes a sábado entre las 10:00 y las 18:30, cada media hora.',
+      message: 'Elige un horario futuro dentro de los días y horarios de atención de la sede.',
     });
   }
 
@@ -787,6 +852,8 @@ app.post('/api/turnos', async (request, response) => {
     }
 
     const turno = await prisma.$transaction(async (transaction) => {
+      const configuracion = await transaction.sede.findUnique({ where: { nombre: sede } });
+      if (!configuracion || !isValidAppointmentSlot(fecha, hora, configuracion)) return 'horario-invalido' as const;
       const ocupado = await transaction.turno.findFirst({
         where: { fecha, hora, sede },
         select: { id: true },
@@ -807,11 +874,15 @@ app.post('/api/turnos', async (request, response) => {
         },
       });
     });
+    if (turno === 'horario-invalido') {
+      return response.status(400).json({ message: 'El horario ya no está disponible en esta sede.' });
+    }
     if (!turno) {
       return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
     }
     return response.status(201).json(turno);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
     console.error('No se pudo registrar el turno:', error);
     return response.status(500).json({ message: 'No se pudo registrar el turno.' });
   }
@@ -834,7 +905,7 @@ app.post('/api/admin/turnos', async (request, response) => {
   }
   if (
     typeof sede !== 'string' ||
-    !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+    !(await prisma.sede.findUnique({ where: { nombre: sede } }))
   ) {
     return response.status(400).json({ message: 'Selecciona una sede válida.' });
   }
@@ -843,9 +914,10 @@ app.post('/api/admin/turnos', async (request, response) => {
       .status(400)
       .json({ message: 'La fecha debe ser una fecha real en formato AAAA-MM-DD.' });
   }
-  if (typeof hora !== 'string' || !isValidAppointmentSlot(fecha, hora)) {
+  const sedeConfigurada = await prisma.sede.findUnique({ where: { nombre: sede } });
+  if (typeof hora !== 'string' || !sedeConfigurada || !isValidAppointmentSlot(fecha, hora, sedeConfigurada)) {
     return response.status(400).json({
-      message: 'Elige un horario futuro de lunes a sábado entre las 10:00 y las 18:30, cada media hora.',
+      message: 'Elige un horario futuro dentro de los días y horarios de atención de la sede.',
     });
   }
 
@@ -862,6 +934,8 @@ app.post('/api/admin/turnos', async (request, response) => {
     const duenoId = mascota.userId;
 
     const turno = await prisma.$transaction(async (transaction) => {
+      const configuracion = await transaction.sede.findUnique({ where: { nombre: sede } });
+      if (!configuracion || !isValidAppointmentSlot(fecha, hora, configuracion)) return 'horario-invalido' as const;
       const ocupado = await transaction.turno.findFirst({
         where: { fecha, hora, sede },
         select: { id: true },
@@ -882,11 +956,15 @@ app.post('/api/admin/turnos', async (request, response) => {
         },
       });
     });
+    if (turno === 'horario-invalido') {
+      return response.status(400).json({ message: 'El horario ya no está disponible en esta sede.' });
+    }
     if (!turno) {
       return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
     }
     return response.status(201).json(turno);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return response.status(409).json({ message: 'Ese horario acaba de ser ocupado. Elige otro.' });
     console.error('No se pudo agendar el turno de seguimiento:', error);
     return response
       .status(500)
@@ -947,7 +1025,8 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
         // Los turnos fuera de agenda (dias completos, historial) nunca estan
         // esperando: solo ocupan un horario o son de dias pasados.
         ocultoEnAgenda: false,
-        OR: [{ fecha: fechaActual }, { esDemo: true }],
+        fecha: fechaActual,
+        esDemo: false,
       },
       include: {
         user: { select: { id: true, nombre: true, email: true } },
@@ -962,63 +1041,43 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
   }
 });
 
-// Los turnos de ejemplo (esDemo) se borran por consola con
-// "npm run db:demo:borrar", no desde la app.
-
-// PATCH /api/admin/turnos/:id/atendido
-// Marca el turno como atendido guardando la descripcion de lo que paso.
-// Volver a llamarlo actualiza la descripcion. Para desmarcar se envia
-// { desmarcar: true }.
+// Completa la atención y el seguimiento en la misma transacción.
 app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
-  const adminId = await requireAdmin(request, response);
-  if (adminId === null) return;
-
+  if ((await requireAdmin(request, response)) === null) return;
   const id = parseId(request.params.id);
-  if (id === null) {
-    return response.status(400).json({ message: 'El id del turno no es válido.' });
-  }
-
-  const { descripcion, desmarcar } = request.body ?? {};
-
-  if (desmarcar !== undefined && typeof desmarcar !== 'boolean') {
-    return response.status(400).json({ message: 'El campo desmarcar debe ser booleano.' });
-  }
-  // Salir de un turno exige una descripcion de lo que ocurrio.
-  if (desmarcar !== true) {
-    if (typeof descripcion !== 'string' || !descripcion.trim()) {
-      return response
-        .status(400)
-        .json({ message: 'Escribí una descripción de lo que pasó en el turno.' });
-    }
-    if (descripcion.trim().length > 500) {
-      return response
-        .status(400)
-        .json({ message: 'La descripción no puede superar los 500 caracteres.' });
-    }
-  }
-
+  if (id === null) return response.status(400).json({ message: 'El id del turno no es válido.' });
+  const { descripcion, seguimiento, desmarcar } = request.body ?? {};
+  if (desmarcar !== undefined) return response.status(400).json({ message: 'Una atención no se puede desmarcar.' });
+  if (typeof descripcion !== 'string' || !descripcion.trim() || descripcion.trim().length > 500) return response.status(400).json({ message: 'Escribí una descripción de hasta 500 caracteres.' });
+  if (seguimiento !== undefined && seguimiento !== null && (typeof seguimiento !== 'object' || !['Control', 'Vacunas', 'Estética'].includes(seguimiento.tipo) || typeof seguimiento.sede !== 'string' || !isValidDateOnly(seguimiento.fecha) || typeof seguimiento.hora !== 'string')) return response.status(400).json({ message: 'Los datos del seguimiento no son válidos.' });
   try {
-    const turno = await prisma.turno.findUnique({ where: { id }, select: { id: true } });
-    if (!turno) {
-      return response.status(404).json({ message: 'El turno no existe.' });
-    }
-
-    const marca = new Date().toISOString();
-    const actualizado = await prisma.turno.update({
-      where: { id },
-      data:
-        desmarcar === true
-          ? { atendidoEn: null, descripcion: null }
-          : { atendidoEn: marca, descripcion: descripcion.trim() },
-      include: {
-        user: { select: { id: true, nombre: true, email: true } },
-        mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
-      },
+    const resultado = await prisma.$transaction(async (tx) => {
+      const actual = await tx.turno.findUnique({ where: { id } });
+      if (!actual) return { error: 'no-existe' as const };
+      if (actual.atendidoEn || !actual.llegadaEn || actual.esDemo || actual.ocultoEnAgenda) return { error: 'estado' as const };
+      if (seguimiento) {
+        if (seguimiento.sede !== actual.sede) return { error: 'sede' as const };
+        const sede = await tx.sede.findUnique({ where: { nombre: seguimiento.sede } });
+        if (!sede || !isValidAppointmentSlot(seguimiento.fecha, seguimiento.hora, sede)) return { error: 'horario' as const };
+        const ocupado = await tx.turno.findFirst({ where: { sede: seguimiento.sede, fecha: seguimiento.fecha, hora: seguimiento.hora } });
+        if (ocupado) return { error: 'ocupado' as const };
+      }
+      const actualizado = await tx.turno.updateMany({ where: { id, atendidoEn: null, llegadaEn: { not: null } }, data: { atendidoEn: new Date().toISOString(), descripcion: descripcion.trim() } });
+      if (actualizado.count !== 1) return { error: 'estado' as const };
+      const nuevo = seguimiento ? await tx.turno.create({ data: { tipo: seguimiento.tipo, sede: seguimiento.sede, fecha: seguimiento.fecha, hora: seguimiento.hora, userId: actual.userId, mascotaId: actual.mascotaId } }) : null;
+      return { turno: await tx.turno.findUnique({ where: { id } }), seguimiento: nuevo };
     });
-    return response.json(actualizado);
+    if ('error' in resultado) {
+      if (resultado.error === 'no-existe') return response.status(404).json({ message: 'El turno no existe.' });
+      if (resultado.error === 'estado') return response.status(409).json({ message: 'El turno ya fue atendido o todavía no registró su llegada.' });
+      if (resultado.error === 'ocupado') return response.status(409).json({ message: 'El horario del seguimiento ya está ocupado.' });
+      return response.status(400).json({ message: 'Revisá la sede y el horario del seguimiento.' });
+    }
+    return response.json(resultado);
   } catch (error) {
-    console.error('No se pudo actualizar el estado de atención del turno:', error);
-    return response.status(500).json({ message: 'No se pudo marcar el turno como atendido.' });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return response.status(409).json({ message: 'El horario del seguimiento ya está ocupado.' });
+    console.error('No se pudo completar la atención:', error);
+    return response.status(500).json({ message: 'No se pudo completar la atención.' });
   }
 });
 
@@ -1050,7 +1109,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
   if (sede !== undefined) {
     if (
       typeof sede !== 'string' ||
-      !['Recoleta', 'San Isidro', 'Vicente López'].includes(sede)
+      !(await prisma.sede.findUnique({ where: { nombre: sede } }))
     ) {
       return response.status(400).json({ message: 'La sede no es válida.' });
     }
@@ -1079,6 +1138,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
         include: { mascota: { select: { nombre: true, foto: true } } },
       });
       if (!anterior) return null;
+      if (anterior.llegadaEn || anterior.atendidoEn) return { validationError: 'estado' as const };
 
       const cambiaHorario =
         (fecha !== undefined && fecha !== anterior.fecha) ||
@@ -1088,7 +1148,8 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       const fechaDestino = fecha ?? anterior.fecha;
       const horaDestino = hora ?? anterior.hora;
       if (cambiaHorario) {
-        if (!isValidAppointmentSlot(fechaDestino, horaDestino)) {
+        const configuracion = await transaction.sede.findUnique({ where: { nombre: sede ?? anterior.sede } });
+        if (!configuracion || !isValidAppointmentSlot(fechaDestino, horaDestino, configuracion)) {
           return { validationError: 'invalid' as const };
         }
         // Un turno no se mueve hacia atras. Se puede estirar el horario o
@@ -1104,6 +1165,8 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       }
       if (cambiaDisponibilidad) {
         const sedeDestino = sede ?? anterior.sede;
+        const configuracion = await transaction.sede.findUnique({ where: { nombre: sedeDestino } });
+        if (!configuracion || !isValidAppointmentSlot(fechaDestino, horaDestino, configuracion)) return { validationError: 'invalid' as const };
         const ocupado = await transaction.turno.findFirst({
           where: { id: { not: id }, fecha: fechaDestino, hora: horaDestino, sede: sedeDestino },
           select: { id: true },
@@ -1148,6 +1211,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       return response.status(404).json({ message: 'No se encontró el turno.' });
     }
     if ('validationError' in resultado) {
+      if (resultado.validationError === 'estado') return response.status(409).json({ message: 'El turno ya registró su llegada o fue atendido.' });
       if (resultado.validationError === 'occupied') {
         return response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' });
       }
@@ -1188,6 +1252,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       pushSent,
     });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return response.status(409).json({ message: 'Ese horario ya está ocupado.' });
     if (isMissingRecord(error)) {
       return response.status(404).json({ message: 'No se encontró el turno.' });
     }
@@ -1623,10 +1688,14 @@ app.delete('/api/admin/users/:id', async (request, response) => {
 // GET /api/users/:id
 // Devuelve los datos de perfil, sin contraseña.
 app.get('/api/users/:id', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const id = parseId(request.params.id);
   if (id === null) {
     return response.status(400).json({ message: 'El id de usuario no es valido.' });
   }
+  if (id !== autenticado.id) return response.status(403).json({ message: 'Solo puedes acceder a tu propio perfil.' });
+
 
   try {
     const user = await prisma.usuario.findUnique({
@@ -1646,10 +1715,14 @@ app.get('/api/users/:id', async (request, response) => {
 // PATCH /api/users/:id
 // Actualiza los datos de contacto opcionales y básicos del usuario.
 app.patch('/api/users/:id', async (request, response) => {
+  const autenticado = await requireAuthenticatedUser(request, response);
+  if (!autenticado) return;
   const id = parseId(request.params.id);
   if (id === null) {
     return response.status(400).json({ message: 'El id de usuario no es valido.' });
   }
+  if (id !== autenticado.id) return response.status(403).json({ message: 'Solo puedes acceder a tu propio perfil.' });
+
   const body = request.body ?? {};
   if (typeof body === 'object' && body !== null && 'email' in body) {
     return response.status(400).json({ message: 'El correo electrónico no se puede modificar.' });

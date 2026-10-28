@@ -16,16 +16,14 @@ import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 // Import de la impresion del QR (ver imprimirQr mas abajo).
 import { toString } from 'qrcode';
-import type { DimensionValue, ImageSourcePropType } from 'react-native';
+import type { DimensionValue } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
   descripcionEspecieMascota,
-  direccionesSedes,
   nombreEspecieMascota,
-  sedesVeterinaria,
   turnoSiguePendiente,
   type SedeVeterinaria,
   type TurnoGuardado,
@@ -33,8 +31,7 @@ import {
 import { obtenerUsuarioActual } from '@/lib/session';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
-import { useSedeSeleccionada } from '@/lib/sede';
-import { turnosEjemploCliente } from '@/lib/turnos-ejemplo';
+import { useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 type Mascota = {
   id: number;
@@ -50,7 +47,6 @@ type Mascota = {
 type TurnoAgenda = TurnoGuardado & {
   atendidoEn?: string | null;
   user?: { nombre: string } | null;
-  /** Los turnos de relleno del cliente se arman en lib/turnos-ejemplo. */
   esDemo?: boolean;
 };
 
@@ -64,10 +60,6 @@ type CitaLista = {
   /** Tercera linea: el dueño en la agenda del admin, la sede para el cliente. */
   detalle: string | null;
   dueno: string | null;
-  /** Foto local, para cuando no hay ninguna que venga de la API. */
-  fotoLocal?: ImageSourcePropType | null;
-  /** Foto que llega de la API como data URI. */
-  fotoUri?: string | null;
   guardado: TurnoAgenda;
 };
 
@@ -93,10 +85,6 @@ function fechaRelativaCorta(fecha: string, ahora: Date): string {
 // numero: si difieren, el texto se pisa con la foto o sobra aire abajo.
 const ALTO_CARD_MASCOTA = 132;
 
-// Foto de respaldo si el backend no devuelve fotos: en la base puede haber
-// formatos (AVIF) que el empaquetador no acepta, asi que llegan por la API.
-const fotoRespaldo = require('@/assets/images/mascota-demo.jpg') as ImageSourcePropType;
-
 // Los accesos rapidos de la portada. El admin no ve "Mascotas" porque es la
 // agenda de la veterinaria, no la de una persona. "Historial" ya no esta: la
 // pantalla se saco del proyecto.
@@ -108,6 +96,9 @@ const accesosRapidos = [
 ] as const;
 
 export default function InicioScreen() {
+  const { sedes, errorSedes } = useSedes();
+  const sedesVeterinaria = sedes.map((sede) => sede.nombre);
+  const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [mascotaSeleccionada, setMascotaSeleccionada] = useState<Mascota | null>(null);
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaLista | null>(null);
@@ -125,7 +116,7 @@ export default function InicioScreen() {
   const [modalQr, setModalQr] = useState(false);
   const [imprimiendoQr, setImprimiendoQr] = useState(false);
   const [qrAviso, setQrAviso] = useState('');
-  const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('Recoleta');
+  const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('');
   // La sede es la misma que en la pantalla de Turnos: el hook la guarda en el
   // dispositivo, asi no hay que elegirla de nuevo en cada pantalla.
 const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
@@ -151,22 +142,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // Turnos, asi que aca no hace falta ver mas.
   const COTAS_PROXIMAS = 3;
 
-  /**
-   * Cuantos turnos ve el admin, por sede. No es el mismo numero para las tres
-   * porque las sedes no se parecen entre si: San Isidro abre el dia, asi que a
-   * esa hora hay 3 o 4 personas por llegar y no la manana entera. Con un tope
-   * comun la portada se llenaba de San Isidro y seemed la agenda de la
-   * veterinaria entera colgada de la manana.
-   *
-   * Recoleta es la hora pico y por ahi si entra mas. Vicente Lopez cierra la
-   * jornada, asi que casi nunca tiene tantos pendientes y el tope no llega a
-   * molestar.
-   */
-  const COTAS_ADMIN_POR_SEDE: Record<SedeVeterinaria, number> = {
-    'San Isidro': 4,
-    Recoleta: 6,
-    'Vicente López': 6,
-  };
+  const COTAS_ADMIN = 6;
 
   // Las tarjetas se miden como las de la pantalla de Turnos: alto del contenido
   // y foto cuadrada de 56. Antes el alto salia de una cuenta sobre el alto de la
@@ -188,7 +164,8 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
       setNombreCompleto(usuario.nombre);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
       const resultado = await response.json();
       if (!response.ok) {
@@ -248,31 +225,10 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   );
 
 
-  // Los turnos que ya se atendieron no vuelven a salir. Antes no se filtraban y
-  // la portada mostraba como "proximos" turnos que ya habian pasado por el
-  // consultorio: por eso se veian dos a las 10 y dos a las 11.
-  //
-  // El admin ve la agenda real de la veterinaria. El cliente ve los mismos
-  // ejemplos que la pantalla de Turnos, armados con sus propias mascotas: son
-  // los unicos datos que esa pantalla muestra, asi que la portada tiene que
-  // mostrar los mismos y no los turnos sueltos que quedaron de las pruebas.
-  const turnosPendientes = useMemo(() => {
-    // El cliente ve los turnos reales de la base, los mismos que su pantalla de
-    // Turnos, para que las dos pantallas no digan cosas distintas del mismo
-    // turno. Los ejemplos quedan de respaldo si todavia no se creo nada.
-    const base =
-      esAdmin || turnosGuardados.length > 0 ? turnosGuardados : turnosEjemploCliente(mascotas);
-    return base
-      .filter((turno) => !turno.atendidoEn)
-      // Los ejemplos de relleno se muestran siempre, como en la pantalla de
-      // Turnos. Si no, a la tarde ya no queda ninguno: los 4 de hoy se generan
-      // entre las 10:00 y las 11:30 y a las 17:00 turnoSiguePendiente los
-      // daba por vencidos, asi que "Proximos turnos" salia vacio.
-      .filter((turno) => turno.esDemo === true || turnoSiguePendiente(turno, ahora))
-      .sort((a, b) =>
-        a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)
-      );
-  }, [turnosGuardados, mascotas, esAdmin, ahora]);
+  const turnosPendientes = useMemo(() => turnosGuardados
+    .filter((turno) => !turno.atendidoEn && !turno.esDemo && turnoSiguePendiente(turno, ahora))
+    .sort((a, b) => a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)),
+    [turnosGuardados, ahora]);
 
   // El admin ve los turnos de verdad de la sede que esta mirando, y un cliente
   // los suyos. Antes el admin veia nombres de ejemplo fijos (Lola, Mora, Tito,
@@ -280,7 +236,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
         .filter((turno) => turno.sede === sedeSeleccionada)
-        .slice(0, COTAS_ADMIN_POR_SEDE[sedeSeleccionada])
+        .slice(0, COTAS_ADMIN)
         .map((turno) => ({
           id: turno.id,
           key: `admin-${turno.id}`,
@@ -306,17 +262,8 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           guardado: turno,
         }));
 
-  // La foto de respaldo se resuelve en renderCita, cuando ya se sabe si el
-  // turno trae foto.
   const renderCita = (item: CitaLista) => {
-  // Orden de preferencia: la foto de la mascota del turno, la que venga como
-  // data URI y, si no hay ninguna, la de respaldo. Antes la de respaldo se
-  // ganaba siempre y todas las tarjetas salian con la misma foto generica.
-  const foto = item.guardado.mascota.foto
-    ? { uri: item.guardado.mascota.foto }
-    : item.fotoUri
-      ? { uri: item.fotoUri }
-      : (item.fotoLocal ?? fotoRespaldo);
+  const foto = item.guardado.mascota.foto ? { uri: item.guardado.mascota.foto } : null;
   return (
     <Pressable
       key={item.key}
@@ -388,13 +335,15 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
   // arma una hoja simple con el mismo valor que muestra el cartel.
   const imprimirQr = async (sede: SedeVeterinaria) => {
     if (imprimiendoQr) return;
+    const sedeActual = sedes.find((item) => item.nombre === sede);
+    if (!sedeActual) { setQrAviso('La sede ya no está disponible.'); return; }
     setQrAviso('');
     setImprimiendoQr(true);
 
     try {
       // El SVG del QR se arma aca y no con un script de internet: antes la hoja
       // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
-      const svgQr = await toString(checkInDeSede(sede), {
+      const svgQr = await toString(checkInDeSede(sedeActual.id), {
         type: 'svg',
         errorCorrectionLevel: 'M',
         margin: 0,
@@ -566,6 +515,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               <View style={styles.qrAdminBloque}>
                 <Pressable
                   style={({ pressed }) => [styles.qrBotonCompacto, pressed && estilos.buttonPressed]}
+                  disabled={!sedeSeleccionada}
                   onPress={() => {
                     setSedeQr(sedeSeleccionada);
                     setQrAviso('');
@@ -806,7 +756,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
 
             <View style={styles.qrAdminMarco}>
               <View style={styles.qrAdminSvg}>
-                <QRCode value={checkInDeSede(sedeQr)} size={220} />
+                {sedes.find((item) => item.nombre === sedeQr) ? <QRCode value={checkInDeSede(sedes.find((item) => item.nombre === sedeQr)!.id)} size={220} /> : <Text>{errorSedes || 'No hay una sede seleccionada.'}</Text>}
               </View>
               <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
@@ -821,7 +771,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                 imprimiendoQr && styles.qrAdminBotonOcupado,
               ]}
               onPress={() => void imprimirQr(sedeQr)}
-              disabled={imprimiendoQr}
+              disabled={imprimiendoQr || !sedes.some((item) => item.nombre === sedeQr)}
               accessibilityRole="button"
               accessibilityLabel={`Imprimir el código QR de ${sedeQr}`}
             >

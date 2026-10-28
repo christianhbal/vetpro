@@ -56,7 +56,8 @@ export default function MascotasScreen() {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+        `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
       const resultado = await response.json();
       if (!response.ok) {

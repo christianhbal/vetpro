@@ -7,6 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Sede {
+  id        Int    @id @default(autoincrement())
+  nombre    String @unique
+  direccion String
+  dias      String
+  horaDesde String
+  horaHasta String
+}
+
 model Mascota {
   id        Int     @id @default(autoincrement())
   nombre    String
@@ -62,6 +71,7 @@ model Turno {
 
   @@index([userId])
   @@index([mascotaId])
+  @@unique([sede, fecha, hora])
 }
 
 model Notification {

@@ -1,19 +1,14 @@
-import type { SedeVeterinaria } from './datos';
-
 const PREFIJO_CHECK_IN = 'vetpro://check-in';
 
-export function checkInDeSede(sede: SedeVeterinaria): string {
-  return `${PREFIJO_CHECK_IN}?sede=${encodeURIComponent(sede)}`;
+export function checkInDeSede(id: number): string {
+  return `${PREFIJO_CHECK_IN}?sedeId=${id}`;
 }
 
-export function sedeDeCheckIn(escaneado: string): SedeVeterinaria | null {
+export function sedeDeCheckIn(escaneado: string): string | null {
   const [base, consulta] = escaneado.split('?');
   if (base !== PREFIJO_CHECK_IN) return null;
-
-  const valor = new URLSearchParams(consulta ?? '').get('sede');
-  if (!valor) return null;
-
-  return ['Recoleta', 'San Isidro', 'Vicente López'].includes(valor)
-    ? (valor as SedeVeterinaria)
-    : null;
+  const params = new URLSearchParams(consulta ?? '');
+  const id = params.get('sedeId');
+  const nombre = params.get('sede');
+  return (id && /^[1-9]\d*$/.test(id)) || (nombre && nombre.trim()) ? escaneado : null;
 }

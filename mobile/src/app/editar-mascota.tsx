@@ -44,6 +44,7 @@ export default function EditarMascota() {
   const sexo = sexoDatos;
   const [edad, setEdad] = useState(params.edad ?? '');
   const [foto, setFoto] = useState<string | null>(null);
+  const [cargada, setCargada] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [guardada, setGuardada] = useState<string | null>(null);
@@ -58,18 +59,25 @@ export default function EditarMascota() {
         const usuario = await obtenerUsuarioActual();
         if (!usuario) return;
         const response = await fetch(
-          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
         );
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('No se pudo cargar la mascota.');
         const lista: unknown = await response.json();
-        if (!vigente || !Array.isArray(lista)) return;
+        if (!vigente) return;
+        if (!Array.isArray(lista)) throw new Error('La API devolvió datos inválidos.');
         const encontrada = lista.find(
           (item) => typeof item === 'object' && item !== null && 'id' in item && item.id === id
-        ) as { foto?: string | null; sexo?: string | null } | undefined;
+        ) as { nombre: string; raza: string | null; edad: number | null; foto: string | null; sexo: string | null } | undefined;
+        if (!encontrada) throw new Error('No se encontró la mascota.');
+        setNombre(encontrada.nombre);
+        setRaza(encontrada.raza ?? '');
+        setEdad(encontrada.edad === null ? '' : String(encontrada.edad));
+        setCargada(true);
         setFoto(encontrada?.foto ?? null);
         if (esSexoMascota(encontrada?.sexo)) setSexoDatos(encontrada.sexo);
-      } catch {
-        // Sin foto se muestra la huella: no es motivo para cortar la pantalla.
+      } catch (error) {
+        if (vigente) setMensaje(error instanceof Error ? error.message : 'No se pudo cargar la mascota.');
       }
     })();
     return () => {
@@ -110,6 +118,7 @@ export default function EditarMascota() {
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
+    if (!cargada) { setMensaje('Espera a que se carguen los datos de la mascota.'); return; }
     setMensaje('');
 
     if (!Number.isInteger(id) || id <= 0) {
@@ -140,7 +149,7 @@ export default function EditarMascota() {
 
       const response = await fetch(`${API_BASE_URL}/api/mascotas/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.accessToken}` },
 // Solo van los campos que esta pantalla deja cambiar. El PATCH es parcial, asi
       // que animal, sexo y raza se quedan como estan: no se mandan y el backend
       // no los toca.
@@ -182,7 +191,7 @@ export default function EditarMascota() {
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas/${id}?userId=${encodeURIComponent(String(usuario.id))}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', headers: { Authorization: `Bearer ${usuario.accessToken}` } }
       );
 
       if (!response.ok) {

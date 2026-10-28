@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -20,12 +21,13 @@ import { useFocusEffect } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   descripcionEspecieMascota,
-  direccionesSedes,
   DIAS_SEMANA,
-  sedesVeterinaria,
+  horariosDeSede,
+  atiendeDia,
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { useSedes } from '@/lib/sede';
 import { estilos } from '@/lib/estilos';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 
@@ -37,20 +39,12 @@ const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
 type TipoTurno = (typeof tiposTurno)[number];
 
-// El backend acepta turnos de lunes a sábado, entre las 10:00 y las 18:30,
-// cada media hora.
-const horariosDisponibles = Array.from({ length: 18 }, (_value, index) => {
-  const minutos = 10 * 60 + index * 30;
-  return `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
-});
-
 const colorOcupadoFondo = '#f2ddcd';
 const colorOcupadoBorde = '#d3a179';
 const colorOcupadoTexto = '#7d4322';
 // Dia de la semana (getDay) que la veterinaria tiene completo: no se atiende
 // ningun turno. El domingo (0) ya venia bloqueado; este es aparte porque el
 // miercoles se puede ABRIR para ver que esta lleno, solo que no se puede agendar.
-const DIA_BLOQUEADO = 3;
 
 type HorarioOcupado = { fecha: string; hora: string };
 
@@ -114,11 +108,7 @@ type Props = {
    * que contiene la agenda.
    */
   ocultarAviso?: boolean;
-  /**
-   * No agenda nada: valida lo elegido y se da por hecho que se pudo guardar.
-   * Lo usa la pantalla de atencion mientras todavia no sincroniza.
-   */
-  simular?: boolean;
+
 };
 
 /** Lo que la pantalla que contiene la agenda puede pedirle. */
@@ -151,19 +141,6 @@ function construirDias(mes: Date): (number | null)[] {
     ...Array<number | null>(primerDia).fill(null),
     ...Array.from({ length: totalDias }, (_value, index) => index + 1),
   ];
-}
-
-/**
- * Primer dia con horarios libres a partir de `desde`, salteando domingos.
- * Si hoy ya paso (por ejemplo a la noche) devuelve el proximo dia habil.
- */
-function primerDiaAgendable(desde: Date): string {
-  const hoy = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
-  for (let salto = 0; salto < 14; salto += 1) {
-    const candidato = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + salto);
-    if (candidato.getDay() !== 0) return fechaComoValor(candidato);
-  }
-  return fechaComoValor(hoy);
 }
 
 function mensajeApi(resultado: unknown): string | null {
@@ -205,7 +182,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       ocultarBotonGuardar = false,
       comoAdmin = false,
       ocultarAviso = false,
-      simular = false,
     },
     ref
   ) {
@@ -214,10 +190,17 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     });
     const [fechaSeleccionada, setFechaSeleccionada] = useState(() =>
-      primerDiaAgendable(new Date())
+      fechaComoValor(new Date())
     );
     // Con sedeFija arranca en esa sede y el selector desaparece.
-    const [sede, setSede] = useState<SedeVeterinaria>(sedeFija ?? 'Recoleta');
+    const [sede, setSede] = useState<SedeVeterinaria>(sedeFija ?? '');
+    const { sedes, errorSedes, cargandoSedes } = useSedes();
+    const configuracionSede = sedes.find((item) => item.nombre === sede);
+    const horariosDisponibles = useMemo(() => horariosDeSede(configuracionSede), [configuracionSede]);
+    const direccionesSedes = Object.fromEntries(sedes.map((item) => [item.nombre, item.direccion]));
+    useEffect(() => {
+      if (!sedeFija && !sedes.some((item) => item.nombre === sede)) setSede(sedes[0]?.nombre ?? '');
+    }, [sedes, sede, sedeFija]);
     const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
@@ -236,6 +219,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
     const cargarDisponibilidad = useCallback(async () => {
       const idSolicitud = ++solicitud.current;
+      if (!sede) { setCargando(false); return; }
       const mes = `${mesVisible.getFullYear()}-${String(mesVisible.getMonth() + 1).padStart(2, '0')}`;
       setCargando(true);
       setError('');
@@ -302,7 +286,8 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           throw new Error('Inicia sesión para elegir una mascota.');
         }
         const response = await fetch(
-          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+          `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
         );
         const resultado: unknown = await response.json();
         if (!response.ok) {
@@ -341,11 +326,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
     const opcionesSede: OpcionSelector[] = useMemo(
       () =>
-        sedesVeterinaria.map((nombre) => ({
-          valor: nombre,
-          titulo: nombre,
+        sedes.map((item) => ({
+          valor: item.nombre,
+          titulo: item.nombre,
         })),
-      []
+      [sedes]
     );
 
     const opcionesMascota: OpcionSelector[] = useMemo(
@@ -390,7 +375,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         conteo.set(slot.fecha, (conteo.get(slot.fecha) ?? 0) + 1);
       }
       return conteo;
-    }, [horariosOcupados]);
+    }, [horariosOcupados, horariosDisponibles]);
 
     const ocupadosDia = useMemo(
       () =>
@@ -401,7 +386,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             )
             .map((slot) => slot.hora)
         ),
-      [fechaSeleccionada, horariosOcupados]
+      [fechaSeleccionada, horariosOcupados, horariosDisponibles]
     );
 
     const moverMes = (cantidad: number) => {
@@ -421,7 +406,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     // guardar activo: el error saltaria recien al confirmar, en el servidor.
     const seleccionBloqueada =
       fechaSeleccionada !== '' &&
-      new Date(`${fechaSeleccionada}T12:00:00`).getDay() === DIA_BLOQUEADO;
+      !atiendeDia(configuracionSede, new Date(`${fechaSeleccionada}T12:00:00`));
 
     const confirmar = useCallback(async (): Promise<boolean> => {
       if (guardando) return false;
@@ -429,8 +414,12 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
       const mascotaAUsar = mascotaIdFija ?? mascotaId;
 
+      if (cargando || cargandoSedes || error || errorSedes || !configuracionSede || !horariosDisponibles.includes(horaSeleccionada)) {
+        setMensajeError('Elegí un horario disponible de la sede.');
+        return false;
+      }
       if (seleccionBloqueada) {
-        setMensajeError('Los miércoles están completos y no se atienden turnos.');
+        setMensajeError('La sede no atiende en ese día.');
         return false;
       }
       if (mascotaAUsar === null || !mascotaSeleccionada) {
@@ -457,10 +446,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         setMensajeError('Ese horario ya pasó. Elegí otro disponible.');
         return false;
       }
-
-      // En modo simulacion se pasa todo lo que falta y no se toca la base. La
-      // disponibilidad si se consulta, asi los horarios ocupados se ven bien.
-      if (simular) return true;
 
       setGuardando(true);
       try {
@@ -534,6 +519,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       }
     }, [
       ahoraMinutos,
+      cargando, cargandoSedes, error, errorSedes, configuracionSede, horariosDisponibles,
       cargarDisponibilidad,
       comoAdmin,
       fechaSeleccionada,
@@ -549,7 +535,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       onTurnoGuardado,
       ocupadosDia,
       sede,
-      simular,
       tipo,
     ]);
 
@@ -561,6 +546,8 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const puedeConfirmar =
       !guardando &&
       !cargando &&
+      !cargandoSedes &&
+      !errorSedes &&
       !error &&
       !seleccionBloqueada &&
       mascotaSeleccionada !== null &&
@@ -793,12 +780,12 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const value = fechaComoValor(date);
             const ocupados = ocupadosPorDia.get(value) ?? 0;
             const esPasado = value < hoyValor;
-            const esDomingo = date.getDay() === 0;
+            const esDomingo = !atiendeDia(configuracionSede, date);
             // Los miercoles la veterinaria esta completa: no se atienden turnos.
             // NO va en `deshabilitado`: el dia se puede abrir para ver que esta
             // lleno, pero adentro no hay ningun horario bookeable.
-            const esDiaBloqueado = date.getDay() === DIA_BLOQUEADO;
-            const completos = ocupados >= horariosDisponibles.length;
+            const esDiaBloqueado = !atiendeDia(configuracionSede, date);
+            const completos = horariosDisponibles.length > 0 && ocupados >= horariosDisponibles.length;
             // Un dia sin horarios igual se puede abrir para ver que esta lleno,
             // asi que no cuenta como deshabilitado: solo se ve distinto.
             const deshabilitado = esPasado || esDomingo || cargando || Boolean(error);
@@ -827,7 +814,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 disabled={deshabilitado}
                 accessibilityRole="button"
                 accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
-                accessibilityLabel={`${dia} de ${nombreMes}${esDiaBloqueado ? ', sin turnos, día completo' : completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', no se atienden domingos' : ''}${esPasado ? ', fecha pasada' : ''}`}
+                accessibilityLabel={`${dia} de ${nombreMes}${esDiaBloqueado ? ', sin turnos, día completo' : completos ? ', sin horarios disponibles' : ocupados > 0 ? `, ${ocupados} horarios ocupados` : ', todos los horarios disponibles'}${esDomingo ? ', la sede no atiende' : ''}${esPasado ? ', fecha pasada' : ''}`}
               >
                 <Text
                   style={[
@@ -951,6 +938,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           )}
         </View>
 
+        {errorSedes ? <Text accessibilityRole="alert" style={styles.mensajeError}>{errorSedes}</Text> : null}
         {mensajeError ? (
           <Text accessibilityRole="alert" style={styles.mensajeError}>
             {mensajeError}

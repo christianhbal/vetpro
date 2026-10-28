@@ -15,11 +15,11 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
-  direccionesSedes,
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { useSedes } from '@/lib/sede';
 
 /**
  * Logo de VetPro para los avisos globales.
@@ -258,6 +258,8 @@ function VentanaAviso({
   aviso: Aviso | null;
   onCerrar: () => void;
 }) {
+  const { sedes } = useSedes();
+  const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   if (!aviso) return null;
   const tipo = tipoDeVentana(aviso);
   if (tipo === null) return null;
@@ -437,10 +439,6 @@ export default function NotificacionesScreen() {
   useFocusEffect(
     useCallback(() => {
       void cargarAvisos();
-      const intervalo = setInterval(() => {
-        void cargarAvisos(false);
-      }, 60 * 1000);
-      return () => clearInterval(intervalo);
     }, [cargarAvisos])
   );
 

@@ -74,7 +74,7 @@ export default function EscanearQr() {
         throw new Error(message);
       }
       setLlegadaRegistrada(true);
-      setResultado(`Tu llegada en ${sedeEscaneada} quedó registrada correctamente.`);
+      setResultado(`Tu llegada en ${typeof result === 'object' && result !== null && 'sede' in result && typeof result.sede === 'string' ? result.sede : 'la sede'} quedó registrada correctamente.`);
     } catch (error) {
       setResultado(
         error instanceof TypeError

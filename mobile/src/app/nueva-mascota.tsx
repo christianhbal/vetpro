@@ -95,7 +95,7 @@ export default function NuevaMascota() {
 
       const response = await fetch(`${API_BASE_URL}/api/mascotas`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.accessToken}` },
         body: JSON.stringify({
           nombre: nombre.trim(),
           especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,

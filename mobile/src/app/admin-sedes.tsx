@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { obtenerUsuarioActual } from '@/lib/session';
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -41,32 +46,6 @@ type Sede = {
 
 const DIAS_SEMANA = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
 
-const sedes: Sede[] = [
-  {
-    id: 1,
-    nombre: 'Recoleta',
-    direccion: 'Av. Recoleta 1234',
-    dias: ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'],
-    horaDesde: '09:00',
-    horaHasta: '18:00',
-  },
-  {
-    id: 2,
-    nombre: 'San Isidro',
-    direccion: 'Av. Centenario 2450',
-    dias: ['lun', 'mar', 'mie', 'jue', 'vie'],
-    horaDesde: '09:00',
-    horaHasta: '18:00',
-  },
-  {
-    id: 3,
-    nombre: 'Vicente López',
-    direccion: 'Av. del Libertador 1580',
-    dias: ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'],
-    horaDesde: '09:00',
-    horaHasta: '14:00',
-  },
-];
 
 function esHoraValida(valor: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(valor.trim());
@@ -85,6 +64,28 @@ function resumenDias(dias: string[]): string {
 }
 
 export default function AdminSedesScreen() {
+  const [sedes, setSedes] = useState<Sede[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [errorLista, setErrorLista] = useState('');
+
+  const cargarSedes = useCallback(async () => {
+    setCargando(true);
+    setErrorLista('');
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario?.esAdmin) { router.replace('/app'); return; }
+      const response = await fetch(`${API_BASE_URL}/api/sedes`, { headers: { Authorization: `Bearer ${usuario.accessToken}` } });
+      const resultado = await response.json();
+      if (!response.ok) throw new Error(resultado.message ?? 'No se pudieron cargar las sedes.');
+      setSedes(resultado);
+    } catch (error) {
+      setErrorLista(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudieron cargar las sedes.');
+    } finally { setCargando(false); }
+  }, []);
+
+  useFocusEffect(useCallback(() => { void cargarSedes(); }, [cargarSedes]));
+
   const [modalAbierto, setModalAbierto] = useState(false);
   const [sedeEnEdicion, setSedeEnEdicion] = useState<Sede | null>(null);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
@@ -129,7 +130,8 @@ export default function AdminSedesScreen() {
     );
   };
 
-  const guardar = () => {
+  const guardar = async () => {
+    if (guardando) return;
     if (!nombre.trim() || !direccion.trim()) {
       setError('Completa el nombre y la dirección de la sede.');
       return;
@@ -159,15 +161,44 @@ export default function AdminSedesScreen() {
       return;
     }
 
-    const nombreGuardado = nombre.trim();
-    const editando = sedeEnEdicion !== null;
-    cerrarEdicion();
-    setSedeGuardada({ nombre: nombreGuardado, editando });
+    setGuardando(true);
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario?.esAdmin) { router.replace('/app'); return; }
+      const editando = sedeEnEdicion !== null;
+      const response = await fetch(`${API_BASE_URL}/api/admin/sedes${editando ? `/${sedeEnEdicion.id}` : ''}`, {
+        method: editando ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.accessToken}` },
+        body: JSON.stringify({ nombre: nombre.trim(), direccion: direccion.trim(), dias, horaDesde: horaDesde.trim(), horaHasta: horaHasta.trim() }),
+      });
+      const resultado = await response.json();
+      if (!response.ok) throw new Error(resultado.message ?? 'No se pudo guardar la sede.');
+      cerrarEdicion();
+      await cargarSedes();
+      setSedeGuardada({ nombre: resultado.nombre, editando });
+    } catch (error) {
+      setError(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo guardar la sede.');
+    } finally { setGuardando(false); }
   };
 
-  const confirmarEliminacion = () => {
-    setSedeAEliminar(null);
-    cerrarEdicion();
+  const confirmarEliminacion = async () => {
+    if (!sedeAEliminar || guardando) return;
+    setGuardando(true);
+    try {
+      const usuario = await obtenerUsuarioActual();
+      if (!usuario?.esAdmin) { router.replace('/app'); return; }
+      const response = await fetch(`${API_BASE_URL}/api/admin/sedes/${sedeAEliminar.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${usuario.accessToken}` } });
+      if (!response.ok) {
+        const resultado = await response.json();
+        throw new Error(resultado.message ?? 'No se pudo eliminar la sede.');
+      }
+      setSedeAEliminar(null);
+      cerrarEdicion();
+      await cargarSedes();
+    } catch (error) {
+      setSedeAEliminar(null);
+      Alert.alert('No se pudo eliminar la sede', error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'Inténtalo nuevamente.');
+    } finally { setGuardando(false); }
   };
 
   return (
@@ -175,6 +206,9 @@ export default function AdminSedesScreen() {
       <View style={styles.pantalla}>
         <FlatList
           data={sedes}
+          refreshing={cargando}
+          onRefresh={() => void cargarSedes()}
+          ListEmptyComponent={cargando ? <ActivityIndicator color="#0f3e17" /> : <Text style={estilos.cardSubtitle}>{errorLista || 'Todavía no hay sedes.'}</Text>}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={estilos.listPadding}
           renderItem={({ item }) => (
@@ -332,7 +366,8 @@ export default function AdminSedesScreen() {
               <View style={estilos.modalActions}>
                 <Pressable
                   style={[estilos.modalButton, estilos.modalButtonPrimary, styles.guardarBoton]}
-                  onPress={guardar}
+                  onPress={() => void guardar()}
+                  disabled={guardando}
                   accessibilityRole="button"
                 >
                   <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Guardar</Text>
@@ -371,8 +406,7 @@ export default function AdminSedesScreen() {
             <View style={estilos.modalCard}>
               <Text style={estilos.modalTitle}>¿Eliminar sede?</Text>
               <Text style={estilos.modalText}>
-                ¿Estás seguro de que quieres eliminar la sede {sedeAEliminar.nombre}? Los turnos
-                agendados en esa sede también quedan sin sede asignada.
+                ¿Estás seguro de que quieres eliminar la sede {sedeAEliminar.nombre}? No se puede eliminar si tiene turnos asociados.
               </Text>
               <View style={[estilos.modalActions, styles.accionesCentradas]}>
                 <Pressable
@@ -386,7 +420,8 @@ export default function AdminSedesScreen() {
                 </Pressable>
                 <Pressable
                   style={[estilos.modalButton, styles.deleteButton]}
-                  onPress={confirmarEliminacion}
+                  onPress={() => void confirmarEliminacion()}
+                  disabled={guardando}
                   accessibilityRole="button"
                 >
                   <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>

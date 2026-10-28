@@ -1,13 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
-import { API_BASE_URL } from '@/lib/api';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { descripcionEspecieMascota } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
-import { turnosEjemploCliente, type TurnoEjemplo } from '@/lib/turnos-ejemplo';
+import type { TurnoGuardado } from '@/lib/datos';
+
+type TurnoHistorial = TurnoGuardado & { atendidoEn: string | null; esDemo?: boolean; ocultoEnAgenda?: boolean };
 
 type Mascota = {
   id: number;
@@ -50,6 +52,9 @@ export default function MascotaHistorialScreen() {
   }>();
   const [abierto, setAbierto] = useState<number | null>(null);
   const [datos, setDatos] = useState<Mascota | null>(null);
+  const [historial, setHistorial] = useState<TurnoHistorial[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(true);
+  const [errorHistorial, setErrorHistorial] = useState('');
   const [ampliada, setAmpliada] = useState(false);
   const { width: anchoPantalla, height: altoPantalla } = useWindowDimensions();
   const anchoFotoModal = Math.max(0, Math.min(anchoPantalla * 0.9, 520));
@@ -75,25 +80,42 @@ export default function MascotaHistorialScreen() {
   useFocusEffect(
     useCallback(() => {
       let vigente = true;
+      setCargandoHistorial(true);
+      setErrorHistorial('');
       void (async () => {
         try {
           const usuario = await obtenerUsuarioActual();
-          if (!usuario) return;
+          if (!usuario) { router.replace('/'); return; }
           const response = await fetch(
-            `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`
+            `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
+          { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
           );
-          if (!response.ok) return;
+          if (!response.ok) throw new Error('No se pudieron cargar los datos de la mascota.');
           const lista: unknown = await response.json();
-          if (!vigente || !Array.isArray(lista)) return;
+          if (!vigente) return;
+          if (!Array.isArray(lista)) throw new Error('La API devolvió datos inválidos.');
           const encontrada = lista.find((item) => {
             if (typeof item !== 'object' || item === null || !('id' in item)) return false;
             return (item as { id: unknown }).id === id;
           });
           if (!vigente) return;
-          if (encontrada) setDatos(encontrada as Mascota);
-        } catch {
-          // Sin datos frescos se sigue con los del parametro: la pantalla
-          // tiene que abrir igual aunque la API falle.
+          if (!encontrada) throw new Error('No se encontró la mascota.');
+          setDatos(encontrada as Mascota);
+          const respuestaTurnos = await fetch(
+            `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
+            { headers: { Authorization: `Bearer ${usuario.accessToken}` } }
+          );
+          if (!respuestaTurnos.ok) throw new Error('No se pudo cargar el historial.');
+          const turnos: unknown = await respuestaTurnos.json();
+          if (!Array.isArray(turnos)) throw new Error('La API devolvió un historial inválido.');
+          if (vigente) setHistorial((turnos as TurnoHistorial[])
+            .filter((turno) => turno.mascotaId === id && turno.atendidoEn !== null && !turno.esDemo && !turno.ocultoEnAgenda)
+            .sort((a, b) => a.fecha === b.fecha ? b.hora.localeCompare(a.hora) : b.fecha.localeCompare(a.fecha)));
+
+        } catch (error) {
+          if (vigente) { setHistorial([]); setErrorHistorial(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo cargar el historial.'); }
+        } finally {
+          if (vigente) setCargandoHistorial(false);
         }
       })();
       return () => {
@@ -103,23 +125,6 @@ export default function MascotaHistorialScreen() {
   );
 
   const mascota = datos ?? desdeParams;
-
-  const historial = useMemo(
-    () =>
-      turnosEjemploCliente([
-        {
-          id: mascota.id,
-          nombre: mascota.nombre,
-          especie: mascota.especie,
-          raza: mascota.raza,
-        },
-      ])
-        .filter((turno) => turno.atendidoEn !== null)
-        .sort((a, b) =>
-          a.fecha === b.fecha ? b.hora.localeCompare(a.hora) : b.fecha.localeCompare(a.fecha)
-        ),
-    [mascota]
-  );
 
   const volver = () => {
     if (router.canGoBack()) {
@@ -188,10 +193,10 @@ export default function MascotaHistorialScreen() {
         {historial.length === 0 ? (
           <View style={styles.vacio}>
             <Ionicons name="calendar-clear-outline" size={26} color="#69806a" />
-            <Text style={estilos.cardSubtitle}>Esta mascota todavía no tiene turnos.</Text>
+            <Text style={estilos.cardSubtitle}>{cargandoHistorial ? 'Cargando historial...' : errorHistorial || 'Esta mascota todavía no tiene turnos atendidos.'}</Text>
           </View>
         ) : (
-          historial.map((turno: TurnoEjemplo) => {
+          historial.map((turno: TurnoHistorial) => {
             const estaAbierto = abierto === turno.id;
             return (
               <View key={turno.id} style={styles.tarjeta}>
