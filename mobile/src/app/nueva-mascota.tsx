@@ -1,3 +1,4 @@
+import { fechaNacimientoValida } from '@/lib/datos';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
@@ -16,7 +17,7 @@ export default function NuevaMascota() {
   const [otraEspecie, setOtraEspecie] = useState('');
   const [raza, setRaza] = useState('');
   const [sexo, setSexo] = useState<SexoMascota | ''>('');
-  const [edad, setEdad] = useState('');
+  const [fechaNacimiento, setFechaNacimiento] = useState('');
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,7 +60,6 @@ export default function NuevaMascota() {
     if (isSubmitting) return;
     setMensaje('');
 
-    const edadNumero = edad.trim() ? Number(edad) : null;
     if (!nombre.trim() || !especie) {
       setMensaje('Completa el nombre y la especie.');
       return;
@@ -72,11 +72,8 @@ export default function NuevaMascota() {
       setMensaje('Elegí si tu mascota es macho o hembra.');
       return;
     }
-    if (
-      edadNumero !== null &&
-      (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
-    ) {
-      setMensaje('La edad debe ser un número entero entre 0 y 200.');
+    if (!fechaNacimientoValida(fechaNacimiento.trim())) {
+      setMensaje('Ingresá una fecha de nacimiento válida en formato AAAA-MM-DD.');
       return;
     }
 
@@ -101,7 +98,7 @@ export default function NuevaMascota() {
           especie: especie === ESPECIE_OTRO ? otraEspecie.trim() : especie,
           raza: raza.trim() || null,
           sexo,
-          edad: edadNumero,
+          fechaNacimiento: fechaNacimiento.trim(),
           foto,
           userId: usuario.id,
         }),
@@ -220,8 +217,8 @@ export default function NuevaMascota() {
           </View>
         </View>
 
-        <View style={styles.filaCampos}>
-          <View style={[styles.bloque, styles.columnaAncha]}>
+        <View style={styles.bloque}>
+          <View>
             <Text style={styles.label}>Raza (opcional)</Text>
             <TextInput
               style={styles.input}
@@ -234,15 +231,15 @@ export default function NuevaMascota() {
             />
           </View>
 
-          <View style={styles.columnaAngosta}>
-            <Text style={styles.label}>Edad (años)</Text>
+          <View style={styles.bloque}>
+            <Text style={styles.label}>Fecha de nacimiento</Text>
             <TextInput
               style={styles.input}
-              placeholder="Ej. 2"
+              placeholder="AAAA-MM-DD"
               placeholderTextColor="#8b978c"
-              value={edad}
-              onChangeText={setEdad}
-              keyboardType="decimal-pad"
+              value={fechaNacimiento}
+              onChangeText={setFechaNacimiento}
+              keyboardType="numbers-and-punctuation"
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
             />

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
@@ -6,6 +6,38 @@ import { obtenerUsuarioActual } from '@/lib/session';
 import type { Sede, SedeVeterinaria } from '@/lib/datos';
 
 const CLAVE = 'vetpro.sedeSeleccionada';
+const CLAVE_FILTRO_TURNOS = 'vetpro.filtroSedeTurnos';
+let escrituraFiltro: Promise<void> = Promise.resolve();
+
+export function guardarFiltroTurnos(filtro: string): Promise<void> {
+  escrituraFiltro = escrituraFiltro.catch(() => {}).then(() => AsyncStorage.setItem(CLAVE_FILTRO_TURNOS, filtro));
+  return escrituraFiltro;
+}
+
+export function useFiltroTurnos(sedes: Sede[], cargando: boolean, error: string): [string, (filtro: string) => void] {
+  const [filtro, setFiltro] = useState('Todas');
+  const cambio = useRef(0);
+
+  useFocusEffect(useCallback(() => {
+    if (cargando || error) return;
+    let vigente = true;
+    const version = cambio.current;
+    void escrituraFiltro.catch(() => {}).then(() => AsyncStorage.getItem(CLAVE_FILTRO_TURNOS)).then((guardado) => {
+      if (!vigente || version !== cambio.current) return;
+      setFiltro(guardado && (guardado === 'Todas' || sedes.some((sede) => sede.nombre === guardado)) ? guardado : 'Todas');
+    }).catch(() => {
+      if (vigente && version === cambio.current) setFiltro('Todas');
+    });
+    return () => { vigente = false; };
+  }, [sedes, cargando, error]));
+
+  const elegir = useCallback((nuevo: string) => {
+    cambio.current += 1;
+    setFiltro(nuevo);
+    void guardarFiltroTurnos(nuevo).catch(() => {});
+  }, []);
+  return [filtro, elegir];
+}
 
 export function useSedes() {
   const [sedes, setSedes] = useState<Sede[]>([]);

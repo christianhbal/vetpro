@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { descripcionEspecieMascota } from '@/lib/datos';
+import { descripcionEspecieMascota, edadDesdeNacimiento } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
 
@@ -24,7 +24,7 @@ type Mascota = {
   // Se trae de la API para pasarlo a la ficha, pero la lista no lo muestra: el
   // sexo se ve entrando en la mascota, no en la lista.
   sexo: string | null;
-  edad: number | null;
+  fechaNacimiento: string;
   foto: string | null;
 };
 
@@ -81,7 +81,7 @@ export default function MascotasScreen() {
   const descripcionMascota = (mascota: Mascota) =>
     [
       descripcionEspecieMascota(mascota.especie, mascota.raza),
-      mascota.edad !== null ? `${mascota.edad} años` : null,
+      edadDesdeNacimiento(mascota.fechaNacimiento) !== null ? `${edadDesdeNacimiento(mascota.fechaNacimiento)} años` : null,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -122,7 +122,7 @@ export default function MascotasScreen() {
                     especie: item.especie,
                     raza: item.raza ?? '',
                     sexo: item.sexo ?? '',
-                    edad: item.edad === null ? '' : String(item.edad),
+                    fechaNacimiento: item.fechaNacimiento,
                   },
                 })
               }

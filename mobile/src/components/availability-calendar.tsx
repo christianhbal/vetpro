@@ -200,7 +200,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const horariosDisponibles = useMemo(() => horariosDeSede(configuracionSede), [configuracionSede]);
     const direccionesSedes = Object.fromEntries(sedes.map((item) => [item.nombre, item.direccion]));
     useEffect(() => {
-      if (!sedeFija && !sedes.some((item) => item.nombre === sede)) setSede(sedes[0]?.nombre ?? '');
+      if (!sedeFija && sede && !sedes.some((item) => item.nombre === sede)) setSede('');
     }, [sedes, sede, sedeFija]);
     const [horariosOcupados, setHorariosOcupados] = useState<HorarioOcupado[]>([]);
     const [cargando, setCargando] = useState(true);

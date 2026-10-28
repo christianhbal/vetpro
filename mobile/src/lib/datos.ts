@@ -109,3 +109,18 @@ export function dividirEspecieMascota(
   }
   return { seleccion: ESPECIE_OTRO, otra: valor };
 }
+
+export function fechaNacimientoValida(valor: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+  const [anio, mes, dia] = valor.split('-').map(Number);
+  const fecha = new Date(anio, mes - 1, dia);
+  const hoy = new Date();
+  return fecha.getFullYear() === anio && fecha.getMonth() === mes - 1 && fecha.getDate() === dia && fecha <= hoy;
+}
+
+export function edadDesdeNacimiento(valor: string): number | null {
+  if (!fechaNacimientoValida(valor)) return null;
+  const [anio, mes, dia] = valor.split('-').map(Number);
+  const hoy = new Date();
+  return hoy.getFullYear() - anio - (hoy.getMonth() + 1 < mes || (hoy.getMonth() + 1 === mes && hoy.getDate() < dia) ? 1 : 0);
+}

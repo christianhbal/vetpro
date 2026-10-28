@@ -26,7 +26,7 @@ import {
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
 import { sincronizarRecordatorios } from '@/lib/recordatorios';
-import { useSedeSeleccionada, useSedes } from '@/lib/sede';
+import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 
 // La respuesta del admin trae turno ajeno y estado de atención; el usuario
@@ -98,7 +98,7 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 export default function TurnosScreen() {
-  const { sedes } = useSedes();
+  const { sedes, cargandoSedes, errorSedes } = useSedes();
   const sedesVeterinaria = sedes.map((sede) => sede.nombre);
   const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
@@ -130,19 +130,11 @@ export default function TurnosScreen() {
   const [error, setError] = useState('');
   const [esAdmin, setEsAdmin] = useState(false);
   const [token, setToken] = useState('');
-  // Arranca en "Todas": es lo que pide la pantalla, ver la agenda completa sin
-  // tener que tocar un filtro. Antes arrancaba en la sede de la portada
-  // (Recoleta por defecto) y el filtro de la lista sevia movido.
-const [sedeCompartida, setSedeCompartida] = useSedeSeleccionada();
-const [mostrarTodas, setMostrarTodas] = useState(true);
-const filtroSede: 'Todas' | SedeVeterinaria = mostrarTodas ? 'Todas' : sedeCompartida;
+const [, setSedeCompartida] = useSedeSeleccionada();
+const [filtroSede, guardarFiltro] = useFiltroTurnos(sedes, cargandoSedes, errorSedes);
 const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
-  if (valor === 'Todas') {
-    setMostrarTodas(true);
-    return;
-  }
-  setMostrarTodas(false);
-  setSedeCompartida(valor);
+  guardarFiltro(valor);
+  if (valor !== 'Todas') setSedeCompartida(valor);
 };
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const { height: windowHeight } = useWindowDimensions();
@@ -668,12 +660,8 @@ const puedeCancelar =
             onPress={() =>
               router.push(
                 esAdmin
-                ? // Sin el parametro la pantalla caia siempre en Recoleta: al
-                  // cambiar de sede aqui, "Atender pacientes" no cambiaba.
-                  // Con "Todas" no hay una sede real todavia, asi que no se pasa
-                  // ninguna y la pantalla usa su valor por defecto.
-                  filtroSede === 'Todas'
-                  ? { pathname: '/admin-turnos-activos', params: { sede: sedeCompartida } }
+                ?                   filtroSede === 'Todas'
+                  ? { pathname: '/admin-turnos-activos', params: { sede: 'Todas' } }
                   : { pathname: '/admin-turnos-activos', params: { sede: filtroSede } }
                 : '/nuevo-turno'
               )

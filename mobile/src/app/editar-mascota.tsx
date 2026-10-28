@@ -1,3 +1,4 @@
+import { fechaNacimientoValida } from '@/lib/datos';
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -22,7 +23,7 @@ export default function EditarMascota() {
     especie?: string;
     raza?: string;
     sexo?: string;
-    edad?: string;
+    fechaNacimiento?: string;
   }>();
   const id = Number(params.id ?? 0);
 
@@ -43,7 +44,7 @@ export default function EditarMascota() {
     esSexoMascota(params.sexo) ? params.sexo : ''
   );
   const sexo = sexoDatos;
-  const [edad, setEdad] = useState(params.edad ?? '');
+  const [fechaNacimiento, setFechaNacimiento] = useState(params.fechaNacimiento ?? '');
   const [foto, setFoto] = useState<string | null>(null);
   const [cargada, setCargada] = useState(false);
   const [mensaje, setMensaje] = useState('');
@@ -69,11 +70,11 @@ export default function EditarMascota() {
         if (!Array.isArray(lista)) throw new Error('La API devolvió datos inválidos.');
         const encontrada = lista.find(
           (item) => typeof item === 'object' && item !== null && 'id' in item && item.id === id
-        ) as { nombre: string; raza: string | null; edad: number | null; foto: string | null; sexo: string | null } | undefined;
+        ) as { nombre: string; raza: string | null; fechaNacimiento: string; foto: string | null; sexo: string | null } | undefined;
         if (!encontrada) throw new Error('No se encontró la mascota.');
         setNombre(encontrada.nombre);
         setRaza(encontrada.raza ?? '');
-        setEdad(encontrada.edad === null ? '' : String(encontrada.edad));
+        setFechaNacimiento(encontrada.fechaNacimiento);
         setCargada(true);
         setFoto(encontrada?.foto ?? null);
         if (esSexoMascota(encontrada?.sexo)) setSexoDatos(encontrada.sexo);
@@ -127,16 +128,12 @@ export default function EditarMascota() {
       return;
     }
 
-    const edadNumero = edad.trim() ? Number(edad) : null;
     if (!nombre.trim()) {
       setMensaje('El nombre no puede quedar vacío.');
       return;
     }
-    if (
-      edadNumero !== null &&
-      (!Number.isInteger(edadNumero) || edadNumero < 0 || edadNumero > 200)
-    ) {
-      setMensaje('La edad debe ser un número entero entre 0 y 200.');
+    if (!fechaNacimientoValida(fechaNacimiento.trim())) {
+      setMensaje('Ingresá una fecha de nacimiento válida en formato AAAA-MM-DD.');
       return;
     }
 
@@ -157,7 +154,7 @@ export default function EditarMascota() {
       body: JSON.stringify({
         nombre: nombre.trim(),
         raza: raza.trim() || null,
-        edad: edadNumero,
+        fechaNacimiento: fechaNacimiento.trim(),
         foto: foto ?? null,
         userId: usuario.id,
       }),
@@ -258,14 +255,14 @@ export default function EditarMascota() {
         </View>
 
         <View style={styles.bloque}>
-          <Text style={styles.label}>Edad (años)</Text>
+          <Text style={styles.label}>Fecha de nacimiento</Text>
           <TextInput
             style={styles.input}
-            placeholder="Ej. 2"
+            placeholder="AAAA-MM-DD"
             placeholderTextColor="#8b978c"
-            value={edad}
-            onChangeText={setEdad}
-            keyboardType="decimal-pad"
+            value={fechaNacimiento}
+            onChangeText={setFechaNacimiento}
+            keyboardType="numbers-and-punctuation"
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
           />

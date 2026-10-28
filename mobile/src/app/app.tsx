@@ -1,3 +1,4 @@
+import { edadDesdeNacimiento } from '@/lib/datos';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -32,14 +33,14 @@ import { obtenerUsuarioActual } from '@/lib/session';
 import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
-import { useSedeSeleccionada, useSedes } from '@/lib/sede';
+import { guardarFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 type Mascota = {
   id: number;
   nombre: string;
   especie: string;
   raza: string | null;
-  edad: number | null;
+  fechaNacimiento: string;
   foto: string | null;
 };
 
@@ -480,7 +481,10 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                   placeholder="Elegí una sede"
                   opciones={opcionesSede}
                   seleccion={sedeSeleccionadaOpcion}
-                  onSelect={(opcion) => setSedeSeleccionada(opcion.valor as SedeVeterinaria)}
+                  onSelect={(opcion) => {
+                    setSedeSeleccionada(opcion.valor as SedeVeterinaria);
+                    if (esAdmin) void guardarFiltroTurnos(opcion.valor).catch(() => {});
+                  }}
                   compacto
                   ocultarLabel
                   accessibilityLabel="Elegir sede de la veterinaria"
@@ -635,8 +639,8 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
                     mascotaSeleccionada.especie,
                     mascotaSeleccionada.raza
                   ),
-                  mascotaSeleccionada.edad !== null
-                    ? `${mascotaSeleccionada.edad} años`
+                  edadDesdeNacimiento(mascotaSeleccionada.fechaNacimiento) !== null
+                    ? `${edadDesdeNacimiento(mascotaSeleccionada.fechaNacimiento)} años`
                     : null,
                 ]
                   .filter(Boolean)

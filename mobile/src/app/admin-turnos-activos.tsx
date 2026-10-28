@@ -127,7 +127,7 @@ export default function AdminTurnosActivosScreen() {
 
   // El veterinario elige en que sede esta trabajando y solo ve las llegadas
 // de esa sede.
-const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada);
+const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || turno.sede === sedeSeleccionada);
 
 // Marcar ya no es un toggle: lleva a la pantalla donde se escribe lo que
   // paso, y recien ahi se completa el turno.
@@ -140,6 +140,7 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
         mascota: turno.mascota.nombre,
         tipo: turno.tipo,
         sede: turno.sede,
+        filtroOrigen: sedeSeleccionada,
         fecha: formatearFechaTurno(turno.fecha, turno.hora),
         // La descripcion y "atendido" son cosas distintas: un turno pendiente
         // puede venir con una nota y sigue sin estar atendido.
@@ -216,7 +217,7 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
                 />
                 </View>
                 <Text style={styles.vacioTitulo}>
-                  No hay pacientes esperando en {sedeSeleccionada}.
+                  {sedeSeleccionada === 'Todas' ? 'No hay pacientes esperando.' : `No hay pacientes esperando en ${sedeSeleccionada}.`}
                 </Text>
               </>
             )}
@@ -245,7 +246,7 @@ const turnosDeLaSede = turnos.filter((turno) => turno.sede === sedeSeleccionada)
                   {item.user.nombre}
                 </Text>
                 <Text style={estilos.cardSubtituloTurno} numberOfLines={1}>
-                  {item.hora} hs
+                  {item.hora} hs{sedeSeleccionada === 'Todas' ? ` · ${item.sede}` : ''}
                 </Text>
               </View>
 

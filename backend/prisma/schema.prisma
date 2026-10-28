@@ -24,7 +24,7 @@ model Mascota {
   // Macho o Hembra. Va suelto y no como parte de la especie porque la ficha
   // lo muestra solo y las otras pantallas no lo necesitan.
   sexo      String?
-  edad      Int?
+  fechaNacimiento String
   foto      String?
   userId    Int?
   user      Usuario? @relation(fields: [userId], references: [id], onDelete: Cascade)

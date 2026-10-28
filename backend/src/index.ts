@@ -68,6 +68,13 @@ function isValidDateOnly(value: unknown): value is string {
   );
 }
 
+function isValidBirthDate(value: unknown): value is string {
+  if (!isValidDateOnly(value)) return false;
+  const ahora = new Date();
+  const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+  return value <= hoy;
+}
+
 function isValidAppointmentSlot(fecha: string, hora: string, sede: { dias: string; horaDesde: string; horaHasta: string }): boolean {
   if (!isValidDateOnly(fecha) || !/^([01]\d|2[0-3]):(00|30)$/.test(hora)) return false;
   const [year, month, day] = fecha.split('-').map(Number);
@@ -335,8 +342,7 @@ app.get('/api/mascotas', async (request, response) => {
 app.post('/api/mascotas', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
-  const { nombre, especie, raza, sexo, edad, foto, userId } = request.body ?? {};
-  const parsedAge = edad === undefined || edad === null || edad === '' ? null : Number(edad);
+  const { nombre, especie, raza, sexo, fechaNacimiento, foto, userId } = request.body ?? {};
 
   if (
     typeof nombre !== 'string' ||
@@ -358,12 +364,7 @@ app.post('/api/mascotas', async (request, response) => {
   if (sexo !== undefined && sexo !== null && !SEXOS_MASCOTA.includes(String(sexo))) {
     return response.status(400).json({ message: 'El sexo tiene que ser Macho o Hembra.' });
   }
-  if (
-    parsedAge !== null &&
-    (!Number.isInteger(parsedAge) || parsedAge < 0 || parsedAge > 200)
-  ) {
-    return response.status(400).json({ message: 'La edad debe ser un numero entero entre 0 y 200.' });
-  }
+  if (!isValidBirthDate(fechaNacimiento)) return response.status(400).json({ message: 'Ingresá una fecha de nacimiento válida que no sea futura.' });
   if (
     foto !== undefined &&
     foto !== null &&
@@ -386,7 +387,7 @@ app.post('/api/mascotas', async (request, response) => {
         especie: especie.trim(),
         raza: typeof raza === 'string' && raza.trim() ? raza.trim() : null,
         sexo: SEXOS_MASCOTA.includes(String(sexo)) ? String(sexo) : null,
-        edad: parsedAge,
+        fechaNacimiento,
         foto: foto ?? null,
         user: { connect: { id: userId } },
       },
@@ -413,14 +414,13 @@ app.patch('/api/mascotas/:id', async (request, response) => {
 
   if (userId !== autenticado.id) return response.status(403).json({ message: 'No puedes acceder a datos de otro usuario.' });
 
-  const { nombre, especie, raza, sexo, edad, foto } = request.body ?? {};
-  const parsedAge = edad === undefined ? undefined : edad === null || edad === '' ? null : Number(edad);
+  const { nombre, especie, raza, sexo, fechaNacimiento, foto } = request.body ?? {};
   const data: {
     nombre?: string;
     especie?: string;
     raza?: string | null;
     sexo?: string | null;
-    edad?: number | null;
+    fechaNacimiento?: string;
     foto?: string | null;
   } = {};
 
@@ -448,16 +448,9 @@ app.patch('/api/mascotas/:id', async (request, response) => {
     }
     data.sexo = SEXOS_MASCOTA.includes(String(sexo)) ? String(sexo) : null;
   }
-  if (parsedAge !== undefined) {
-    if (
-      parsedAge !== null &&
-      (!Number.isInteger(parsedAge) || parsedAge < 0 || parsedAge > 200)
-    ) {
-      return response
-        .status(400)
-        .json({ message: 'La edad debe ser un numero entero entre 0 y 200.' });
-    }
-    data.edad = parsedAge;
+  if (fechaNacimiento !== undefined) {
+    if (!isValidBirthDate(fechaNacimiento)) return response.status(400).json({ message: 'Ingresá una fecha de nacimiento válida que no sea futura.' });
+    data.fechaNacimiento = fechaNacimiento;
   }
   if (foto !== undefined) {
     if (

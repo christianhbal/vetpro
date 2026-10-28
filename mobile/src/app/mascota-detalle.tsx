@@ -4,7 +4,7 @@ import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { descripcionEspecieMascota } from '@/lib/datos';
+import { descripcionEspecieMascota, edadDesdeNacimiento } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
 import { obtenerUsuarioActual } from '@/lib/session';
 import type { TurnoGuardado } from '@/lib/datos';
@@ -17,7 +17,7 @@ type Mascota = {
   especie: string;
   raza: string | null;
   sexo: string | null;
-  edad: number | null;
+  fechaNacimiento: string;
   foto: string | null;
 };
 
@@ -27,7 +27,7 @@ function descripcionMascota(mascota: Mascota): string {
     // Solo se muestra aca y no en la lista de Mascotas: eldueño lo busca cuando
     // abre la ficha, no cuando esta recorriendo los nombres.
     mascota.sexo,
-    mascota.edad !== null ? `${mascota.edad} años` : null,
+    edadDesdeNacimiento(mascota.fechaNacimiento) !== null ? `${edadDesdeNacimiento(mascota.fechaNacimiento)} años` : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -48,7 +48,7 @@ export default function MascotaHistorialScreen() {
     especie?: string;
     raza?: string;
     sexo?: string;
-    edad?: string;
+    fechaNacimiento?: string;
   }>();
   const [abierto, setAbierto] = useState<number | null>(null);
   const [datos, setDatos] = useState<Mascota | null>(null);
@@ -73,7 +73,7 @@ export default function MascotaHistorialScreen() {
     especie: params.especie ?? 'Otro',
     raza: params.raza ? params.raza : null,
     sexo: params.sexo ? params.sexo : null,
-    edad: params.edad ? Number(params.edad) : null,
+    fechaNacimiento: params.fechaNacimiento ?? '',
     foto: null,
   }));
 
@@ -176,7 +176,7 @@ export default function MascotaHistorialScreen() {
                   especie: mascota.especie,
                   raza: mascota.raza ?? '',
                   sexo: mascota.sexo ?? '',
-                  edad: mascota.edad === null ? '' : String(mascota.edad),
+                  fechaNacimiento: mascota.fechaNacimiento,
                 },
               })
             }

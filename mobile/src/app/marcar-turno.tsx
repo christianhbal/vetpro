@@ -41,6 +41,7 @@ export default function MarcarTurnoScreen() {
     mascota?: string;
     tipo?: string;
     sede?: string;
+    filtroOrigen?: string;
     fecha?: string;
     hora?: string;
     atendido?: string;
@@ -73,7 +74,7 @@ export default function MarcarTurnoScreen() {
   // pantalla caia siempre en Recoleta y el veterinario atendia en una sede y
   // volvia a ver los pacientes de otra.
   const [sedeCompartida] = useSedeSeleccionada();
-const sedeDeOrigen = esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
+const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrigen : esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
   const esperaDeLaSede = {
     pathname: '/admin-turnos-activos',
     params: { sede: sedeDeOrigen },
