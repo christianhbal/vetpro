@@ -18,7 +18,7 @@ import {
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { cerrarSesion, obtenerUsuarioActual } from '@/lib/session';
 import { useSedes } from '@/lib/sede';
 
 /**
@@ -75,6 +75,10 @@ type Aviso = {
    * paciente, porque no hay ninguno.
    */
   esGlobal?: boolean | null;
+  /** 'recuperacion' cuando el aviso pide restablecer una contraseña. */
+  tipo?: string | null;
+  /** Correo del usuario que pidió la recuperación. */
+  solicitanteEmail?: string | null;
 };
 
 function esMascotaDelAviso(value: unknown): value is NonNullable<Aviso['mascota']> {
@@ -101,7 +105,11 @@ function esAviso(value: unknown): value is Aviso {
     (typeof aviso.motivo === 'string' || aviso.motivo === null) &&
     (typeof aviso.sede === 'string' || aviso.sede === null || aviso.sede === undefined) &&
     (typeof aviso.hora === 'string' || aviso.hora === null || aviso.hora === undefined) &&
-    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined)
+    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined) &&
+    (typeof aviso.tipo === 'string' || aviso.tipo === null || aviso.tipo === undefined) &&
+    (typeof aviso.solicitanteEmail === 'string' ||
+      aviso.solicitanteEmail === null ||
+      aviso.solicitanteEmail === undefined)
   );
 }
 
@@ -348,6 +356,17 @@ export default function NotificacionesScreen() {
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
+  // Solicitud de recuperación que el admin está por confirmar, y la contraseña
+  // temporal que devuelve la API cuando la confirma.
+  const [solicitudReset, setSolicitudReset] = useState<Aviso | null>(null);
+  const [resetPassword, setResetPassword] = useState<{
+    email: string;
+    password: string;
+    propia: boolean;
+  } | null>(null);
+  const [reseteando, setReseteando] = useState(false);
+  const [errorReset, setErrorReset] = useState('');
+  const [miEmail, setMiEmail] = useState('');
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -362,6 +381,7 @@ export default function NotificacionesScreen() {
       }
       setToken(usuario.accessToken);
       setEsAdmin(usuario.esAdmin);
+      setMiEmail(usuario.email);
       const response = await fetch(`${API_BASE_URL}/api/notifications`, {
         headers: { Authorization: `Bearer ${usuario.accessToken}` },
       });
@@ -427,6 +447,79 @@ export default function NotificacionesScreen() {
       );
     } catch (requestError) {
       setError(apiUnreachableMessage(requestError));
+    }
+  };
+
+  const confirmarReset = async () => {
+    if (!solicitudReset || reseteando) return;
+    const aviso = solicitudReset;
+    const email = aviso.solicitanteEmail;
+    if (!email) {
+      setErrorReset('La solicitud no tiene un correo válido.');
+      return;
+    }
+
+    setReseteando(true);
+    setErrorReset('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/password-reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email }),
+      });
+      const resultado: unknown = await response.json();
+      if (!response.ok) {
+        setErrorReset(
+          mensajeApi(resultado) ?? 'No se pudo restablecer la contraseña.'
+        );
+        return;
+      }
+      if (
+        typeof resultado !== 'object' ||
+        resultado === null ||
+        !('password' in resultado) ||
+        typeof resultado.password !== 'string' ||
+        !('email' in resultado) ||
+        typeof resultado.email !== 'string'
+      ) {
+        setErrorReset('La API no confirmó el cambio de contraseña.');
+        return;
+      }
+
+      setResetPassword({
+        email: resultado.email,
+        password: resultado.password,
+        propia: resultado.email === miEmail,
+      });
+      setSolicitudReset(null);
+      // La API ya marcó como leídas todas las solicitudes de ese correo. Se
+      // actualiza la lista local sin otro PATCH: si el admin se restableció su
+      // propia contraseña, su token anterior ya no sirve y ese PATCH daría 401.
+      setAvisos((actuales) =>
+        actuales.map((actual) =>
+          actual.id === aviso.id
+            ? { ...actual, readAt: new Date().toISOString() }
+            : actual
+        )
+      );
+    } catch (requestError) {
+      setErrorReset(apiUnreachableMessage(requestError));
+    } finally {
+      setReseteando(false);
+    }
+  };
+
+  const cerrarAvisoReset = () => {
+    const propia = resetPassword?.propia ?? false;
+    setResetPassword(null);
+    // Si el admin se restableció su propia contraseña, el token que tiene
+    // guardado ya no sirve. Se cierra la sesión para que vuelva a entrar con la
+    // contraseña nueva en vez de quedar con errores 401.
+    if (propia) {
+      void cerrarSesion().then(() => router.replace('/'));
     }
   };
 
@@ -541,6 +634,17 @@ export default function NotificacionesScreen() {
                 pressed && estilos.buttonPressed,
               ]}
               onPress={() => {
+                // La solicitud de recuperación abre el cartel de confirmación:
+                // el cambio no se hace hasta que el veterinario lo acepta.
+                if (esAdmin && item.tipo === 'recuperacion') {
+                  setErrorReset('');
+                  setSolicitudReset(item);
+                  // Se marca leída al abrirla, igual que el resto de los
+                  // avisos: si el admin cierra el cartel sin restablecer nada,
+                  // la notificación no puede quedar con el punto de no leída.
+                  void marcarLeido(item);
+                  return;
+                }
                 // Los avisos de proximidad abren la ventana; el resto se marca
                 // como leido nomas.
                 if (conVentana) setAvisoTurno(item);
@@ -550,10 +654,11 @@ export default function NotificacionesScreen() {
               accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver detalle del aviso' : ''}`}
             >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              {item.esGlobal ? (
-                // El aviso global no es de una mascota, asi que va el logo. Con
-                // "contain" y un fondo claro el logo horizontal se lee entero
-                // en el cuadrado en vez de quedar con los bordes cortados.
+              {item.esGlobal || item.tipo === 'recuperacion' ? (
+                // El aviso global y la solicitud de recuperación no son de una
+                // mascota, asi que va el logo. Con "contain" y un fondo claro el
+                // logo horizontal se lee entero en el cuadrado en vez de quedar
+                // con los bordes cortados.
                 <Image
                   source={logoVetPro}
                   style={styles.avisoLogo}
@@ -591,6 +696,63 @@ export default function NotificacionesScreen() {
       />
 
       <VentanaAviso aviso={avisoTurno} onCerrar={() => setAvisoTurno(null)} />
+
+      <Modal
+        visible={solicitudReset !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!reseteando) setSolicitudReset(null);
+        }}
+        statusBarTranslucent
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => {
+              if (!reseteando) setSolicitudReset(null);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar restablecimiento"
+          />
+          {solicitudReset ? (
+            <View style={estilos.modalCard}>
+              <Text style={estilos.modalTitle}>¿Restablecer contraseña?</Text>
+              <Text style={estilos.modalText}>
+                {solicitudReset.solicitanteEmail ?? 'El usuario'} pidió recuperar su
+                contraseña. La nueva contraseña va a ser su apellido seguido de 12345.
+              </Text>
+              {errorReset ? (
+                <Text style={styles.createError} accessibilityRole="alert">
+                  {errorReset}
+                </Text>
+              ) : null}
+              <View style={estilos.modalActions}>
+                <Pressable
+                  style={[estilos.modalButton, estilos.modalButtonNeutral]}
+                  onPress={() => setSolicitudReset(null)}
+                  disabled={reseteando}
+                  accessibilityRole="button"
+                >
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
+                    Cancelar
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[estilos.modalButton, estilos.modalButtonPrimary]}
+                  onPress={() => void confirmarReset()}
+                  disabled={reseteando}
+                  accessibilityRole="button"
+                >
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                    {reseteando ? 'Restableciendo...' : 'Sí, restablecer'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
 
       <Modal
         visible={modalNuevo}
@@ -679,6 +841,26 @@ export default function NotificacionesScreen() {
         etiquetaBoton="Cerrar el aviso de notificación enviada"
         onCerrar={() => setEnviado(null)}
       />
+
+      <AvisoExito
+        visible={resetPassword !== null}
+        titulo="¡Contraseña restablecida!"
+        subtitulo={
+          resetPassword !== null
+            ? resetPassword.propia
+              ? 'Tu sesión se va a cerrar. Volvé a entrar con la contraseña de abajo.'
+              : `Compartila con ${resetPassword.email}.`
+            : undefined
+        }
+        etiquetaBoton="Cerrar el aviso de contraseña restablecida"
+        onCerrar={cerrarAvisoReset}
+      >
+        {resetPassword !== null ? (
+          <Text style={estilos.resetPassword} selectable>
+            {resetPassword.password}
+          </Text>
+        ) : null}
+      </AvisoExito>
     </AppDrawer>
   );
 }

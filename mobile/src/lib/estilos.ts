@@ -256,6 +256,20 @@ petPhotoClose: {
   modalButtonTextLight: {
     color: '#fffefc',
   },
+  // Contraseña temporal que muestra el aviso de recuperación. Va en un bloque
+  // propio para que el veterinario la lea y la copie sin confundirla con el
+  // texto del cartel.
+  resetPassword: {
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#e1f4df',
+    color: '#0f3e17',
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
   linkRow: {
     width: '100%',
     flexDirection: 'row',
