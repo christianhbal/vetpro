@@ -220,9 +220,9 @@ export default function InicioScreen() {
     .sort((a, b) => a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)),
     [turnosGuardados, ahora]);
 
-  // El admin ve los turnos de verdad de la sede que esta mirando, y un cliente
-  // los suyos. Antes el admin veia nombres de ejemplo fijos (Lola, Mora, Tito,
-  // Nube) que no tenian nada que ver con la sede elegida.
+  // El admin ve todos los turnos pendientes, de todas las sedes, con el dueño
+  // y la sede en la tercera línea. El cliente ve solo los suyos. Antes el admin
+  // veía nombres de ejemplo fijos (Lola, Mora, Tito, Nube).
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
         .slice(0, COTAS_ADMIN)
