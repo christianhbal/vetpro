@@ -19,6 +19,7 @@ import { SelectorCampo } from '@/components/selector-campo';
 import TurnoDateTimeField from '@/components/turno-date-time-field';
 import { estilos } from '@/lib/estilos';
 import {
+  abrirMapa,
   formatearFechaTurno,
   turnoSiguePendiente,
   type SedeVeterinaria,
@@ -734,11 +735,9 @@ const puedeCancelar =
                 </Text>
               ) : null}
 
-              {/* Solo para el cliente, y solo si el turno todavia no paso: es el que
-                  tiene que llegar a la sede. El veterinario ya esta ahi y no le
-                  sirve de nada, y de un turno viejo la direccion no sirve para
-                  nada. Igual que en la portada. */}
-              {esAdmin || turnoYaPaso ? null : (
+              {/* La dirección y el boton "Ir" sirven para el cliente y para el
+                  veterinario; en un turno que ya pasó no aportan nada. */}
+              {turnoYaPaso ? null : (
                 <>
                   <View style={styles.modalSede}>
                     <Text style={estilos.modalText}>
@@ -751,9 +750,6 @@ const puedeCancelar =
                     </Text>
                   </View>
 
-                  {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
-                      que en web no existe y en Android se lleva la app afuera.
-                      Cuando se defina a donde lleva, se le pone el onPress. */}
                   <Pressable
                     // Mismo verde y mismo radio que "Escanear QR de llegada": dos
                     // botones distintos al lado en la misma pantalla se ven mal.
@@ -762,12 +758,15 @@ const puedeCancelar =
                       styles.irBoton,
                       pressed && estilos.buttonPressed,
                     ]}
-                    onPress={() => {
-                      // Sin accion a proposito.
-                    }}
+                    onPress={() =>
+                      abrirMapa(
+                        citaSeleccionada.guardado.sede,
+                        direccionesSedes[citaSeleccionada.guardado.sede]
+                      )
+                    }
                     accessibilityRole="button"
                     accessibilityLabel="Ir a la sede"
-                    accessibilityHint="Todavía no está disponible"
+                    accessibilityHint="Abre el mapa con la dirección de la sede"
                   >
                     <Text style={estilos.buttonTextPrimary}>Ir</Text>
                   </Pressable>
