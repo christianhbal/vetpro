@@ -224,7 +224,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
   // haya pasado o el turno figure atendido, y cada rol ve lo suyo:
   //  - admin: la agenda compartida de la veterinaria, tal cual la devuelve la API.
-  //  - cliente: los ejemplos armados con SUS propias mascotas.
+  //  - cliente: los turnos vinculados a su cuenta.
   const porDia = useMemo(
     () => turnosVisibles.filter((turno) => !turno.ocultoEnAgenda),
     [turnosVisibles]
@@ -262,10 +262,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
    * Un turno se puede cancelar desde aca si todavia no se atendio y el paciente
    * no llego. Lo puede hacer el dueño de la mascota o el veterinario: es el turno
    * de ellos.
-   *
-   * El `id > 0` es la red de seguridad: los ejemplos de respaldo del frontend
-   * tienen id negativo y no existen en la base, asi que no hay nada que
-   * cancelar.
+
    */
 const puedeCancelar =
    citaSeleccionada !== null &&

@@ -573,37 +573,6 @@ app.get('/api/turnos/disponibilidad', async (request, response) => {
   }
 });
 
-// GET /api/mascotas/fotos-ejemplo
-// Devuelve hasta 4 fotos de mascotas distintas para la portada. Se devuelven
-// como data URI y no como archivo porque en la base hay formatos (por ejemplo
-// AVIF) que el empaquetador de la app no acepta, pero el visor del celular si.
-app.get('/api/mascotas/fotos-ejemplo', async (request, response) => {
-  const user = await requireAuthenticatedUser(request, response);
-  if (!user) return;
-
-  try {
-    const candidatas = await prisma.mascota.findMany({
-      where: { foto: { not: null }, userId: { not: null } },
-      select: { id: true, foto: true },
-      orderBy: { id: 'asc' },
-    });
-
-    const vistas = new Set<string>();
-    const fotos: string[] = [];
-    for (const mascota of candidatas) {
-      if (!mascota.foto || fotos.length >= 4) continue;
-      if (vistas.has(mascota.foto)) continue;
-      vistas.add(mascota.foto);
-      fotos.push(mascota.foto);
-    }
-
-    return response.json({ fotos });
-  } catch (error) {
-    console.error('No se pudieron obtener las fotos de ejemplo:', error);
-    return response.status(500).json({ message: 'No se pudieron obtener las fotos de ejemplo.' });
-  }
-});
-
 // GET /api/turnos?userId=1
 // Devuelve los turnos del usuario junto con el nombre de cada mascota.
 app.get('/api/turnos', async (request, response) => {

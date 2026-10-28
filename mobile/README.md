@@ -47,7 +47,7 @@ Sign in after promotion so the app receives an administrator token. The token is
 
 When an administrator changes or cancels an appointment, the owner receives an in-app notification stored in SQLite. The app does not use remote push notifications or periodic requests. It synchronizes local reminders when the app is opened or returns to the foreground, and after the client books or cancels a turn. Changes made elsewhere while the app is closed are reflected the next time it synchronizes. Local reminders require notification permission and are not supported on the web target.
 
-The app defaults to `http://localhost:3000` on web/iOS simulators and `http://10.0.2.2:3000` on Android emulators. For a physical phone, create `mobile/.env` from `mobile/.env.example` and set `EXPO_PUBLIC_API_URL` to your computer's LAN IP. The phone and computer must be on the same network. Restart Expo after changing the variable.
+The app defaults to `http://localhost:3000` on web/iOS simulators and `http://10.0.2.2:3000` on Android emulators. For a physical phone, create `mobile/.env` and set `EXPO_PUBLIC_API_URL` to your computer's LAN IP. The phone and computer must be on the same network. Restart Expo after changing the variable.
 
 Only submit the registration form when you are ready to create a real user. For this class exercise, passwords are stored and compared as plain text. This is not safe for a real or public app; use password hashing before production.
 
