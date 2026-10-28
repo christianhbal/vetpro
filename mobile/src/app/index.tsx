@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
 import { guardarUsuarioActual } from '../lib/session';
-import { registrarNotificacionesPush } from '../lib/push';
+import { sincronizarRecordatorios } from '../lib/recordatorios';
 
 type Campo = {
   id: string;
@@ -67,25 +67,7 @@ export default function Index() {
         accessToken: result.accessToken,
       });
       router.replace('/app');
-      try {
-        const avisoPush = await registrarNotificacionesPush({
-          id: result.id,
-          nombre: result.nombre,
-          email: result.email,
-          telefono: typeof result.telefono === 'string' ? result.telefono : null,
-          esAdmin: result.esAdmin,
-          accessToken: result.accessToken,
-        });
-        if (avisoPush) {
-          Alert.alert('Notificaciones push no activadas', avisoPush);
-        }
-      } catch (pushError) {
-        console.error('No se pudo registrar el dispositivo para notificaciones push:', pushError);
-        Alert.alert(
-          'No se pudieron activar las notificaciones push',
-          pushError instanceof Error ? pushError.message : 'Inténtalo nuevamente más tarde.'
-        );
-      }
+      void sincronizarRecordatorios(true);
     } catch (requestError) {
       setError(apiUnreachableMessage(requestError));
     } finally {

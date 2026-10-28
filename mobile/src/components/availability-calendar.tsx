@@ -27,6 +27,7 @@ import {
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import { useSedes } from '@/lib/sede';
 import { estilos } from '@/lib/estilos';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
@@ -502,6 +503,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           });
         }
         setHoraSeleccionada('');
+        if (!comoAdmin) void sincronizarRecordatorios();
         void cargarDisponibilidad();
         onTurnoGuardado?.();
         return true;

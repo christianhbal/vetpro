@@ -121,38 +121,8 @@ function esTurnoDelAviso(value: unknown): value is NonNullable<Aviso['turno']> {
   );
 }
 
-// Filtra por fecha de creacion. `createdAt` viene de SQLite con CURRENT_TIMESTAMP
-// ("AAAA-MM-DD HH:MM:SS", en UTC) y no como ISO, asi que se reemplaza el espacio
-// por una "T" y se le anexa la Z: sin eso Safari y Hermes lo parsean como hora
-// local y el filtro correria el dia de cada cliente.
-function avisosUltimosDias(avisos: Aviso[], dias: number): Aviso[] {
-  const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
-  return avisos.filter((aviso) => {
-    const fecha = Date.parse(`${aviso.createdAt.replace(' ', 'T')}Z`);
-    // Si la fecha no se puede parsear, el aviso se muestra: mejor un aviso de
-    // mas que esconder uno sin motivo.
-    return !Number.isFinite(fecha) || fecha >= limite;
-  });
-}
-
-/**
- * Orden de la lista del cliente: primero los globales, despues lo que no se
- * leyo y al final lo ya visto.
- *
- * El tope de 6 corta DESPUES de ordenar, y por eso importa el orden. Antes se
- * cortaba por fecha y un aviso sin leer podia caer de septimo: el menu marcaba
- * "1" y en la lista no habia ningun cartel sin leer que abrir, asi que el numero
- * no se bajaba nunca solo. Con este orden lo que no leyo siempre esta a mano y,
- * si aun asi hay mas de 6 sin leer, cada vez que se abre uno entra el
- * siguiente.
- *
- * El orden dentro de cada grupo no se toca, porque Array.sort es estable y la
- * API ya los manda del mas nuevo al mas viejo.
- */
 function ordenarParaElCliente(avisos: Aviso[]): Aviso[] {
   return [...avisos].sort((a, b) => {
-    if (a.esGlobal === true && b.esGlobal !== true) return -1;
-    if (a.esGlobal !== true && b.esGlobal === true) return 1;
     const sinLeerA = a.readAt === null;
     const sinLeerB = b.readAt === null;
     if (sinLeerA !== sinLeerB) return sinLeerA ? -1 : 1;
@@ -187,9 +157,7 @@ function turnoDelAviso(aviso: Aviso): Aviso['turno'] {
 function textoDelAviso(aviso: Aviso): string {
   const turno = turnoDelAviso(aviso);
   if (aviso.title !== TITULO_TURNO || turno === null) return aviso.message;
-  return `Dentro de 1 hora tienes un turno de ${turno.tipo} para ${
-    aviso.mascota?.nombre ?? 'tu mascota'
-  } en ${turno.sede}`;
+  return `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'} en ${turno.sede}, ${turno.fecha.split('-').reverse().join('/')} a las ${turno.hora}.`;
 }
 
 /** Titulos que usa el backend. Cada uno abre su propia ventana. */
@@ -272,9 +240,7 @@ function VentanaAviso({
   const hora = turno?.hora ?? aviso.hora ?? null;
   const cuerpo =
     tipo === 'recordatorio' && turno
-      ? `Dentro de 1 hora tienes un turno de ${turno.tipo} para ${
-          aviso.mascota?.nombre ?? 'tu mascota'
-        }`
+      ? `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'} el ${turno.fecha.split('-').reverse().join('/')} a las ${turno.hora}.`
       : tipo === 'cancelado'
         ? aviso.motivo ?? aviso.message
         : aviso.message;
@@ -416,17 +382,7 @@ export default function NotificacionesScreen() {
         setAvisos([]);
         return;
       }
-      // El usuario normal solo ve los avisos de los ultimos 2 dias. La API
-      // devuelve hasta 100 y la base tiene avisos de hace meses, asi que la
-      // pantalla aparecia llena de cosas viejas. El admin ve todo, que es quien
-      // tiene que revisar el historico.
-      // El cliente ve como mucho 6: con mas no lee ninguna. El admin ve todas,
-      // que es quien tiene que revisar el historico.
-      setAvisos(
-        usuario.esAdmin
-          ? result.items
-          : ordenarParaElCliente(avisosUltimosDias(result.items, 2)).slice(0, 6)
-      );
+      setAvisos(usuario.esAdmin ? result.items : ordenarParaElCliente(result.items));
 
     } catch (requestError) {
       setError(apiUnreachableMessage(requestError));

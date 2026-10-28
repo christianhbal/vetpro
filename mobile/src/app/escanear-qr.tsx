@@ -8,6 +8,7 @@ import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { sedeDeCheckIn } from '@/lib/check-in';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 
 export default function EscanearQr() {
   const router = useRouter();
@@ -73,6 +74,7 @@ export default function EscanearQr() {
             : 'No se pudo registrar la llegada.';
         throw new Error(message);
       }
+      void sincronizarRecordatorios();
       setLlegadaRegistrada(true);
       setResultado(`Tu llegada en ${typeof result === 'object' && result !== null && 'sede' in result && typeof result.sede === 'string' ? result.sede : 'la sede'} quedó registrada correctamente.`);
     } catch (error) {

@@ -25,6 +25,7 @@ import {
 } from '@/lib/datos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import { useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 
@@ -185,6 +186,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   useFocusEffect(
     useCallback(() => {
       void cargarTurnos();
+      void sincronizarRecordatorios();
     }, [cargarTurnos])
   );
 
@@ -448,6 +450,7 @@ const puedeCancelar =
         return;
       }
 
+      if (!esAdmin) void sincronizarRecordatorios();
       setConfirmarCancelacion(false);
       setMotivoCancelacion('');
       setCitaSeleccionada(null);

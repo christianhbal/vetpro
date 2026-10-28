@@ -29,13 +29,13 @@ The backend loads its configuration from `backend/.env`. After it starts, verify
 
 The SQLite database is `backend/prisma/dev.db`; `backend/prisma/dev.db.backup` is a copy of the current database. The backend initializes the schema with `prisma db push`, so avoid `prisma migrate` for this class project; migrations create the `_prisma_migrations` metadata table. `createdAt` is stored as readable SQLite text with `CURRENT_TIMESTAMP`.
 
-The user records are stored in the SQLite table `Usuario`; push notification device tokens are stored in `notificacionpush`.
+The user records are stored in the SQLite table `Usuario`.
 
 After login, the app keeps the current user locally and uses its ID to create and list that user's pets. Pets created before the owner relationship have no user and do not appear in the list. A selected pet photo is stored as a Base64 data URL in SQLite.
 
 The account phone number is required. The home screen shows a thumbnail of each pet's photo.
 
-Appointments are stored in the `Turno` table and linked to both the signed-in user and one of that user's pets. The Turnos screen and home page show only saved upcoming appointments; past appointments appear in History. Appointment slots follow the days and hours configured in Administrar sedes, in 30-minute intervals; availability is tracked separately for each veterinary location. The calendar marks dates with occupied slots and unavailable dates/times cannot be selected. The backend enforces the same schedule and prevents booking an occupied date/time at the selected location. The backend creates an in-app reminder and sends a push, when the user has a registered device, within the hour before each appointment. A user can scan the arrival QR shown on the admin home screen to check in for the earliest pending appointment at that location on that day; admins can see those arrivals under Turnos activos. Location QR codes now contain a stable location ID; QR codes printed with a location name need to be reprinted if that location is renamed. After changing the Prisma schema, run `npm run db:init` from `backend/`, then restart the API with `npm run dev`.
+Appointments are stored in the `Turno` table and linked to both the signed-in user and one of that user's pets. The Turnos screen and home page show only saved upcoming appointments; past appointments appear in History. Appointment slots follow the days and hours configured in Administrar sedes, in 30-minute intervals; availability is tracked separately for each veterinary location. The calendar marks dates with occupied slots and unavailable dates/times cannot be selected. The backend enforces the same schedule and prevents booking an occupied date/time at the selected location. When notifications are requested, the backend creates an in-app reminder for eligible appointments within the next hour; no periodic server check runs. On Android and iOS the app schedules a local reminder one hour before, after notification permission is granted. A user can scan the arrival QR shown on the admin home screen to check in for the earliest pending appointment at that location on that day; admins can see those arrivals under Turnos activos. Location QR codes now contain a stable location ID; QR codes printed with a location name need to be reprinted if that location is renamed. After changing the Prisma schema, run `npm run db:init` from `backend/`, then restart the API with `npm run dev`.
 
 Users have a `USER` or `ADMIN` role in SQLite. Public registration creates normal users. From **Administrar usuarios**, an administrator can create veterinarian accounts with the `ADMIN` role; the initial password is the veterinarian's full name. Veterinarians can change it from **Perfil → Cambiar contraseña** after signing in. To set up the first administrator, first register that account normally, then run this from `backend/`:
 
@@ -45,15 +45,7 @@ npm run admin:promote -- correo@ejemplo.com
 
 Sign in after promotion so the app receives an administrator token. The token is verified against the current account password and role; it is not stored in a sessions table and does not expire after 30 days. Changing the account password invalidates existing tokens. Admin-only user deletion and appointment editing are checked by the backend. Deleting an account also deletes its pets and appointments, and the last administrator cannot be deleted.
 
-When an administrator changes a turn, VetPro saves a notification for its owner in SQLite and sends a push through Expo to that user's registered devices. To enable remote push delivery, run these commands from `mobile/`:
-
-```bash
-npx eas-cli@latest init
-npx eas-cli@latest credentials
-npx eas-cli@latest build --profile development --platform android
-```
-
-`eas init` links the app to an EAS project and adds its project ID to the app config. Configure Android FCM credentials in the EAS credentials flow; iOS builds also need Apple push credentials. Install the resulting development build on the phone. Push permissions and device tokens are registered after sign-in on a physical Android/iOS device. Sign in again after updating the app so the new token is registered. The **Notificaciones** screen keeps the in-app history available on mobile and web; remote push delivery requires EAS credentials and a compatible device build.
+When an administrator changes or cancels an appointment, the owner receives an in-app notification stored in SQLite. The app does not use remote push notifications or periodic requests. It synchronizes local reminders when the app is opened or returns to the foreground, and after the client books or cancels a turn. Changes made elsewhere while the app is closed are reflected the next time it synchronizes. Local reminders require notification permission and are not supported on the web target.
 
 The app defaults to `http://localhost:3000` on web/iOS simulators and `http://10.0.2.2:3000` on Android emulators. For a physical phone, create `mobile/.env` from `mobile/.env.example` and set `EXPO_PUBLIC_API_URL` to your computer's LAN IP. The phone and computer must be on the same network. Restart Expo after changing the variable.
 

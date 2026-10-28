@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { AppState, Platform } from 'react-native';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import { Stack, useRouter } from 'expo-router';
 
 export default function RootLayout() {
@@ -6,27 +8,35 @@ export default function RootLayout() {
 
   useEffect(() => {
     let subscription: { remove: () => void } | undefined;
+    void sincronizarRecordatorios();
+    const estado = AppState.addEventListener('change', (siguiente) => {
+      if (siguiente === 'active') void sincronizarRecordatorios();
+    });
 
-    try {
-      const Notifications = require('expo-notifications');
-
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
-
-      subscription = Notifications.addNotificationResponseReceivedListener(() => {
-        router.push('/notificaciones');
-      });
-    } catch (error) {
-      console.warn('Las notificaciones no están disponibles en este entorno:', error);
+    let activo = true;
+    if (Platform.OS !== 'web') {
+      void (async () => {
+        try {
+          const Notifications = await import('expo-notifications');
+          if (!activo) return;
+          Notifications.setNotificationHandler({
+            handleNotification: async () => ({
+              shouldShowBanner: true,
+              shouldShowList: true,
+              shouldPlaySound: true,
+              shouldSetBadge: false,
+            }),
+          });
+          subscription = Notifications.addNotificationResponseReceivedListener(() => {
+            router.push('/notificaciones');
+          });
+        } catch (error) {
+          console.warn('Las notificaciones no están disponibles en este entorno:', error);
+        }
+      })();
     }
 
-    return () => subscription?.remove();
+    return () => { activo = false; subscription?.remove(); estado.remove(); };
   }, [router]);
 
   return (

@@ -29,6 +29,7 @@ import {
   type TurnoGuardado,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
 import { useSedeSeleccionada, useSedes } from '@/lib/sede';
@@ -221,6 +222,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   useFocusEffect(
     useCallback(() => {
       void cargarTurnos();
+      void sincronizarRecordatorios(true);
     }, [cargarTurnos])
   );
 

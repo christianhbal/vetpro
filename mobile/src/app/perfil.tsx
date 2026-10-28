@@ -11,6 +11,7 @@ import {
   type UsuarioActual,
 } from '@/lib/session';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { cancelarRecordatorios } from '@/lib/recordatorios';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -317,6 +318,7 @@ export default function PerfilScreen() {
                   setModalCerrarSesion(false);
                   try {
                     await cerrarSesion();
+                    await cancelarRecordatorios();
                     router.replace('/');
                   } catch (error) {
                     console.error('No se pudo cerrar la sesion:', error);

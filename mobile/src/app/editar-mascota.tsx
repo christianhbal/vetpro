@@ -13,6 +13,7 @@ import {
   type SexoMascota,
 } from '@/lib/datos';
 import { obtenerUsuarioActual } from '@/lib/session';
+import { sincronizarRecordatorios } from '@/lib/recordatorios';
 
 export default function EditarMascota() {
   const params = useLocalSearchParams<{
@@ -201,6 +202,7 @@ export default function EditarMascota() {
         return;
       }
 
+      void sincronizarRecordatorios();
       setConfirmandoBorrado(false);
       setBorrada(nombre.trim() || 'La mascota');
     } catch (error) {

@@ -145,63 +145,7 @@ async function requireAdmin(
   return user.id;
 }
 
-/**
- * Manda el push a una lista de tokens.
- *
- * `notificationId` es opcional porque el aviso global no tiene uno solo: se crea
- * una fila por usuario y el push va a todos los dispositivos a la vez. Sin id no
- * se manda el campo `data`, que la app usa para abrir un aviso puntual.
- */
-async function sendPushNotification(
-  tokens: string[],
-  title: string,
-  body: string,
-  notificationId?: number
-): Promise<void> {
-  if (tokens.length === 0) return;
-  for (let start = 0; start < tokens.length; start += 100) {
-    const messages = tokens.slice(start, start + 100).map((to) => ({
-      to,
-      sound: 'default',
-      title,
-      body,
-      data: notificationId === undefined ? {} : { notificationId },
-      channelId: 'default',
-    }));
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
-    });
-    const result: unknown = await response.json();
-    if (!response.ok) {
-      throw new Error(`Expo Push API respondió HTTP ${response.status}.`);
-    }
-    if (
-      typeof result === 'object' &&
-      result !== null &&
-      'data' in result &&
-      Array.isArray(result.data)
-    ) {
-      const failures = result.data.filter(
-        (ticket: unknown) =>
-          typeof ticket === 'object' &&
-          ticket !== null &&
-          'status' in ticket &&
-          ticket.status === 'error'
-      );
-      if (failures.length > 0) {
-        console.error('Expo rechazó algunas notificaciones push:', failures);
-      }
-    }
-  }
-}
-
-async function createUpcomingAppointmentReminders(): Promise<void> {
+async function createUpcomingAppointmentReminders(userId: number): Promise<void> {
   const hoy = new Date();
   const fechaActual = [
     hoy.getFullYear(),
@@ -209,7 +153,7 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
     String(hoy.getDate()).padStart(2, '0'),
   ].join('-');
   const turnos = await prisma.turno.findMany({
-    where: { fecha: { gte: fechaActual }, recordatorioEnviadoEn: null },
+    where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
     include: {
       mascota: { select: { nombre: true, foto: true } },
       // La relacion se llama user, no usuario. El rol se filtra en el where: el
@@ -234,13 +178,15 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
     if (tiempoRestante <= 0 || tiempoRestante > APPOINTMENT_REMINDER_WINDOW_MS) continue;
 
     try {
-      const notificacion = await prisma.$transaction(async (transaction) => {
+      const sede = await sedeConDireccion(turno.sede);
+      await prisma.$transaction(async (transaction) => {
         const actualizado = await transaction.turno.updateMany({
           where: {
             id: turno.id,
             fecha: turno.fecha,
             hora: turno.hora,
             recordatorioEnviadoEn: null,
+            llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false,
           },
           data: { recordatorioEnviadoEn: new Date().toISOString() },
         });
@@ -253,29 +199,10 @@ async function createUpcomingAppointmentReminders(): Promise<void> {
             mascotaNombre: turno.mascota.nombre,
             mascotaFoto: turno.mascota.foto,
             title: TITULO_RECORDATORIO_TURNO,
-            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${await sedeConDireccion(turno.sede)}.`,
+            message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sede}.`,
           },
         });
       });
-      if (!notificacion) continue;
-
-      try {
-        const dispositivos = await prisma.notificacionPush.findMany({
-          where: { userId: turno.userId },
-          select: { token: true },
-        });
-        await sendPushNotification(
-          dispositivos.map((dispositivo) => dispositivo.token),
-          notificacion.title,
-          notificacion.message,
-          notificacion.id
-        );
-      } catch (pushError) {
-        console.error(
-          `El recordatorio del turno ${turno.id} se guardó, pero no se pudo enviar el push:`,
-          pushError
-        );
-      }
     } catch (error) {
       console.error(`No se pudo crear el recordatorio del turno ${turno.id}:`, error);
     }
@@ -1225,31 +1152,9 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       });
     }
 
-    let pushSent = false;
-    if (resultado.notification) {
-      try {
-        const devices = await prisma.notificacionPush.findMany({
-          where: { userId: resultado.turno.userId },
-          select: { token: true },
-        });
-        if (devices.length > 0) {
-          await sendPushNotification(
-            devices.map((device) => device.token),
-            resultado.notification.title,
-            resultado.notification.message,
-            resultado.notification.id
-          );
-          pushSent = true;
-        }
-      } catch (pushError) {
-        console.error('El turno se guardó, pero no se pudo enviar el push:', pushError);
-      }
-    }
-
     return response.json({
       ...resultado.turno,
       notificationCreated: resultado.notification !== null,
-      pushSent,
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return response.status(409).json({ message: 'Ese horario ya está ocupado.' });
@@ -1334,30 +1239,10 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
       });
     }
 
-    let pushSent = false;
-    try {
-      const devices = await prisma.notificacionPush.findMany({
-        where: { userId: resultado.turno.userId },
-        select: { token: true },
-      });
-      if (devices.length > 0) {
-        await sendPushNotification(
-          devices.map((device) => device.token),
-          resultado.notification.title,
-          resultado.notification.message,
-          resultado.notification.id
-        );
-        pushSent = true;
-      }
-    } catch (pushError) {
-      console.error('El turno se canceló, pero no se pudo enviar el push:', pushError);
-    }
-
     return response.json({
       id: resultado.turno.id,
       cancelado: true,
       notificationCreated: true,
-      pushSent,
     });
   } catch (error) {
     if (isMissingRecord(error)) {
@@ -1384,11 +1269,11 @@ app.get('/api/notifications', async (request, response) => {
   };
 
   try {
+    if (user.role !== 'ADMIN') await createUpcomingAppointmentReminders(user.id);
     const [items, unreadCount] = await Promise.all([
       prisma.notification.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 100,
         // El turno viene adentro para que la app no tenga que adivinar de que
         // sede hablaba el mensaje: el aviso de "Tu turno se acerca" tiene que
         // mostrar la direccion de ESE turno, no la del proximo turno pendiente.
@@ -1458,24 +1343,7 @@ app.post('/api/notifications/global', async (request, response) => {
       })),
     });
 
-    // El aviso queda guardado aunque el push falle: la lista es la que se lee
-    // siempre. Solo se avisa en consola, como en el resto de los avisos.
-    let pushSent = false;
-    try {
-      const dispositivos = await prisma.notificacionPush.findMany({ select: { token: true } });
-      if (dispositivos.length > 0) {
-        await sendPushNotification(
-          dispositivos.map((dispositivo) => dispositivo.token),
-          title.trim(),
-          message.trim()
-        );
-        pushSent = true;
-      }
-    } catch (pushError) {
-      console.error('El aviso global se guardó, pero no se pudo enviar el push:', pushError);
-    }
-
-    return response.status(201).json({ creadas: creados.count, pushSent });
+    return response.status(201).json({ creadas: creados.count });
   } catch (error) {
     console.error('No se pudo enviar la notificación global:', error);
     return response
@@ -1513,33 +1381,6 @@ app.patch('/api/notifications/:id/read', async (request, response) => {
   } catch (error) {
     console.error('No se pudo marcar la notificación como leída:', error);
     return response.status(500).json({ message: 'No se pudo actualizar la notificación.' });
-  }
-});
-
-// POST /api/push-tokens
-// Guarda o actualiza el token push de un dispositivo autenticado.
-app.post('/api/push-tokens', async (request, response) => {
-  const user = await requireAuthenticatedUser(request, response);
-  if (!user) return;
-  const token = request.body?.token;
-  if (
-    typeof token !== 'string' ||
-    token.length > 512 ||
-    !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(token)
-  ) {
-    return response.status(400).json({ message: 'El token de notificaciones push no es válido.' });
-  }
-
-  try {
-    await prisma.notificacionPush.upsert({
-      where: { token },
-      create: { token, userId: user.id },
-      update: { userId: user.id },
-    });
-    return response.status(204).send();
-  } catch (error) {
-    console.error('No se pudo registrar el token push:', error);
-    return response.status(500).json({ message: 'No se pudo registrar este dispositivo.' });
   }
 });
 
@@ -1881,18 +1722,9 @@ app.post('/api/sessions', async (request, response) => {
 export async function start(): Promise<void> {
   await initDatabase();
   await prisma.$connect();
-  const reminderTimer = setInterval(() => {
-    void createUpcomingAppointmentReminders().catch((error: unknown) => {
-      console.error('No se pudieron revisar los recordatorios de turnos:', error);
-    });
-  }, 60 * 1000);
-  reminderTimer.unref();
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`API escuchando en http://0.0.0.0:${port}`);
-      void createUpcomingAppointmentReminders().catch((error: unknown) => {
-        console.error('No se pudieron revisar los recordatorios de turnos:', error);
-      });
       resolve();
     });
     server.once('error', reject);
