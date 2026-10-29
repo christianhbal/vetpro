@@ -1,15 +1,14 @@
 import { StyleSheet } from 'react-native';
 
-// Boton de cerrar en circulo. Vive aca y no en el StyleSheet porque el modal de
-// fotos lo necesita para posicionarse encima de la imagen.
-const cerrarCirculo = {
+// Estilo compartido por los botones de cierre y el modal de fotos.
+const compartidos = StyleSheet.create({ cerrarCirculo: {
   width: 40,
   height: 40,
   alignItems: 'center',
   justifyContent: 'center',
   backgroundColor: '#fffefc',
   borderRadius: 20,
-} as const;
+} });
 
 export const estilos = StyleSheet.create({
   container: {
@@ -41,17 +40,6 @@ export const estilos = StyleSheet.create({
     color: '#0f3e17',
     marginBottom: 10,
     marginTop: 10,
-  },
-  cardHorizontal: {
-    backgroundColor: '#e1f4df',
-    padding: 12,
-    borderRadius: 12,
-    width: 108,
-    minHeight: 108,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderColor: '#efeeeb',
-    borderWidth: 1,
   },
   cardVertical: {
     backgroundColor: '#b1dbb8',
@@ -101,18 +89,8 @@ export const estilos = StyleSheet.create({
     fontSize: 14,
     color: '#222222',
   },
-  footerButtons: {
-    marginTop: 20,
-    gap: 10,
-  },
   buttonPressed: {
     opacity: 0.75,
-  },
-  primaryButton: {
-    backgroundColor: '#0f3e17',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
   },
   addPetButton: {
     flexDirection: 'row',
@@ -155,9 +133,9 @@ petPhotoClose: {
     top: 12,
     right: 12,
     zIndex: 1,
-    ...cerrarCirculo,
+    ...compartidos.cerrarCirculo,
   },
-  cerrarCirculo,
+  cerrarCirculo: compartidos.cerrarCirculo,
   petPhoto: {
     width: '100%',
     borderRadius: 8,

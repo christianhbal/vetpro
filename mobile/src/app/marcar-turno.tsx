@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
 import {
   AvailabilityCalendar,
@@ -21,20 +20,15 @@ import {
 } from '@/components/availability-calendar';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import { esSedeVeterinaria } from '@/lib/datos';
 import { useSedeSeleccionada } from '@/lib/sede';
 
 const MAX_DESCRIPCION = 500;
 
-// Reparto aproximado del alto de esta pantalla. Todo entra sin scrollear, asi
-// que la parte variable es la agenda de seguimiento y el resto se mide fijo.
-// ALTO_ENCABEZADO es la barra del drawer (safe area + boton de volver).
-const ALTO_ENCABEZADO = 64;
-const PARTE_FIJA = 300;
-const ALTO_AGENDA = 415;
 
 export default function MarcarTurnoScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const params = useLocalSearchParams<{
     id?: string;
     mascotaId?: string;
@@ -59,14 +53,6 @@ export default function MarcarTurnoScreen() {
     seguimiento: TurnoElegido | null;
   } | null>(null);
   const agenda = useRef<AgendaHandle>(null);
-  const { height: windowHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-
-  // La agenda de seguimiento va debajo de la descripcion y del Si/No, asi que
-  // se comprime con lo que sobra de la pantalla para que todo entre entero.
-  const disponible =
-    windowHeight - insets.top - insets.bottom - ALTO_ENCABEZADO - PARTE_FIJA;
-  const escalaSeguimiento = Math.max(0.68, Math.min(1, disponible / ALTO_AGENDA));
 
   const turnoId = Number(params.id);
   const mascotaId = Number(params.mascotaId);
@@ -115,7 +101,7 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
       return;
     }
 
-    const sesion = await obtenerUsuarioActual();
+    const sesion = usuarioSesion;
     if (!sesion?.esAdmin) {
       router.replace('/app');
       return;
@@ -244,8 +230,6 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
                 selector normal en vez de quedar hidden. */}
             <AvailabilityCalendar
               ref={agenda}
-              escala={escalaSeguimiento}
-              compacta
               ocultarBotonGuardar
               ocultarAviso
               comoAdmin
@@ -287,12 +271,12 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
         animationType="fade"
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={() => router.replace(esperaDeLaSede)}
+        onRequestClose={volver}
       >
         <View style={styles.avisoRaiz}>
           <Pressable
             style={styles.avisoFondo}
-            onPress={() => router.replace(esperaDeLaSede)}
+            onPress={volver}
             accessibilityRole="button"
             accessibilityLabel="Cerrar aviso"
           />
@@ -325,7 +309,7 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
 
               <Pressable
                 style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
-                onPress={() => router.replace(esperaDeLaSede)}
+                onPress={volver}
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar y volver a los pacientes que esperan"
               >
@@ -384,7 +368,7 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   contenido: {
     flexGrow: 1,
     paddingHorizontal: 12,
@@ -392,16 +376,16 @@ const styles = {
     paddingBottom: 10,
   },
   encabezado: { marginBottom: 8 },
-  titulo: { color: '#0f3e17', fontSize: 20, fontWeight: 'bold' as const, marginBottom: 2 },
+  titulo: { color: '#0f3e17', fontSize: 20, fontWeight: 'bold', marginBottom: 2 },
   subtitulo: { color: '#556b58', fontSize: 12 },
   bloque: { marginBottom: 8 },
   filaLabel: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
   },
-  label: { color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
+  label: { color: '#4d6154', fontSize: 13, fontWeight: '600' },
   textarea: {
     minHeight: 76,
     paddingHorizontal: 11,
@@ -416,10 +400,10 @@ const styles = {
   },
   contador: { color: '#8b978c', fontSize: 11 },
   error: { marginBottom: 8, color: '#a32828', fontSize: 12, lineHeight: 17 },
-  opcionesSiNo: { flexDirection: 'row' as const, gap: 8 },
+  opcionesSiNo: { flexDirection: 'row', gap: 8 },
   opcionSiNo: {
     flex: 1,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     paddingVertical: 9,
     borderWidth: 1.5,
     borderColor: '#cfdcc9',
@@ -427,29 +411,20 @@ const styles = {
     backgroundColor: '#fffefc',
   },
   opcionSiNoActiva: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  opcionSiNoTexto: { color: '#1e3326', fontSize: 14, fontWeight: '600' as const },
-  opcionSiNoTextoActivo: { color: '#0f3e17', fontWeight: '700' as const },
+  opcionSiNoTexto: { color: '#1e3326', fontSize: 14, fontWeight: '600' },
+  opcionSiNoTextoActivo: { color: '#0f3e17', fontWeight: '700' },
   bloqueAgenda: { marginBottom: 2 },
   guardar: {
-    alignItems: 'center' as const,
+    alignItems: 'center',
     paddingVertical: 13,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
-  desmarcar: {
-    alignItems: 'center' as const,
-    marginTop: 8,
-    paddingVertical: 11,
-    borderWidth: 1.5,
-    borderColor: '#cfdcc9',
-    borderRadius: 12,
-  },
-  desmarcarTexto: { color: '#6b7d6d', fontSize: 13, fontWeight: '600' as const },
+  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
   avisoRaiz: {
     flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 24,
   },
   avisoFondo: {
@@ -459,7 +434,7 @@ const styles = {
   aviso: {
     width: '100%' as DimensionValue,
     maxWidth: 380,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     paddingHorizontal: 22,
     paddingTop: 26,
     paddingBottom: 20,
@@ -469,8 +444,8 @@ const styles = {
   avisoIcono: {
     width: 72,
     height: 72,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
     borderRadius: 36,
     backgroundColor: '#1f6b33',
@@ -478,18 +453,18 @@ const styles = {
   avisoTitulo: {
     color: '#0f3e17',
     fontSize: 21,
-    fontWeight: 'bold' as const,
-    textAlign: 'center' as const,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   avisoSubtitulo: {
     marginTop: 6,
     color: '#5c6b60',
     fontSize: 14,
     lineHeight: 20,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   avisoSeguimiento: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     gap: 4,
     marginTop: 18,
     padding: 14,
@@ -501,43 +476,43 @@ const styles = {
   avisoSeguimientoTitulo: {
     color: '#0f3e17',
     fontSize: 13,
-    fontWeight: '700' as const,
+    fontWeight: '700',
   },
   avisoSeguimientoTexto: {
     color: '#3d5546',
     fontSize: 14,
     lineHeight: 20,
-    textTransform: 'capitalize' as const,
+    textTransform: 'capitalize',
   },
   avisoBoton: {
-    alignSelf: 'stretch' as const,
-    alignItems: 'center' as const,
+    alignSelf: 'stretch',
+    alignItems: 'center',
     marginTop: 18,
     paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  avisoBotonTexto: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' as const },
+  avisoBotonTexto: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' },
   // Padding extra arriba para que la X de la esquina y la X de error no queden
   // alineadas en la misma altura.
   avisoFalta: { paddingTop: 48 },
   avisoFaltaIcono: {
     width: 54,
     height: 54,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 14,
     borderRadius: 27,
     backgroundColor: '#f7e7cd',
   },
   avisoCerrar: {
-    position: 'absolute' as const,
+    position: 'absolute',
     top: 8,
     right: 8,
     width: 32,
     height: 32,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 16,
     backgroundColor: '#eef4ea',
   },
@@ -546,6 +521,6 @@ const styles = {
     color: '#5c6b60',
     fontSize: 14,
     lineHeight: 21,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
-};
+});

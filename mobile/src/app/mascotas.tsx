@@ -1,20 +1,21 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
+import { StyleSheet,
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   Pressable,
   Text,
   View,
 } from 'react-native';
-import { Link, router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { descripcionEspecieMascota, edadDesdeNacimiento } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 type Mascota = {
   id: number;
@@ -29,22 +30,25 @@ type Mascota = {
 };
 
 export default function MascotasScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+  const [mostrarLimite, setMostrarLimite] = useState(false);
   const { bottom } = useSafeAreaInsets();
 
-  const pie = useMemo(
-    () => [estilos.actionFooter, { paddingBottom: bottom + 24 }],
+  const margenSeguro = useMemo(
+    () => StyleSheet.create({ pie: { paddingBottom: bottom + 24 } }),
     [bottom]
   );
+  const pie = [estilos.actionFooter, margenSeguro.pie];
 
   const cargarMascotas = useCallback(async () => {
     setCargando(true);
     setMascotas([]);
     setError('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -70,7 +74,7 @@ export default function MascotasScreen() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -97,7 +101,7 @@ export default function MascotasScreen() {
           onRefresh={() => void cargarMascotas()}
           refreshing={cargando}
           ListEmptyComponent={
-            <View style={{ alignItems: 'center', padding: 24 }}>
+            <View style={styles.listaVacia}>
               {cargando ? (
                 <ActivityIndicator color="#0f3e17" />
               ) : (
@@ -156,26 +160,43 @@ export default function MascotasScreen() {
           )}
         />
         <View style={pie}>
-          <Link href="/nueva-mascota" asChild>
             <Pressable
               style={estilos.addPetButton}
-              accessibilityRole="link"
+              onPress={() => {
+                if (mascotas.length >= 5) setMostrarLimite(true);
+                else router.push('/nueva-mascota');
+              }}
+              disabled={cargando || Boolean(error)}
+              accessibilityRole="button"
               accessibilityLabel="Agregar mascota"
             >
               <Ionicons name="add-circle-outline" size={22} color="#fffefc" />
               <Text style={estilos.buttonTextPrimary}>Agregar mascota</Text>
             </Pressable>
-          </Link>
         </View>
       </View>
+      <Modal visible={mostrarLimite} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setMostrarLimite(false)}>
+        <View style={estilos.petModalRoot}>
+          <Pressable style={estilos.petModalBackdrop} onPress={() => setMostrarLimite(false)} accessibilityRole="button" accessibilityLabel="Cerrar aviso" />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>Límite de mascotas</Text>
+            <Text style={estilos.modalText}>Tu plan permite un máximo de 5 mascotas.</Text>
+            <View style={estilos.modalActions}>
+              <Pressable style={({ pressed }) => [estilos.modalButton, estilos.modalButtonPrimary, pressed && estilos.buttonPressed]} onPress={() => setMostrarLimite(false)} accessibilityRole="button">
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>Entendido</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AppDrawer>
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   fila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
     minHeight: 64,
   },
@@ -183,6 +204,7 @@ const styles = {
   // cuadro, asi que con otro color se veia el contraste alrededor de la imagen.
   foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#b1dbb8' },
   fotoSinFoto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
-  fotoVacio: { alignItems: 'center' as const, justifyContent: 'center' as const },
+  fotoVacio: { alignItems: 'center', justifyContent: 'center' },
   texto: { flex: 1 },
-};
+  listaVacia: { alignItems: 'center', padding: 24 },
+});

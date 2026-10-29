@@ -1,16 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
-import {
-  obtenerUsuarioActual,
-  guardarUsuarioActual,
-  type UsuarioActual,
-} from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
+import type { UsuarioActual } from '@/lib/session';
 
 type Campo = {
   id: 'nombre' | 'email' | 'telefono';
@@ -33,6 +30,7 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 export default function EditarPerfil() {
+  const { usuario: usuarioSesion, guardarUsuarioActual } = useSesion();
   const router = useRouter();
   const { top } = useSafeAreaInsets();
 
@@ -42,9 +40,9 @@ export default function EditarPerfil() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
-  const [avisoError, setAvisoError] = useState<{ titulo: string; mensaje: string } | null>(null);
 
-  const contenedor = useMemo(() => [estilos.formContent, { paddingTop: top }], [top]);
+  const margenSeguro = useMemo(() => StyleSheet.create({ contenedor: { paddingTop: top } }), [top]);
+  const contenedor = [estilos.formContent, margenSeguro.contenedor];
 
   useFocusEffect(
     useCallback(() => {
@@ -52,7 +50,7 @@ export default function EditarPerfil() {
       setCargando(true);
       void (async () => {
         try {
-          const sesion = await obtenerUsuarioActual();
+          const sesion = usuarioSesion;
           if (!sesion) {
             router.replace('/');
             return;
@@ -92,10 +90,10 @@ export default function EditarPerfil() {
           setTelefono(perfil.telefono ?? '');
         } catch (error) {
           if (activo) {
-            setAvisoError({
-              titulo: 'No se pudo cargar el perfil',
-              mensaje: error instanceof Error ? error.message : apiUnreachableMessage(error),
-            });
+            Alert.alert(
+              'No se pudo cargar el perfil',
+              error instanceof Error ? error.message : apiUnreachableMessage(error)
+            );
           }
         } finally {
           if (activo) setCargando(false);
@@ -105,23 +103,17 @@ export default function EditarPerfil() {
       return () => {
         activo = false;
       };
-    }, [router])
+    }, [router, usuarioSesion])
   );
 
   const handleSubmit = async () => {
     if (guardando) return;
     if (!usuario) {
-      setAvisoError({
-        titulo: 'Perfil no disponible',
-        mensaje: 'Vuelve a cargar la pantalla e inténtalo nuevamente.',
-      });
+      Alert.alert('Perfil no disponible', 'Vuelve a cargar la pantalla e inténtalo nuevamente.');
       return;
     }
     if (!nombre.trim() || !telefono.trim()) {
-      setAvisoError({
-        titulo: 'Faltan datos',
-        mensaje: 'Completa tu nombre y teléfono.',
-      });
+      Alert.alert('Faltan datos', 'Completa tu nombre y teléfono.');
       return;
     }
 
@@ -137,10 +129,7 @@ export default function EditarPerfil() {
       });
       const result: unknown = await response.json();
       if (!response.ok) {
-        setAvisoError({
-          titulo: 'No se pudo actualizar el perfil',
-          mensaje: mensajeApi(result) ?? 'Inténtalo de nuevo.',
-        });
+        Alert.alert('No se pudo actualizar el perfil', mensajeApi(result) ?? 'Inténtalo de nuevo.');
         return;
       }
       if (
@@ -167,10 +156,10 @@ export default function EditarPerfil() {
       });
       setMostrarConfirmacion(true);
     } catch (error) {
-      setAvisoError({
-        titulo: 'No se pudo actualizar el perfil',
-        mensaje: error instanceof Error ? error.message : apiUnreachableMessage(error),
-      });
+      Alert.alert(
+        'No se pudo actualizar el perfil',
+        error instanceof Error ? error.message : apiUnreachableMessage(error)
+      );
     } finally {
       setGuardando(false);
     }
@@ -259,7 +248,7 @@ export default function EditarPerfil() {
               style={({ pressed }) => [
                 estilos.submitButton,
                 pressed && estilos.buttonPressed,
-                (cargando || guardando) && { opacity: 0.65 },
+                (cargando || guardando) && styles.guardando,
               ]}
               onPress={() => void handleSubmit()}
               disabled={cargando || guardando}
@@ -274,50 +263,20 @@ export default function EditarPerfil() {
         }
       />
 
-      <Modal
-        visible={mostrarConfirmacion}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMostrarConfirmacion(false)}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setMostrarConfirmacion(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar mensaje"
-          />
-          <View
-            style={[estilos.modalCard, { width: '85%', maxWidth: 340, alignSelf: 'center' }]}
-            accessibilityRole="alert"
-          >
-            <Text style={estilos.modalTitle}>Modificación exitosa</Text>
-            <View style={estilos.modalActions}>
-              <Pressable
-                style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                onPress={() => {
-                  setMostrarConfirmacion(false);
-                  router.replace('/perfil');
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  Aceptar
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       <AvisoExito
-        visible={avisoError !== null}
-        variante="error"
-        titulo={avisoError?.titulo ?? ''}
-        subtitulo={avisoError?.mensaje}
-        etiquetaBoton="Cerrar el aviso de error"
-        onCerrar={() => setAvisoError(null)}
+        visible={mostrarConfirmacion}
+        titulo="¡Perfil actualizado!"
+        subtitulo="Tus datos se guardaron correctamente."
+        etiquetaBoton="Volver al perfil"
+        onCerrar={() => {
+          setMostrarConfirmacion(false);
+          router.replace('/perfil');
+        }}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  guardando: { opacity: 0.65 },
+});

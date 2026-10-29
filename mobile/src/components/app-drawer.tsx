@@ -1,16 +1,18 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { consultarNotificaciones } from '@/lib/notificaciones';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useFocusEffect, usePathname } from 'expo-router';
 import {
+  Animated,
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { API_BASE_URL } from '@/lib/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 const itemPerfil = { label: 'Perfil', href: '/perfil', icon: 'person-outline' } as const;
 const itemNotificaciones = {
@@ -41,24 +43,35 @@ type AppDrawerProps = {
 };
 
 export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDrawerProps) {
+  const { usuario: usuarioSesion } = useSesion();
   const [visible, setVisible] = useState(false);
+  const desplazamiento = useRef(new Animated.Value(-340)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    const animacion = Animated.timing(desplazamiento, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    });
+    animacion.start();
+    return () => animacion.stop();
+  }, [visible, desplazamiento]);
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const [esAdmin, setEsAdmin] = useState(false);
+  const esAdmin = usuarioSesion?.esAdmin === true;
+  const [enFoco, setEnFoco] = useState(false);
   const [notificacionesSinLeer, setNotificacionesSinLeer] = useState(0);
 
   const cargarContadorNotificaciones = useCallback(async () => {
     try {
-      const usuario = await obtenerUsuarioActual();
-      setEsAdmin(usuario?.esAdmin === true);
-      if (!usuario) {
+      const usuario = usuarioSesion;
+      if (!usuario || usuario.esAdmin) {
         setNotificacionesSinLeer(0);
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
-        headers: { Authorization: `Bearer ${usuario.accessToken}` },
-      });
+      const response = await consultarNotificaciones(usuario);
       if (!response.ok) {
         throw new Error(`No se pudo consultar el contador (HTTP ${response.status}).`);
       }
@@ -78,12 +91,19 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
     } catch (error: unknown) {
       console.error('No se pudo actualizar el contador de notificaciones:', error);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
+      setEnFoco(true);
+      setVisible(false);
+      desplazamiento.setValue(-340);
       void cargarContadorNotificaciones();
-    }, [cargarContadorNotificaciones])
+      return () => {
+        setEnFoco(false);
+        desplazamiento.stopAnimation();
+      };
+    }, [cargarContadorNotificaciones, desplazamiento])
   );
 
   // El admin ve Notificaciones y Perfil al final, debajo de sus secciones de
@@ -103,13 +123,46 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
       ]
     : menuItems;
   const abrirMenu = () => {
+    if (onVolver || !usuarioSesion) return;
     setVisible(true);
     void cargarContadorNotificaciones();
   };
+  const cerrarMenu = () => {
+    Animated.timing(desplazamiento, {
+      toValue: -340,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setVisible(false);
+    });
+  };
+  // Solo el enlace al valor animado va fuera de StyleSheet: no es un tamaño fijo.
+  const movimientoMenu = { transform: [{ translateX: desplazamiento }] };
+  const espaciosSeguros = StyleSheet.create({
+    header: { paddingTop: insets.top },
+    drawer: { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
+  });
+
+  // Solo empieza desde el borde al abrir; con el menú abierto se puede cerrar
+  // desde toda la superficie. Los movimientos verticales quedan para el scroll.
+  const gestoMenu = Gesture.Pan()
+    // Sin Reanimated: los callbacks JS solo deciden abrir/cerrar al finalizar.
+    .runOnJS(true)
+    .enabled(!onVolver && enFoco && !!usuarioSesion)
+    .activeOffsetX([-18, 18])
+    .failOffsetY([-12, 12])
+    .onTouchesDown((evento, estado) => {
+      if (!visible && (evento.changedTouches[0]?.x ?? 29) > 28) estado.fail();
+    })
+    .onEnd((evento) => {
+      if (!visible && evento.translationX > 60) abrirMenu();
+      if (visible && evento.translationX < -60) cerrarMenu();
+    });
 
   return (
+    <GestureDetector gesture={gestoMenu}>
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top }]}>
+      <View style={[styles.header, espaciosSeguros.header]}>
         <Pressable
           style={styles.menuButton}
           onPress={onVolver ?? abrirMenu}
@@ -128,15 +181,15 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
 
       <View style={styles.content}>{children}</View>
 
-      {visible && (
+      {visible && !onVolver && (
         <View style={styles.drawerOverlay}>
           <Pressable
             style={styles.backdrop}
-            onPress={() => setVisible(false)}
+            onPress={cerrarMenu}
             accessibilityRole="button"
             accessibilityLabel="Cerrar menú"
           />
-          <View style={[styles.drawer, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+          <Animated.View style={[styles.drawer, espaciosSeguros.drawer, movimientoMenu]}>
             <View style={styles.drawerHeader}>
               <Image
                 source={require('../../assets/images/vetpro-logo-horizontal.jpg')}
@@ -146,7 +199,7 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
               />
               <Pressable
                 style={styles.closeButton}
-                onPress={() => setVisible(false)}
+                onPress={cerrarMenu}
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar menú"
               >
@@ -161,7 +214,7 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
               return (
                 <Link key={item.href} href={item.href} asChild>
                   <Pressable
-                    onPress={() => setVisible(false)}
+                    onPress={cerrarMenu}
                     style={StyleSheet.flatten([
                       styles.menuItem,
                       selected && styles.menuItemSelected,
@@ -193,10 +246,11 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
                 </Link>
               );
             })}
-          </View>
+          </Animated.View>
         </View>
       )}
     </View>
+    </GestureDetector>
   );
 }
 

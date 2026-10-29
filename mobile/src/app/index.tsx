@@ -4,8 +4,8 @@ import { router, Stack } from 'expo-router';
 import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
-import { guardarUsuarioActual } from '../lib/session';
-import { sincronizarRecordatorios } from '../lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+
 
 type Campo = {
   id: string;
@@ -20,6 +20,7 @@ type Campo = {
 };
 
 export default function Index() {
+  const { guardarUsuarioActual } = useSesion();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -76,7 +77,7 @@ export default function Index() {
         accessToken: result.accessToken,
       });
       router.replace('/app');
-      void sincronizarRecordatorios(true);
+
     } catch (requestError) {
       setAvisoError({
         titulo: 'Sin conexión con el servidor',

@@ -46,7 +46,6 @@ export async function obtenerUsuarioActual(): Promise<UsuarioActual | null> {
         esAdmin: usuario.esAdmin,
         accessToken: usuario.accessToken,
       };
-      await guardarUsuarioActual(usuarioActual);
       return usuarioActual;
     }
   } catch (error) {

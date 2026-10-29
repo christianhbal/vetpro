@@ -1,5 +1,6 @@
+import { consultarNotificaciones } from '@/lib/notificaciones';
 import { useCallback, useState } from 'react';
-import {
+import { StyleSheet,
   ActivityIndicator,
   FlatList,
   Image,
@@ -18,7 +19,7 @@ import {
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
-import { cerrarSesion, obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import { useSedes } from '@/lib/sede';
 
 /**
@@ -75,10 +76,6 @@ type Aviso = {
    * paciente, porque no hay ninguno.
    */
   esGlobal?: boolean | null;
-  /** 'recuperacion' cuando el aviso pide restablecer una contraseña. */
-  tipo?: string | null;
-  /** Correo del usuario que pidió la recuperación. */
-  solicitanteEmail?: string | null;
 };
 
 function esMascotaDelAviso(value: unknown): value is NonNullable<Aviso['mascota']> {
@@ -105,11 +102,7 @@ function esAviso(value: unknown): value is Aviso {
     (typeof aviso.motivo === 'string' || aviso.motivo === null) &&
     (typeof aviso.sede === 'string' || aviso.sede === null || aviso.sede === undefined) &&
     (typeof aviso.hora === 'string' || aviso.hora === null || aviso.hora === undefined) &&
-    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined) &&
-    (typeof aviso.tipo === 'string' || aviso.tipo === null || aviso.tipo === undefined) &&
-    (typeof aviso.solicitanteEmail === 'string' ||
-      aviso.solicitanteEmail === null ||
-      aviso.solicitanteEmail === undefined)
+    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined)
   );
 }
 
@@ -338,11 +331,12 @@ function VentanaAviso({
 }
 
 export default function NotificacionesScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [avisos, setAvisos] = useState<Aviso[]>([]);
-  const [token, setToken] = useState('');
+  const token = usuarioSesion?.accessToken ?? '';
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
-  const [esAdmin, setEsAdmin] = useState(false);
+  const esAdmin = usuarioSesion?.esAdmin === true;
   const [modalNuevo, setModalNuevo] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -356,17 +350,6 @@ export default function NotificacionesScreen() {
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
-  // Solicitud de recuperación que el admin está por confirmar, y la contraseña
-  // temporal que devuelve la API cuando la confirma.
-  const [solicitudReset, setSolicitudReset] = useState<Aviso | null>(null);
-  const [resetPassword, setResetPassword] = useState<{
-    email: string;
-    password: string;
-    propia: boolean;
-  } | null>(null);
-  const [reseteando, setReseteando] = useState(false);
-  const [errorReset, setErrorReset] = useState('');
-  const [miEmail, setMiEmail] = useState('');
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -374,17 +357,12 @@ export default function NotificacionesScreen() {
       setError('');
     }
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
       }
-      setToken(usuario.accessToken);
-      setEsAdmin(usuario.esAdmin);
-      setMiEmail(usuario.email);
-      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
-        headers: { Authorization: `Bearer ${usuario.accessToken}` },
-      });
+      const response = await consultarNotificaciones(usuario);
       const result: unknown = await response.json();
       if (!response.ok) {
         setError(mensajeApi(result) ?? 'No se pudieron cargar las notificaciones.');
@@ -410,7 +388,7 @@ export default function NotificacionesScreen() {
     } finally {
       if (mostrarCarga) setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -450,79 +428,6 @@ export default function NotificacionesScreen() {
     }
   };
 
-  const confirmarReset = async () => {
-    if (!solicitudReset || reseteando) return;
-    const aviso = solicitudReset;
-    const email = aviso.solicitanteEmail;
-    if (!email) {
-      setErrorReset('La solicitud no tiene un correo válido.');
-      return;
-    }
-
-    setReseteando(true);
-    setErrorReset('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/password-reset`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ email }),
-      });
-      const resultado: unknown = await response.json();
-      if (!response.ok) {
-        setErrorReset(
-          mensajeApi(resultado) ?? 'No se pudo restablecer la contraseña.'
-        );
-        return;
-      }
-      if (
-        typeof resultado !== 'object' ||
-        resultado === null ||
-        !('password' in resultado) ||
-        typeof resultado.password !== 'string' ||
-        !('email' in resultado) ||
-        typeof resultado.email !== 'string'
-      ) {
-        setErrorReset('La API no confirmó el cambio de contraseña.');
-        return;
-      }
-
-      setResetPassword({
-        email: resultado.email,
-        password: resultado.password,
-        propia: resultado.email === miEmail,
-      });
-      setSolicitudReset(null);
-      // La API ya marcó como leídas todas las solicitudes de ese correo. Se
-      // actualiza la lista local sin otro PATCH: si el admin se restableció su
-      // propia contraseña, su token anterior ya no sirve y ese PATCH daría 401.
-      setAvisos((actuales) =>
-        actuales.map((actual) =>
-          actual.id === aviso.id
-            ? { ...actual, readAt: new Date().toISOString() }
-            : actual
-        )
-      );
-    } catch (requestError) {
-      setErrorReset(apiUnreachableMessage(requestError));
-    } finally {
-      setReseteando(false);
-    }
-  };
-
-  const cerrarAvisoReset = () => {
-    const propia = resetPassword?.propia ?? false;
-    setResetPassword(null);
-    // Si el admin se restableció su propia contraseña, el token que tiene
-    // guardado ya no sirve. Se cierra la sesión para que vuelva a entrar con la
-    // contraseña nueva en vez de quedar con errores 401.
-    if (propia) {
-      void cerrarSesion().then(() => router.replace('/'));
-    }
-  };
-
   // Abre la ventana el aviso de turno que trae, modificado o cancelado, y
   // tambien el aviso global de la veterinaria.
   //
@@ -556,7 +461,7 @@ export default function NotificacionesScreen() {
     setErrorForm('');
     setEnviandoAviso(true);
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -616,7 +521,7 @@ export default function NotificacionesScreen() {
           </>
         }
         ListEmptyComponent={
-          <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+          <View style={styles.listaVacia}>
             {cargando ? (
               <ActivityIndicator color="#0f3e17" />
             ) : (
@@ -634,17 +539,6 @@ export default function NotificacionesScreen() {
                 pressed && estilos.buttonPressed,
               ]}
               onPress={() => {
-                // La solicitud de recuperación abre el cartel de confirmación:
-                // el cambio no se hace hasta que el veterinario lo acepta.
-                if (esAdmin && item.tipo === 'recuperacion') {
-                  setErrorReset('');
-                  setSolicitudReset(item);
-                  // Se marca leída al abrirla, igual que el resto de los
-                  // avisos: si el admin cierra el cartel sin restablecer nada,
-                  // la notificación no puede quedar con el punto de no leída.
-                  void marcarLeido(item);
-                  return;
-                }
                 // Los avisos de proximidad abren la ventana; el resto se marca
                 // como leido nomas.
                 if (conVentana) setAvisoTurno(item);
@@ -653,12 +547,11 @@ export default function NotificacionesScreen() {
               accessibilityRole="button"
               accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver detalle del aviso' : ''}`}
             >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              {item.esGlobal || item.tipo === 'recuperacion' ? (
-                // El aviso global y la solicitud de recuperación no son de una
-                // mascota, asi que va el logo. Con "contain" y un fondo claro el
-                // logo horizontal se lee entero en el cuadrado en vez de quedar
-                // con los bordes cortados.
+            <View style={styles.filaAviso}>
+              {item.esGlobal ? (
+                // El aviso global no es de una mascota, asi que va el logo. Con
+                // "contain" y un fondo claro el logo horizontal se lee entero
+                // en el cuadrado en vez de quedar con los bordes cortados.
                 <Image
                   source={logoVetPro}
                   style={styles.avisoLogo}
@@ -671,7 +564,7 @@ export default function NotificacionesScreen() {
                 <Image
                   source={{ uri: fotoDelAviso(item) ?? '' }}
                   style={styles.avisoFoto}
-                  resizeMode="cover"
+                  resizeMode="contain"
                   accessibilityLabel={`Foto de ${item.mascota?.nombre ?? 'la mascota'}`}
                 />
               ) : (
@@ -681,7 +574,7 @@ export default function NotificacionesScreen() {
                   color="#0f3e17"
                 />
               )}
-              <View style={{ flex: 1 }}>
+              <View style={styles.contenidoAviso}>
                 <Text style={estilos.cardTitle}>{item.title}</Text>
                 <Text style={estilos.cardSubtitle}>{textoDelAviso(item)}</Text>
                 <Text style={styles.date}>
@@ -696,63 +589,6 @@ export default function NotificacionesScreen() {
       />
 
       <VentanaAviso aviso={avisoTurno} onCerrar={() => setAvisoTurno(null)} />
-
-      <Modal
-        visible={solicitudReset !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!reseteando) setSolicitudReset(null);
-        }}
-        statusBarTranslucent
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => {
-              if (!reseteando) setSolicitudReset(null);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Cancelar restablecimiento"
-          />
-          {solicitudReset ? (
-            <View style={estilos.modalCard}>
-              <Text style={estilos.modalTitle}>¿Restablecer contraseña?</Text>
-              <Text style={estilos.modalText}>
-                {solicitudReset.solicitanteEmail ?? 'El usuario'} pidió recuperar su
-                contraseña. La nueva contraseña va a ser su apellido seguido de 12345.
-              </Text>
-              {errorReset ? (
-                <Text style={styles.createError} accessibilityRole="alert">
-                  {errorReset}
-                </Text>
-              ) : null}
-              <View style={estilos.modalActions}>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonNeutral]}
-                  onPress={() => setSolicitudReset(null)}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
-                    Cancelar
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                  onPress={() => void confirmarReset()}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                    {reseteando ? 'Restableciendo...' : 'Sí, restablecer'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
-        </View>
-      </Modal>
 
       <Modal
         visible={modalNuevo}
@@ -841,81 +677,21 @@ export default function NotificacionesScreen() {
         etiquetaBoton="Cerrar el aviso de notificación enviada"
         onCerrar={() => setEnviado(null)}
       />
-
-      <AvisoExito
-        visible={resetPassword !== null}
-        titulo="¡Contraseña restablecida!"
-        subtitulo={
-          resetPassword !== null
-            ? resetPassword.propia
-              ? 'Tu sesión se va a cerrar. Volvé a entrar con la contraseña de abajo.'
-              : `Compartila con ${resetPassword.email}.`
-            : undefined
-        }
-        etiquetaBoton="Cerrar el aviso de contraseña restablecida"
-        onCerrar={cerrarAvisoReset}
-      >
-        {resetPassword !== null ? (
-          <Text style={estilos.resetPassword} selectable>
-            {resetPassword.password}
-          </Text>
-        ) : null}
-      </AvisoExito>
     </AppDrawer>
   );
 }
 
-const styles = {
-  cartel: {
-    marginBottom: 16,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#0f3e17',
-    backgroundColor: '#f1f7ee',
-  },
-  // Solo la parte de arriba del cartel abre la ventana: el "Ir" de abajo es
-  // un boton aparte y no puede quedar adentro de otro boton.
-  cartelApertura: { width: '100%' as const },
-  cartelEncabezado: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
-  cartelIcono: {
-    width: 34,
-    height: 34,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: 17,
-    backgroundColor: '#e4f1e0',
-  },
-  cartelTextos: { flex: 1 },
-  cartelTitulo: { color: '#0f3e17', fontSize: 17, fontWeight: 'bold' as const },
-  cartelCuenta: { marginTop: 1, color: '#556b58', fontSize: 13 },
-  cartelMascota: {
-    marginTop: 12,
-    color: '#0f3e17',
-    fontSize: 16,
-    fontWeight: 'bold' as const,
-  },
-  cartelDetalle: { marginTop: 2, color: '#4a6152', fontSize: 14 },
-  cartelSede: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#dfe8db',
-    gap: 5,
-  },
-  cartelSedeFila: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
-  cartelSedeTexto: { flex: 1, color: '#5c6b60', fontSize: 13 },
-  cartelEtiqueta: { color: '#0f3e17', fontWeight: '700' as const },
-  cartelBoton: { marginTop: 14, marginBottom: 0 },
+const styles = StyleSheet.create({
+  cartelEtiqueta: { color: '#0f3e17', fontWeight: '700' },
   // Ventana del turno, calcada de la de "Turno creado con exito".
   avisoRaiz: {
     flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 24,
   },
   avisoFondo: {
-    position: 'absolute' as const,
+    position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
@@ -923,9 +699,9 @@ const styles = {
     backgroundColor: 'rgba(18, 32, 22, 0.55)',
   },
   aviso: {
-    width: '100%' as const,
+    width: '100%',
     maxWidth: 380,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     paddingHorizontal: 22,
     paddingTop: 22,
     paddingBottom: 20,
@@ -933,64 +709,55 @@ const styles = {
     backgroundColor: '#fffefc',
   },
   avisoCerrar: {
-    position: 'absolute' as const,
+    position: 'absolute',
     top: 10,
     right: 10,
     width: 34,
     height: 34,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 17,
     backgroundColor: '#eef4ea',
   },
   avisoTitulo: {
     color: '#0f3e17',
     fontSize: 21,
-    fontWeight: 'bold' as const,
-    textAlign: 'center' as const,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   avisoSubtitulo: {
     marginTop: 6,
     color: '#5c6b60',
     fontSize: 15,
     lineHeight: 21,
-    textAlign: 'center' as const,
-  },
-  // El motivo de la cancelacion son varias lineas: a la izquierda se lee bien,
-  // centrado hay que volver el ojo al principio en cada renglon.
-  avisoCuerpo: {
-    marginTop: 8,
-    color: '#4a6152',
-    fontSize: 15,
-    lineHeight: 23,
-    textAlign: 'left' as const,
+    textAlign: 'center',
   },
   avisoDatos: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     gap: 9,
     marginTop: 18,
     padding: 14,
     borderRadius: 14,
     backgroundColor: '#f1f7ee',
   },
-  avisoDato: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  avisoDato: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // La fila de "Descripcion" es la unica que ocupa varias lineas: el icono va
   // arriba, pegado a la primera, y no al medio de todo el texto.
-  avisoDatoArriba: { flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 10 },
+  avisoDatoArriba: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   avisoDatoTexto: { flex: 1, color: '#1e3326', fontSize: 14 },
   avisoDatoTextoLargo: { flex: 1, color: '#1e3326', fontSize: 14, lineHeight: 20 },
-  avisoBoton: { alignSelf: 'stretch' as const, marginTop: 18, marginBottom: 0 },
+  avisoBoton: { alignSelf: 'stretch', marginTop: 18, marginBottom: 0 },
   nuevoBoton: {
     marginBottom: 14,
     padding: 15,
     borderRadius: 10,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     backgroundColor: '#0f3e17',
   },
   nuevoFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
   guardarBoton: {
@@ -1031,4 +798,7 @@ const styles = {
     fontSize: 12,
     marginTop: 8,
   },
-};
+  listaVacia: { paddingVertical: 20, alignItems: 'center' },
+  filaAviso: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  contenidoAviso: { flex: 1 },
+});

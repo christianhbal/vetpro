@@ -99,20 +99,6 @@ function createAccessToken(userId: number, password: string): string {
   return `${userId}.${signature}`;
 }
 
-// Contraseña temporal que genera el veterinario al confirmar una recuperación:
-// el apellido del usuario (última palabra del nombre) seguido de 12345.
-function passwordTemporal(nombre: string): string {
-  const apellido = nombre
-    .trim()
-    .split(/\s+/)
-    .pop()
-    ?.normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-  return `${apellido || 'vetpro'}12345`;
-}
-
 async function requireAuthenticatedUser(
   request: express.Request,
   response: express.Response
@@ -174,7 +160,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
     String(hoy.getDate()).padStart(2, '0'),
   ].join('-');
   const turnos = await prisma.turno.findMany({
-    where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
+    where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
     include: {
       mascota: { select: { nombre: true, foto: true } },
       // La relacion se llama user, no usuario. El rol se filtra en el where: el
@@ -207,7 +193,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
             fecha: turno.fecha,
             hora: turno.hora,
             recordatorioEnviadoEn: null,
-            llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false,
+            llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false,
           },
           data: { recordatorioEnviadoEn: new Date().toISOString() },
         });
@@ -226,6 +212,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
       });
     } catch (error) {
       console.error(`No se pudo crear el recordatorio del turno ${turno.id}:`, error);
+      throw error;
     }
   }
 }
@@ -395,7 +382,10 @@ app.post('/api/mascotas', async (request, response) => {
       return response.status(404).json({ message: 'No se encontro el usuario dueño de la mascota.' });
     }
 
-    const mascota = await prisma.mascota.create({
+    const mascota = await prisma.$transaction(async (tx) => {
+      const cantidad = await tx.mascota.count({ where: { userId } });
+      if (cantidad >= 5) return null;
+      return tx.mascota.create({
       data: {
         nombre: nombre.trim(),
         especie: especie.trim(),
@@ -405,7 +395,9 @@ app.post('/api/mascotas', async (request, response) => {
         foto: foto ?? null,
         user: { connect: { id: userId } },
       },
+      });
     });
+    if (!mascota) return response.status(409).json({ message: 'Tu plan permite un máximo de 5 mascotas.' });
     return response.status(201).json(mascota);
   } catch (error) {
     console.error('No se pudo crear la mascota:', error);
@@ -536,12 +528,18 @@ app.delete('/api/mascotas/:id', async (request, response) => {
 const PREFIJO_CHECK_IN = 'vetpro://check-in';
 
 /**
- * Acepta el QR genérico de VetPro y también los viejos que llevaban ?sedeId=...
- * para no romper con los carteles ya impresos. La sede no se usa: el turno del
- * cliente ya dice dónde es.
+ * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
+ * Devuelve null si el QR no es de VetPro o si la sede no existe.
  */
-function esCheckInVetPro(code: unknown): boolean {
-  return typeof code === 'string' && code.split('?')[0] === PREFIJO_CHECK_IN;
+async function sedeDeCheckIn(code: unknown): Promise<string | null> {
+  if (typeof code !== 'string') return null;
+  const [base, consulta] = code.split('?');
+  if (base !== PREFIJO_CHECK_IN) return null;
+  const params = new URLSearchParams(consulta ?? '');
+  const id = parseId(params.get('sedeId') ?? undefined);
+  const nombre = params.get('sede');
+  const sede = id !== null ? await prisma.sede.findUnique({ where: { id } }) : nombre ? await prisma.sede.findUnique({ where: { nombre } }) : null;
+  return sede?.nombre ?? null;
 }
 
 // GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
@@ -658,7 +656,8 @@ app.post('/api/turnos/check-in', async (request, response) => {
     return response.status(403).json({ message: 'El registro de llegada es para cuentas de usuario.' });
   }
 
-  if (!esCheckInVetPro(request.body?.code)) {
+  const sede = await sedeDeCheckIn(request.body?.code);
+  if (sede === null) {
     return response.status(400).json({ message: 'El código QR no es válido.' });
   }
 
@@ -670,24 +669,16 @@ app.post('/api/turnos/check-in', async (request, response) => {
   ].join('-');
 
   try {
-    const turnos = await prisma.turno.findMany({
-      where: { userId: user.id, fecha: fechaActual, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
+    const turno = await prisma.turno.findFirst({
+      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
       orderBy: [{ hora: 'asc' }, { id: 'asc' }],
     });
-    // Con un solo QR para todas las sedes puede haber más de un turno hoy. Se
-    // registra el más cercano a la hora actual y no siempre el primero del día.
-    const turno = turnos.reduce<(typeof turnos)[number] | null>((elegido, candidato) => {
-      if (!elegido) return candidato;
-      const distancia = (item: (typeof turnos)[number]) =>
-        Math.abs(new Date(`${item.fecha}T${item.hora}:00`).getTime() - ahora.getTime());
-      return distancia(candidato) < distancia(elegido) ? candidato : elegido;
-    }, null);
     if (!turno) {
       return response.status(404).json({
-        message: 'No tienes turnos pendientes para hoy.',
+        message: `No tienes turnos para hoy en ${await sedeConDireccion(sede)}.`,
       });
     }
 
@@ -702,7 +693,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
 
     return response.json({
       turno: { ...turno, llegadaEn },
-      sede: turno.sede,
+      sede,
       yaRegistrado: false,
     });
   } catch (error) {
@@ -904,8 +895,28 @@ app.get('/api/admin/turnos', async (request, response) => {
   }
 });
 
+// Registra manualmente la llegada de un turno de hoy.
+app.patch('/api/admin/turnos/:id/llegada', async (request, response) => {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id del turno no es válido.' });
+  const ahora = new Date();
+  const fecha = [ahora.getFullYear(), String(ahora.getMonth() + 1).padStart(2, '0'), String(ahora.getDate()).padStart(2, '0')].join('-');
+  try {
+    const resultado = await prisma.turno.updateMany({
+      where: { id, fecha, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
+      data: { llegadaEn: ahora.toISOString() },
+    });
+    if (resultado.count === 0) return response.status(409).json({ message: 'El turno no está disponible para registrar la llegada.' });
+    return response.json({ message: 'Llegada registrada.' });
+  } catch (error) {
+    console.error('No se pudo registrar la llegada:', error);
+    return response.status(500).json({ message: 'No se pudo registrar la llegada.' });
+  }
+});
+
 // GET /api/admin/turnos-activos
-// Lista los turnos de hoy que ya registraron su llegada por QR y que todavia
+// Lista los turnos de hoy que ya registraron su llegada y que todavia
 // no fueron atendidos.
 app.get('/api/admin/turnos-activos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
@@ -921,22 +932,19 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
   try {
     const turnos = await prisma.turno.findMany({
       // Turno activo = ya llego (QR) y todavia no fue atendido. Al completarlo
-      // sale de esta lista y pasa a "Turnos completados". Los de ejemplo
-      // flotan: aparecen mas alla de la fecha de hoy.
+      // sale de esta lista y pasa a "Turnos completados".
       where: {
         llegadaEn: { not: null },
         atendidoEn: null,
         // Los turnos fuera de agenda (dias completos, historial) nunca estan
         // esperando: solo ocupan un horario o son de dias pasados.
         ocultoEnAgenda: false,
-        fecha: fechaActual,
-        esDemo: false,
-      },
+        fecha: fechaActual,      },
       include: {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
-      orderBy: [{ llegadaEn: 'asc' }, { hora: 'asc' }],
+      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
     });
     return response.json(turnos);
   } catch (error) {
@@ -958,7 +966,7 @@ app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
     const resultado = await prisma.$transaction(async (tx) => {
       const actual = await tx.turno.findUnique({ where: { id } });
       if (!actual) return { error: 'no-existe' as const };
-      if (actual.atendidoEn || !actual.llegadaEn || actual.esDemo || actual.ocultoEnAgenda) return { error: 'estado' as const };
+      if (actual.atendidoEn || !actual.llegadaEn || actual.ocultoEnAgenda) return { error: 'estado' as const };
       if (seguimiento) {
         if (seguimiento.sede !== actual.sede) return { error: 'sede' as const };
         const sede = await tx.sede.findUnique({ where: { nombre: seguimiento.sede } });
@@ -1051,22 +1059,6 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
         cambiaHorario || (sede !== undefined && sede !== anterior.sede);
       const fechaDestino = fecha ?? anterior.fecha;
       const horaDestino = hora ?? anterior.hora;
-      if (cambiaHorario) {
-        const configuracion = await transaction.sede.findUnique({ where: { nombre: sede ?? anterior.sede } });
-        if (!configuracion || !isValidAppointmentSlot(fechaDestino, horaDestino, configuracion)) {
-          return { validationError: 'invalid' as const };
-        }
-        // Un turno no se mueve hacia atras. Se puede estirar el horario o
-        // pizarlo para otro dia, pero devolverlo a una hora anterior deja
-        // clientes con avisos del tipo "hora: 19:00 -> 18:00" sobre un turno
-        // que ya estaba despues, que no se puede atender. El aviso va al dueño
-        // y no hay forma de explicar eso.
-        // La comparacion es de texto: "AAAA-MM-DDTHH:mm" ordena igual que el
-        // reloj porque los numeros van con dos digitos y en orden fijo.
-        if (`${fechaDestino}T${horaDestino}` < `${anterior.fecha}T${anterior.hora}`) {
-          return { validationError: 'atras' as const };
-        }
-      }
       if (cambiaDisponibilidad) {
         const sedeDestino = sede ?? anterior.sede;
         const configuracion = await transaction.sede.findUnique({ where: { nombre: sedeDestino } });
@@ -1119,13 +1111,8 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       if (resultado.validationError === 'occupied') {
         return response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' });
       }
-      if (resultado.validationError === 'atras') {
-        return response.status(400).json({
-          message: 'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.',
-        });
-      }
       return response.status(400).json({
-        message: 'El turno debe ser de lunes a sábado, entre las 10:00 y las 18:30, cada media hora y en el futuro.',
+        message: 'Elegí una fecha y un horario futuros dentro de la atención de la sede.',
       });
     }
 
@@ -1143,6 +1130,32 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
+
+// Elimina un registro atendido, conservando los datos de sus notificaciones.
+app.delete('/api/admin/turnos/:id/registro', async (request, response) => {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id del turno no es válido.' });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const turno = await tx.turno.findUnique({ where: { id }, include: { mascota: { select: { nombre: true, foto: true } } } });
+      if (!turno) return 'no-existe';
+      if (!turno.atendidoEn) return 'no-atendido';
+      await tx.notification.updateMany({ where: { turnoId: id, mascotaNombre: null }, data: { mascotaNombre: turno.mascota.nombre, mascotaFoto: turno.mascota.foto } });
+      await tx.notification.updateMany({ where: { turnoId: id, sede: null }, data: { sede: turno.sede } });
+      await tx.notification.updateMany({ where: { turnoId: id, hora: null }, data: { hora: turno.hora } });
+      const eliminado = await tx.turno.deleteMany({ where: { id, atendidoEn: { not: null } } });
+      if (eliminado.count === 0) throw new Error('El turno cambió mientras se eliminaba.');
+      return 'eliminado';
+    });
+    if (resultado === 'no-existe') return response.status(404).json({ message: 'No se encontró el turno.' });
+    if (resultado === 'no-atendido') return response.status(409).json({ message: 'Solo se pueden eliminar registros de turnos atendidos.' });
+    return response.json({ eliminado: true });
+  } catch (error) {
+    console.error('No se pudo eliminar el registro:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar el registro.' });
+  }
+});
 
 // Cancela un turno. No se permite si el paciente ya fue atendido
 app.delete('/api/admin/turnos/:id', async (request, response) => {
@@ -1230,6 +1243,20 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
+// POST /api/notifications/reminders
+// Genera avisos pendientes. La transacción evita duplicarlos al repetir el pedido.
+app.post('/api/notifications/reminders', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  try {
+    if (user.role !== 'ADMIN') await createUpcomingAppointmentReminders(user.id);
+    return response.status(204).send();
+  } catch (error) {
+    console.error('No se pudieron generar los recordatorios:', error);
+    return response.status(500).json({ message: 'No se pudieron generar los recordatorios.' });
+  }
+});
+
 // GET /api/notifications
 // Devuelve los avisos del usuario autenticado, con el total de avisos sin leer.
 app.get('/api/notifications', async (request, response) => {
@@ -1246,7 +1273,6 @@ app.get('/api/notifications', async (request, response) => {
   };
 
   try {
-    if (user.role !== 'ADMIN') await createUpcomingAppointmentReminders(user.id);
     const [items, unreadCount] = await Promise.all([
       prisma.notification.findMany({
         where,
@@ -1530,37 +1556,6 @@ app.get('/api/users/:id', async (request, response) => {
   }
 });
 
-// DELETE /api/users/:id
-// El usuario autenticado solo puede eliminar su propia cuenta.
-app.delete('/api/users/:id', async (request, response) => {
-  const autenticado = await requireAuthenticatedUser(request, response);
-  if (!autenticado) return;
-  const id = parseId(request.params.id);
-  if (id === null) {
-    return response.status(400).json({ message: 'El id de usuario no es válido.' });
-  }
-  if (id !== autenticado.id) {
-    return response.status(403).json({ message: 'Solo puedes eliminar tu propia cuenta.' });
-  }
-  if (
-    autenticado.role === 'ADMIN' &&
-    (await prisma.usuario.count({ where: { role: 'ADMIN' } })) <= 1
-  ) {
-    return response.status(400).json({ message: 'No se puede eliminar al último administrador.' });
-  }
-
-  try {
-    await prisma.usuario.delete({ where: { id } });
-    return response.status(204).send();
-  } catch (error) {
-    if (isMissingRecord(error)) {
-      return response.status(404).json({ message: 'No se encontró el usuario.' });
-    }
-    console.error('No se pudo eliminar la cuenta:', error);
-    return response.status(500).json({ message: 'No se pudo eliminar la cuenta.' });
-  }
-});
-
 // PATCH /api/users/:id
 // Actualiza los datos de contacto opcionales y básicos del usuario.
 app.patch('/api/users/:id', async (request, response) => {
@@ -1676,115 +1671,6 @@ app.patch('/api/users/:id/password', async (request, response) => {
     }
     console.error('No se pudo cambiar la contraseña:', error);
     return response.status(500).json({ message: 'No se pudo cambiar la contraseña.' });
-  }
-});
-
-// POST /api/password-reset/request
-// El usuario pide recuperar su contraseña. No se cambia nada: se avisa a los
-// veterinarios y recién cuando uno confirma se genera la contraseña temporal.
-app.post('/api/password-reset/request', async (request, response) => {
-  const { email } = request.body ?? {};
-  if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-    return response.status(400).json({ message: 'Escribe un correo válido.' });
-  }
-
-  const correo = email.trim().toLowerCase();
-  const respuestaGenerica = {
-    message: 'Si el correo está registrado, la veterinaria va a recibir la solicitud.',
-  };
-
-  try {
-    const user = await prisma.usuario.findUnique({
-      where: { email: correo },
-      select: { id: true, nombre: true, email: true },
-    });
-    // Si el correo no existe se contesta lo mismo igual: no conviene revelar
-    // qué correos están registrados. Sin usuario no hay aviso ni recuperación.
-    if (!user) return response.json(respuestaGenerica);
-
-    // Le llega a todos los administradores, incluido el que pidió la
-    // recuperación si su cuenta es de veterinario. Así, en una demo con un solo
-    // admin, la solicitud igual aparece en su propia campanita y puede
-    // confirmarla. Si el que pidió es un cliente, le llega a todos igual.
-    const admins = await prisma.usuario.findMany({
-      where: { role: 'ADMIN' },
-      select: { id: true },
-    });
-
-    await Promise.all(
-      admins.map(async (admin) => {
-        const pendiente = await prisma.notification.findFirst({
-          where: {
-            userId: admin.id,
-            tipo: 'recuperacion',
-            solicitanteEmail: user.email,
-            readAt: null,
-          },
-        });
-        if (pendiente) return;
-        await prisma.notification.create({
-          data: {
-            userId: admin.id,
-            title: 'Recuperación de contraseña',
-            message: `${user.nombre} quiere recuperar su contraseña.`,
-            tipo: 'recuperacion',
-            solicitanteEmail: user.email,
-          },
-        });
-      })
-    );
-
-    return response.json(respuestaGenerica);
-  } catch (error) {
-    console.error('No se pudo registrar la solicitud de recuperación:', error);
-    return response.status(500).json({ message: 'No se pudo enviar la solicitud.' });
-  }
-});
-
-// POST /api/admin/password-reset
-// El veterinario confirma la recuperación. La contraseña queda en
-// apellido12345 y se marcan como leídas las solicitudes pendientes de ese
-// correo. El token viejo deja de servir porque la firma usa la contraseña.
-app.post('/api/admin/password-reset', async (request, response) => {
-  const adminId = await requireAdmin(request, response);
-  if (adminId === null) return;
-
-  const { userId, email } = request.body ?? {};
-  const id = typeof userId === 'number' ? userId : null;
-  const correo = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  if (id === null && !correo) {
-    return response.status(400).json({ message: 'Indica el usuario a restablecer.' });
-  }
-
-  try {
-    const user = await prisma.usuario.findFirst({
-      where: id !== null ? { id } : { email: correo },
-      select: { id: true, nombre: true, email: true },
-    });
-    if (!user) {
-      return response.status(404).json({ message: 'No se encontró el usuario.' });
-    }
-
-    // No se bloquea el cambio sobre la propia cuenta: el admin puede confirmar
-    // una solicitud que él mismo generó desde la campanita. Desde Administrar
-    // usuarios la llave no aparece para uno mismo, así que ese camino sigue
-    // reservado a Perfil.
-    const password = passwordTemporal(user.nombre);
-    await prisma.$transaction([
-      prisma.usuario.update({ where: { id: user.id }, data: { password } }),
-      prisma.notification.updateMany({
-        where: { tipo: 'recuperacion', solicitanteEmail: user.email, readAt: null },
-        data: { readAt: new Date().toISOString() },
-      }),
-    ]);
-
-    return response.json({ nombre: user.nombre, email: user.email, password });
-  } catch (error) {
-    if (isMissingRecord(error)) {
-      return response.status(404).json({ message: 'No se encontró el usuario.' });
-    }
-    console.error('No se pudo restablecer la contraseña:', error);
-    return response.status(500).json({ message: 'No se pudo restablecer la contraseña.' });
   }
 });
 

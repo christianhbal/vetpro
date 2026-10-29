@@ -96,6 +96,10 @@ export default function TurnoDateTimeField({
     onMonthChange?.(siguiente.getFullYear(), siguiente.getMonth() + 1);
   };
 
+  const estilosAdaptados = StyleSheet.create({
+    anchoHorario: { width: Math.floor(((anchoHorarios - 16) / 3) * 100) / 100 },
+  });
+
   return (
     <View>
       <Pressable
@@ -191,7 +195,7 @@ export default function TurnoDateTimeField({
                         )
                         .map((slot) => slot.hora)
                     );
-                    const completo = horariosDelDia.size >= horariosDisponibles.length;
+                    const completo = horariosDisponibles.length > 0 && horariosDelDia.size >= horariosDisponibles.length;
                     const deshabilitado =
                       esPasado ||
                       esDomingo ||
@@ -228,7 +232,7 @@ export default function TurnoDateTimeField({
                         >
                           {dia}
                         </Text>
-                        {horariosDelDia.size > 0 && !seleccionado ? (
+                        {completo && !seleccionado && !cargandoDisponibilidad && !errorDisponibilidad ? (
                           <View style={styles.occupiedDot} />
                         ) : null}
                       </Pressable>
@@ -237,7 +241,7 @@ export default function TurnoDateTimeField({
                 </View>
                 <View style={styles.legend}>
                   <View style={styles.legendDot} />
-                  <Text style={styles.legendText}>Fecha con horarios ocupados</Text>
+                  <Text style={styles.legendText}>Fecha sin horarios disponibles</Text>
                 </View>
                 {cargandoDisponibilidad ? (
                   <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>
@@ -290,9 +294,9 @@ export default function TurnoDateTimeField({
                             }}
                             style={[
                               styles.slot,
-                              anchoHorarios > 0 && { width: Math.floor(((anchoHorarios - 16) / 3) * 100) / 100 },
+                              anchoHorarios > 0 && estilosAdaptados.anchoHorario,
                               seleccionado && styles.selectedDay,
-                              deshabilitado && styles.disabledSlot,
+                              ocupado && styles.occupiedSlot,
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
@@ -302,11 +306,16 @@ export default function TurnoDateTimeField({
                               style={[
                                 styles.slotText,
                                 seleccionado && styles.selectedText,
-                                deshabilitado && styles.disabledText,
+                                ocupado && styles.occupiedSlotText,
                               ]}
                             >
                               {horario}
                             </Text>
+                            {ocupado ? (
+                              <View style={styles.slotIcon}>
+                                <Ionicons name="lock-closed" size={9} color="#7d4322" />
+                              </View>
+                            ) : null}
                           </Pressable>
                         );
                       })}
@@ -366,17 +375,10 @@ const styles = StyleSheet.create({
   slotsScroll: { maxHeight: 300, marginTop: 12 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8 },
   slot: { width: '30%', minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#e1f4df' },
-  disabledSlot: { backgroundColor: '#f0f1ee' },
+  occupiedSlot: { backgroundColor: '#f2ddcd', borderColor: '#d3a179', borderWidth: 1 },
+  occupiedSlotText: { color: '#7d4322' },
+  slotIcon: { position: 'absolute', top: 2, right: 2 },
   slotText: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
-  timeColumns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 },
-  timeColumn: { width: 90, alignItems: 'center' },
-  columnLabel: { marginBottom: 8, color: '#69746a', fontSize: 14, fontWeight: '600' },
-  timeScroll: { height: 230, width: '100%' },
-  timeChoices: { alignItems: 'center', gap: 4 },
-  timeChoice: { width: 64, paddingVertical: 10, borderRadius: 9 },
-  colon: { marginTop: 16, color: '#0f3e17', fontSize: 24, fontWeight: 'bold' },
-  confirm: { alignItems: 'center', marginTop: 16, padding: 14, borderRadius: 10, backgroundColor: '#0f3e17' },
-  confirmText: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' },
 });

@@ -1,17 +1,18 @@
 import { useMemo, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { esCheckInVetPro } from '@/lib/check-in';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { sedeDeCheckIn } from '@/lib/check-in';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 
 export default function EscanearQr() {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
   const [permiso, pedirPermiso] = useCameraPermissions();
@@ -19,33 +20,23 @@ export default function EscanearQr() {
   const [resultado, setResultado] = useState('');
   const [llegadaRegistrada, setLlegadaRegistrada] = useState(false);
   const [procesando, setProcesando] = useState(false);
-  const [avisoPermiso, setAvisoPermiso] = useState(false);
   const escaneoEnCurso = useRef(false);
   const [vistaCamara, setVistaCamara] = useState({ width: 0, height: 0 });
   const [altoPie, setAltoPie] = useState(0);
 
-  const contenedor = useMemo(
-    () => [estilos.escanerContenedor, { paddingTop: top, paddingBottom: bottom }],
+  const margenSeguro = useMemo(
+    () => StyleSheet.create({ contenedor: { paddingTop: top, paddingBottom: bottom } }),
     [bottom, top]
   );
+  const contenedor = [estilos.escanerContenedor, margenSeguro.contenedor];
   const altoEscaneo = Math.max(0, vistaCamara.height - altoPie);
   const tamanoMarco = Math.min(vistaCamara.width * 0.76, altoEscaneo * 0.72, 320);
-  const posicionMarco = {
+  const medidas = StyleSheet.create({ marco: {
     top: Math.max(0, (altoEscaneo - tamanoMarco) / 2),
     left: (vistaCamara.width - tamanoMarco) / 2,
     width: tamanoMarco,
     height: tamanoMarco,
-  };
-
-  // En web no existe la pantalla de ajustes del sistema: se evita que el
-  // boton del cartel termine en una promesa rechazada.
-  const abrirAjustes = () => {
-    try {
-      void Linking.openSettings().catch(() => {});
-    } catch {
-      // Sin ajustes disponibles en esta plataforma.
-    }
-  };
+  } });
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (escaneoEnCurso.current) return;
@@ -54,10 +45,11 @@ export default function EscanearQr() {
     setProcesando(true);
     setLlegadaRegistrada(false);
     try {
-      if (!esCheckInVetPro(data)) {
+      const sedeEscaneada = sedeDeCheckIn(data);
+      if (sedeEscaneada === null) {
         throw new Error('Este no es un código QR de llegada de VetPro.');
       }
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -131,7 +123,14 @@ export default function EscanearQr() {
               onPress={async () => {
                 const pedido = await pedirPermiso();
                 if (!pedido.granted) {
-                  setAvisoPermiso(true);
+                  Alert.alert(
+                    'Permiso denegado',
+                    'Sin la cámara no se puede escanear. Podés habilitarla desde los ajustes del sistema.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Abrir ajustes', onPress: () => Linking.openSettings() },
+                    ]
+                  );
                 }
               }}
               accessibilityRole="button"
@@ -143,7 +142,7 @@ export default function EscanearQr() {
             {!permiso.canAskAgain && (
               <Pressable
                 style={({ pressed }) => [estilos.modalButton, pressed && estilos.buttonPressed]}
-                onPress={abrirAjustes}
+                onPress={() => Linking.openSettings()}
                 accessibilityRole="button"
                 accessibilityLabel="Abrir ajustes"
               >
@@ -154,34 +153,6 @@ export default function EscanearQr() {
             )}
           </View>
         </View>
-
-        <AvisoExito
-          visible={avisoPermiso}
-          variante="error"
-          titulo="Permiso denegado"
-          subtitulo="Sin la cámara no se puede escanear. Podés habilitarla desde los ajustes del sistema."
-          etiquetaBoton="Cerrar el aviso de permiso"
-          onCerrar={() => setAvisoPermiso(false)}
-        >
-          <Pressable
-            style={({ pressed }) => [
-              estilos.modalButton,
-              estilos.modalButtonNeutral,
-              { alignSelf: 'stretch', marginTop: 14 },
-              pressed && estilos.buttonPressed,
-            ]}
-            onPress={() => {
-              setAvisoPermiso(false);
-              abrirAjustes();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Abrir ajustes del sistema"
-          >
-            <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
-              Abrir ajustes
-            </Text>
-          </Pressable>
-        </AvisoExito>
       </View>
     );
   }
@@ -226,7 +197,7 @@ export default function EscanearQr() {
             onBarcodeScanned={escaniado ? undefined : handleBarcodeScanned}
           />
 
-          <View style={[estilos.escanerMarco, posicionMarco]} />
+          <View style={[estilos.escanerMarco, medidas.marco]} />
 
           <View
             style={estilos.escanerPie}

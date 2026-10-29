@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -16,7 +17,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 type UsuarioAdministrado = {
   id: number;
@@ -48,16 +49,10 @@ function esUsuarioAdministrado(value: unknown): value is UsuarioAdministrado {
 }
 
 export default function AdminUsuariosScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [usuarios, setUsuarios] = useState<UsuarioAdministrado[]>([]);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<UsuarioAdministrado | null>(null);
   const [usuarioEliminado, setUsuarioEliminado] = useState<string | null>(null);
-  const [usuarioAResetear, setUsuarioAResetear] = useState<UsuarioAdministrado | null>(null);
-  const [resetPassword, setResetPassword] = useState<{
-    email: string;
-    password: string;
-  } | null>(null);
-  const [reseteando, setReseteando] = useState(false);
-  const [errorReset, setErrorReset] = useState('');
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [veterinarioCreado, setVeterinarioCreado] = useState<UsuarioAdministrado | null>(null);
   const [nombreNuevo, setNombreNuevo] = useState('');
@@ -65,11 +60,10 @@ export default function AdminUsuariosScreen() {
   const [telefonoNuevo, setTelefonoNuevo] = useState('');
   const [creando, setCreando] = useState(false);
   const [errorCrear, setErrorCrear] = useState('');
-  const [miId, setMiId] = useState<number | null>(null);
-  const [token, setToken] = useState('');
+  const miId = usuarioSesion?.id ?? null;
+  const token = usuarioSesion?.accessToken ?? '';
   const [cargando, setCargando] = useState(true);
   const [eliminando, setEliminando] = useState(false);
-  const [errorEliminar, setErrorEliminar] = useState('');
   const [error, setError] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtroRol, setFiltroRol] = useState<FiltroRol>('todos');
@@ -78,13 +72,11 @@ export default function AdminUsuariosScreen() {
     setCargando(true);
     setError('');
     try {
-      const sesion = await obtenerUsuarioActual();
+      const sesion = usuarioSesion;
       if (!sesion?.esAdmin) {
         router.replace('/app');
         return;
       }
-      setMiId(sesion.id);
-      setToken(sesion.accessToken);
       const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { Authorization: `Bearer ${sesion.accessToken}` },
       });
@@ -106,7 +98,7 @@ export default function AdminUsuariosScreen() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -116,67 +108,24 @@ export default function AdminUsuariosScreen() {
 
   const confirmarEliminacion = async () => {
     if (!usuarioAEliminar || eliminando) return;
-    const usuario = usuarioAEliminar;
     setEliminando(true);
-    setErrorEliminar('');
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/admin/users/${usuario.id}`,
+        `${API_BASE_URL}/api/admin/users/${usuarioAEliminar.id}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       );
       if (!response.ok) {
         const result: unknown = await response.json();
-        setUsuarioAEliminar(null);
-        setErrorEliminar(mensajeApi(result) ?? 'Inténtalo nuevamente.');
+        Alert.alert('No se pudo eliminar', mensajeApi(result) ?? 'Inténtalo nuevamente.');
         return;
       }
-      setUsuarios((actuales) => actuales.filter((item) => item.id !== usuario.id));
+      setUsuarios((actuales) => actuales.filter((item) => item.id !== usuarioAEliminar.id));
       setUsuarioAEliminar(null);
-      setUsuarioEliminado(usuario.nombre);
+      setUsuarioEliminado(usuarioAEliminar.nombre);
     } catch (requestError) {
-      setUsuarioAEliminar(null);
-      setErrorEliminar(apiUnreachableMessage(requestError));
+      Alert.alert('No se pudo eliminar', apiUnreachableMessage(requestError));
     } finally {
       setEliminando(false);
-    }
-  };
-
-  const confirmarReset = async () => {
-    if (!usuarioAResetear || reseteando) return;
-    setReseteando(true);
-    setErrorReset('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/password-reset`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userId: usuarioAResetear.id }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        setErrorReset(mensajeApi(result) ?? 'No se pudo restablecer la contraseña.');
-        return;
-      }
-      if (
-        typeof result !== 'object' ||
-        result === null ||
-        !('password' in result) ||
-        typeof result.password !== 'string' ||
-        !('email' in result) ||
-        typeof result.email !== 'string'
-      ) {
-        setErrorReset('La API no confirmó el cambio de contraseña.');
-        return;
-      }
-
-      setResetPassword({ email: result.email, password: result.password });
-      setUsuarioAResetear(null);
-    } catch (requestError) {
-      setErrorReset(apiUnreachableMessage(requestError));
-    } finally {
-      setReseteando(false);
     }
   };
 
@@ -334,7 +283,7 @@ export default function AdminUsuariosScreen() {
             </View>
           }
           ListEmptyComponent={
-            <View style={{ paddingVertical: 18 }}>
+            <View style={styles.cargaLista}>
               {cargando ? (
                 <ActivityIndicator color="#0f3e17" />
               ) : (
@@ -349,8 +298,8 @@ export default function AdminUsuariosScreen() {
           }
           renderItem={({ item }) => (
             <View style={estilos.cardVertical}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ flex: 1 }}>
+              <View style={styles.filaUsuario}>
+                <View style={styles.datosUsuario}>
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.email}</Text>
                   {item.telefono ? (
@@ -362,27 +311,14 @@ export default function AdminUsuariosScreen() {
                   </Text>
                 </View>
                 {item.id !== miId ? (
-                  <>
-                    <Pressable
-                      onPress={() => {
-                        setErrorReset('');
-                        setUsuarioAResetear(item);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Restablecer la contraseña de ${item.nombre}`}
-                      style={{ padding: 10 }}
-                    >
-                      <Ionicons name="key-outline" size={22} color="#1B4D3E" />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setUsuarioAEliminar(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Eliminar a ${item.nombre}`}
-                      style={{ padding: 10 }}
-                    >
-                      <Ionicons name="trash-outline" size={22} color="#a32d2d" />
-                    </Pressable>
-                  </>
+                  <Pressable
+                    onPress={() => setUsuarioAEliminar(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Eliminar a ${item.nombre}`}
+                    style={styles.accionUsuario}
+                  >
+                    <Ionicons name="trash-outline" size={22} color="#a32d2d" />
+                  </Pressable>
                 ) : null}
               </View>
             </View>
@@ -411,7 +347,7 @@ export default function AdminUsuariosScreen() {
               showsVerticalScrollIndicator={false}
             >
               <Text style={estilos.modalTitle}>Crear veterinario</Text>
-              <Text style={[estilos.modalText, { marginBottom: 16 }]}>
+              <Text style={[estilos.modalText, styles.ayudaFormulario]}>
                 Completa los datos de la cuenta. La contraseña inicial será su nombre completo y
                 podrá cambiarla desde su perfil.
               </Text>
@@ -494,13 +430,13 @@ export default function AdminUsuariosScreen() {
               name="checkmark-circle"
               size={44}
               color="#0f3e17"
-              style={{ alignSelf: 'center', marginBottom: 10 }}
+              style={styles.iconoConfirmacion}
             />
-            <Text style={[estilos.modalTitle, { textAlign: 'center' }]}>
+            <Text style={[estilos.modalTitle, styles.tituloConfirmacion]}>
               Veterinario creado con éxito
             </Text>
             {veterinarioCreado ? (
-              <Text style={[estilos.modalText, { marginTop: 8 }]}>
+              <Text style={[estilos.modalText, styles.textoConfirmacion]}>
                 Puede iniciar sesión con:
                 {'\n'}Correo: {veterinarioCreado.email}
                 {'\n'}Contraseña inicial: {veterinarioCreado.nombre}
@@ -519,63 +455,6 @@ export default function AdminUsuariosScreen() {
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={usuarioAResetear !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!reseteando) setUsuarioAResetear(null);
-        }}
-        statusBarTranslucent
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => {
-              if (!reseteando) setUsuarioAResetear(null);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Cancelar restablecimiento"
-          />
-          {usuarioAResetear ? (
-            <View style={estilos.modalCard}>
-              <Text style={estilos.modalTitle}>¿Restablecer contraseña?</Text>
-              <Text style={estilos.modalText}>
-                La contraseña de {usuarioAResetear.nombre} va a ser su apellido
-                seguido de 12345. ¿Confirmás el cambio?
-              </Text>
-              {errorReset ? (
-                <Text style={styles.createError} accessibilityRole="alert">
-                  {errorReset}
-                </Text>
-              ) : null}
-              <View style={estilos.modalActions}>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonNeutral]}
-                  onPress={() => setUsuarioAResetear(null)}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
-                    Cancelar
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                  onPress={() => void confirmarReset()}
-                  disabled={reseteando}
-                  accessibilityRole="button"
-                >
-                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                    {reseteando ? 'Restableciendo...' : 'Sí, restablecer'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
         </View>
       </Modal>
 
@@ -641,46 +520,19 @@ export default function AdminUsuariosScreen() {
         etiquetaBoton="Cerrar el aviso de cuenta eliminada"
         onCerrar={() => setUsuarioEliminado(null)}
       />
-
-      <AvisoExito
-        visible={errorEliminar !== ''}
-        variante="error"
-        titulo="No se pudo eliminar la cuenta"
-        subtitulo={errorEliminar}
-        etiquetaBoton="Cerrar el aviso de error"
-        onCerrar={() => setErrorEliminar('')}
-      />
-
-      <AvisoExito
-        visible={resetPassword !== null}
-        titulo="¡Contraseña restablecida!"
-        subtitulo={
-          resetPassword !== null
-            ? `Compartila con ${resetPassword.email}.`
-            : undefined
-        }
-        etiquetaBoton="Cerrar el aviso de contraseña restablecida"
-        onCerrar={() => setResetPassword(null)}
-      >
-        {resetPassword !== null ? (
-          <Text style={estilos.resetPassword} selectable>
-            {resetPassword.password}
-          </Text>
-        ) : null}
-      </AvisoExito>
     </AppDrawer>
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   addUserButton: {
     gap: 24,
     marginBottom: 16,
   },
   searchBox: {
     minHeight: 48,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     paddingHorizontal: 12,
     marginBottom: 12,
@@ -697,14 +549,14 @@ const styles = {
     fontSize: 15,
   },
   filterRow: {
-    flexDirection: 'row' as const,
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 16,
   },
   filterTab: {
     flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     minHeight: 40,
     paddingHorizontal: 8,
     borderWidth: 1,
@@ -719,25 +571,25 @@ const styles = {
   filterTabText: {
     color: '#365247',
     fontSize: 14,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   filterTabTextSelected: {
     color: '#0f3e17',
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
   },
   deleteButton: {
     backgroundColor: '#a32d2d',
   },
   createModalCard: {
-    width: '92%' as const,
+    width: '92%',
     maxWidth: 520,
-    maxHeight: '88%' as const,
+    maxHeight: '88%',
     backgroundColor: '#fffefc',
     borderRadius: 12,
     padding: 20,
   },
   createInput: {
-    width: '100%' as const,
+    width: '100%',
     minHeight: 48,
     backgroundColor: '#f3f7f1',
     borderColor: '#d8e3d5',
@@ -754,4 +606,12 @@ const styles = {
     lineHeight: 20,
     marginTop: 8,
   },
-};
+  cargaLista: { paddingVertical: 18 },
+  filaUsuario: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  datosUsuario: { flex: 1 },
+  accionUsuario: { padding: 10 },
+  ayudaFormulario: { marginBottom: 16 },
+  iconoConfirmacion: { alignSelf: 'center', marginBottom: 10 },
+  tituloConfirmacion: { textAlign: 'center' },
+  textoConfirmacion: { marginTop: 8 },
+});

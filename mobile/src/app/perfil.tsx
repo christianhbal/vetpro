@@ -1,16 +1,12 @@
 import { useCallback, useState } from 'react';
-import { Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
-import {
-  cerrarSesion,
-  guardarUsuarioActual,
-  obtenerUsuarioActual,
-  type UsuarioActual,
-} from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
+import type { UsuarioActual } from '@/lib/session';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { cancelarRecordatorios } from '@/lib/recordatorios';
 
@@ -27,45 +23,25 @@ const opciones: Opcion[] = [
   { id: '1', nombre: 'Editar Perfil', icon: 'person-outline' },
   { id: '2', nombre: 'Cambiar contraseña', icon: 'key-outline' },
   { id: '3', nombre: 'Soporte: Ayuda', icon: 'help-buoy-outline' },
-  { id: '4', nombre: 'Eliminar cuenta', icon: 'trash-outline', color: '#a32828' },
-  { id: '5', nombre: 'Cerrar Sesión', icon: 'log-out-outline', color: '#0c2f10' },
+  { id: '4', nombre: 'Cerrar Sesión', icon: 'log-out-outline', color: '#0c2f10' },
 ];
 
 export default function PerfilScreen() {
+  const { usuario, cerrarSesion, guardarUsuarioActual } = useSesion();
   const [modalCerrarSesion, setModalCerrarSesion] = useState(false);
-  const [modalEliminarCuenta, setModalEliminarCuenta] = useState(false);
-  const [eliminandoCuenta, setEliminandoCuenta] = useState(false);
-  const [errorEliminarCuenta, setErrorEliminarCuenta] = useState('');
   const [modalAyuda, setModalAyuda] = useState(false);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
+  const [passwordActualizada, setPasswordActualizada] = useState(false);
   const [passwordActual, setPasswordActual] = useState('');
   const [passwordNueva, setPasswordNueva] = useState('');
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [guardandoPassword, setGuardandoPassword] = useState(false);
   const [errorPassword, setErrorPassword] = useState('');
-  const [mostrarExitoPassword, setMostrarExitoPassword] = useState(false);
-  const [cuentaEliminada, setCuentaEliminada] = useState(false);
-  const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      let activo = true;
-      obtenerUsuarioActual()
-        .then((usuarioActual) => {
-          if (!activo) return;
-          if (!usuarioActual) {
-            router.replace('/');
-            return;
-          }
-          setUsuario(usuarioActual);
-        })
-        .catch((error: unknown) => {
-          console.error('No se pudo cargar el usuario actual:', error);
-        });
-      return () => {
-        activo = false;
-      };
-    }, [])
+      if (!usuario) router.replace('/');
+    }, [usuario])
   );
 
   const handleOpcion = (id: string) => {
@@ -83,11 +59,6 @@ export default function PerfilScreen() {
     }
     if (id === '3') {
       setModalAyuda(true);
-      return;
-    }
-    if (id === '4') {
-      setErrorEliminarCuenta('');
-      setModalEliminarCuenta(true);
       return;
     }
     setModalCerrarSesion(true);
@@ -150,12 +121,11 @@ export default function PerfilScreen() {
         accessToken: result.accessToken,
       };
       await guardarUsuarioActual(sesionActualizada);
-      setUsuario(sesionActualizada);
       setModalCambiarPassword(false);
       setPasswordActual('');
       setPasswordNueva('');
       setConfirmarPassword('');
-      setMostrarExitoPassword(true);
+      setPasswordActualizada(true);
     } catch (error) {
       setErrorPassword(
         error instanceof TypeError
@@ -166,39 +136,6 @@ export default function PerfilScreen() {
       );
     } finally {
       setGuardandoPassword(false);
-    }
-  };
-
-  const eliminarCuenta = async () => {
-    if (!usuario || eliminandoCuenta) return;
-    setEliminandoCuenta(true);
-    setErrorEliminarCuenta('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/users/${usuario.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${usuario.accessToken}` },
-      });
-      if (!response.ok) {
-        const result: unknown = await response.json().catch(() => null);
-        setErrorEliminarCuenta(
-          typeof result === 'object' &&
-            result !== null &&
-            'message' in result &&
-            typeof result.message === 'string'
-            ? result.message
-            : 'No se pudo eliminar la cuenta.'
-        );
-        return;
-      }
-      await Promise.allSettled([cancelarRecordatorios(), cerrarSesion()]);
-      setModalEliminarCuenta(false);
-      setCuentaEliminada(true);
-    } catch (error) {
-      setErrorEliminarCuenta(
-        error instanceof TypeError ? apiUnreachableMessage(error) : 'No se pudo eliminar la cuenta.'
-      );
-    } finally {
-      setEliminandoCuenta(false);
     }
   };
 
@@ -226,7 +163,7 @@ export default function PerfilScreen() {
               <Text
                 style={[
                   estilos.profileOptionText,
-                  opcion.color ? { color: opcion.color } : null,
+                  opcion.color && estilos.profileOptionTextHighlight,
                 ]}
               >
                 {opcion.nombre}
@@ -258,27 +195,32 @@ export default function PerfilScreen() {
           />
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitle}>Cambiar contraseña</Text>
+            <Text style={estilos.formLabel}>Contraseña actual</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Contraseña actual"
+              accessibilityLabel="Contraseña actual"
               value={passwordActual}
               onChangeText={setPasswordActual}
               secureTextEntry
               autoComplete="current-password"
               editable={!guardandoPassword}
             />
+            <Text style={estilos.formLabel}>Nueva contraseña</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Nueva contraseña (mínimo 8 caracteres)"
+              placeholder="Mínimo 8 caracteres"
+              placeholderTextColor="#7a8378"
+              accessibilityLabel="Nueva contraseña"
               value={passwordNueva}
               onChangeText={setPasswordNueva}
               secureTextEntry
               autoComplete="new-password"
               editable={!guardandoPassword}
             />
+            <Text style={estilos.formLabel}>Confirmar contraseña nueva</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Confirmar contraseña nueva"
+              accessibilityLabel="Confirmar contraseña nueva"
               value={confirmarPassword}
               onChangeText={setConfirmarPassword}
               secureTextEntry
@@ -318,6 +260,14 @@ export default function PerfilScreen() {
         </View>
       </Modal>
 
+      <AvisoExito
+        visible={passwordActualizada}
+        titulo="¡Contraseña actualizada!"
+        subtitulo="Ya podés ingresar con tu nueva contraseña."
+        etiquetaBoton="Cerrar aviso"
+        onCerrar={() => setPasswordActualizada(false)}
+      />
+
       <Modal
         visible={modalCerrarSesion}
         transparent
@@ -334,9 +284,9 @@ export default function PerfilScreen() {
             accessibilityLabel="Cerrar"
           />
           <View style={estilos.modalCard}>
-            <Text style={estilos.modalTitle}>¿Cerrar sesión?</Text>
+            <Text style={estilos.modalTitle}>Cerrar sesión</Text>
             <Text style={estilos.modalText}>
-              Vas a salir de tu cuenta. Vas a necesitar iniciar sesión nuevamente para entrar.
+              ¿Estás seguro de que querés salir de tu cuenta?
             </Text>
             <View style={estilos.modalActions}>
               <Pressable
@@ -399,8 +349,8 @@ export default function PerfilScreen() {
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitle}>Soporte: Ayuda</Text>
             <Text style={estilos.modalText}>
-              Atendemos de lunes a viernes de 9 a 18 hs. Podés llamarnos al 1234-5678 o escribirnos
-              a soporte@vetpro.com
+              Para recibir ayuda con un turno, contactá a la sede donde lo reservaste.
+              Para consultas generales, contactá a soporte@vetpro.com
             </Text>
             <View style={estilos.modalActions}>
               <Pressable
@@ -421,96 +371,11 @@ export default function PerfilScreen() {
           </View>
         </View>
       </Modal>
-
-      <Modal
-        visible={modalEliminarCuenta}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => {
-          if (!eliminandoCuenta) setModalEliminarCuenta(false);
-        }}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => {
-              if (!eliminandoCuenta) setModalEliminarCuenta(false);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar"
-          />
-          <View style={estilos.modalCard}>
-            <Text style={estilos.modalTitle}>¿Eliminar tu cuenta?</Text>
-            <Text style={estilos.modalText}>
-              Se van a borrar tu perfil, tus mascotas y tus turnos. Esta acción no se puede
-              deshacer.
-            </Text>
-            {errorEliminarCuenta ? (
-              <Text style={styles.passwordError} accessibilityRole="alert">
-                {errorEliminarCuenta}
-              </Text>
-            ) : null}
-            <View style={estilos.modalActions}>
-              <Pressable
-                style={({ pressed }) => [
-                  estilos.modalButton,
-                  estilos.modalButtonNeutral,
-                  pressed && estilos.buttonPressed,
-                ]}
-                onPress={() => setModalEliminarCuenta(false)}
-                disabled={eliminandoCuenta}
-                accessibilityRole="button"
-                accessibilityLabel="Cancelar"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
-                  Cancelar
-                </Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  estilos.modalButton,
-                  styles.botonEliminar,
-                  pressed && estilos.buttonPressed,
-                ]}
-                onPress={() => void eliminarCuenta()}
-                disabled={eliminandoCuenta}
-                accessibilityRole="button"
-                accessibilityLabel="Confirmar eliminación de cuenta"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  {eliminandoCuenta ? 'Eliminando...' : 'Eliminar'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <AvisoExito
-        visible={mostrarExitoPassword}
-        titulo="¡Contraseña actualizada!"
-        subtitulo="Ya podés ingresar con tu nueva contraseña."
-        etiquetaBoton="Cerrar aviso de contraseña actualizada"
-        onCerrar={() => setMostrarExitoPassword(false)}
-      />
-
-      <AvisoExito
-        visible={cuentaEliminada}
-        titulo="¡Cuenta eliminada!"
-        subtitulo="Tu cuenta, tus mascotas y tus turnos se eliminaron correctamente."
-        etiquetaBoton="Cerrar aviso de cuenta eliminada"
-        onCerrar={() => {
-          setCuentaEliminada(false);
-          router.replace('/');
-        }}
-      />
     </AppDrawer>
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   passwordInput: {
     marginBottom: 12,
   },
@@ -520,7 +385,4 @@ const styles = {
     lineHeight: 20,
     marginTop: 4,
   },
-  botonEliminar: {
-    backgroundColor: '#a32828',
-  },
-};
+});

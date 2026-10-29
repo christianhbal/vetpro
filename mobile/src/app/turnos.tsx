@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
+import { StyleSheet,
+  Alert,
   ActivityIndicator,
+  FlatList,
   Image,
   Modal,
   Pressable,
@@ -26,8 +28,8 @@ import {
   type TurnoGuardado,
 } from '@/lib/datos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 
@@ -36,7 +38,6 @@ import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 type TurnoLista = TurnoGuardado & {
   atendidoEn?: string | null;
   descripcion?: string | null;
-  esDemo?: boolean;
   /** Ocupa la agenda pero no se muestra en las listas de esta pantalla. */
   ocultoEnAgenda?: boolean;
   user?: { nombre: string } | null;
@@ -100,6 +101,8 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 export default function TurnosScreen() {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
   const { sedes, cargandoSedes, errorSedes } = useSedes();
   const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
   const [turnos, setTurnos] = useState<TurnoLista[]>([]);
@@ -108,6 +111,11 @@ export default function TurnosScreen() {
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [cancelando, setCancelando] = useState(false);
+  const [registrandoLlegada, setRegistrandoLlegada] = useState(false);
+  const [confirmarLlegada, setConfirmarLlegada] = useState(false);
+  const [confirmarEliminarRegistro, setConfirmarEliminarRegistro] = useState(false);
+  const [eliminandoRegistro, setEliminandoRegistro] = useState(false);
+  const [errorEliminarRegistro, setErrorEliminarRegistro] = useState('');
   const [errorCancelar, setErrorCancelar] = useState('');
   // Datos del turno recien guardado o cancelado, para los avisos de exito.
   const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
@@ -129,8 +137,8 @@ export default function TurnosScreen() {
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
-  const [esAdmin, setEsAdmin] = useState(false);
-  const [token, setToken] = useState('');
+  const esAdmin = usuarioSesion?.esAdmin === true;
+  const token = usuarioSesion?.accessToken ?? '';
 const [, setSedeCompartida] = useSedeSeleccionada();
 const [filtroSede, guardarFiltro] = useFiltroTurnos(sedes, cargandoSedes, errorSedes);
 const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
@@ -144,13 +152,11 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     setCargando(true);
     setError('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
       }
-      setEsAdmin(usuario.esAdmin);
-      setToken(usuario.accessToken);
 
       // El admin ve la agenda completa; el usuario, solo sus turnos.
       const response = await fetch(
@@ -174,13 +180,13 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
       void cargarTurnos();
       void sincronizarRecordatorios();
-    }, [cargarTurnos])
+    }, [cargarTurnos, sincronizarRecordatorios])
   );
 
   // El momento se guarda al cargar los datos: es la referencia para saber que
@@ -200,18 +206,16 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     guardado: turno,
   });
 
-  const turnosVisibles = useMemo(() => turnos.filter((turno) => !turno.esDemo), [turnos]);
-
   const proximos = useMemo(
     () =>
-      turnosVisibles.filter(
+      turnos.filter(
         (turno) =>
           !turno.ocultoEnAgenda &&
           (turno.atendidoEn === null || turno.atendidoEn === undefined) &&
           (turno.llegadaEn === null || turno.llegadaEn === undefined) &&
           turnoSiguePendiente(turno, ahora)
       ),
-    [turnosVisibles, ahora]
+    [turnos, ahora]
   );
 
   // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
@@ -219,8 +223,8 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
   //  - admin: la agenda compartida de la veterinaria, tal cual la devuelve la API.
   //  - cliente: los turnos vinculados a su cuenta.
   const porDia = useMemo(
-    () => turnosVisibles.filter((turno) => !turno.ocultoEnAgenda),
-    [turnosVisibles]
+    () => turnos.filter((turno) => !turno.ocultoEnAgenda),
+    [turnos]
   );
 
   const sedesDisponibles = useMemo(
@@ -230,7 +234,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
 
   const turnosDelDia = useMemo(() => {
     const idsProximos = new Set(proximos.map((turno) => turno.id));
-    const origen = fechaSeleccionada === null ? turnosVisibles : porDia;
+    const origen = fechaSeleccionada === null ? turnos : porDia;
 
     return origen
       .filter((turno) => filtroSede === 'Todas' || turno.sede === filtroSede)
@@ -249,7 +253,7 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           ? a.hora.localeCompare(b.hora)
           : a.fecha.localeCompare(b.fecha);
       });
-  }, [fechaSeleccionada, filtroSede, porDia, proximos, turnosVisibles]);
+  }, [fechaSeleccionada, filtroSede, porDia, proximos, turnos]);
 
   /**
    * Un turno se puede cancelar desde aca si todavia no se atendio y el paciente
@@ -271,6 +275,50 @@ const puedeCancelar =
    citaSeleccionada.guardado.id > 0 &&
    selloDe(citaSeleccionada.guardado) === null;
 
+  const puedeMarcarLlegada = puedeEditar && citaSeleccionada?.guardado.fecha === fechaComoValor(new Date());
+  const puedeEliminarRegistro = esAdmin && citaSeleccionada?.atendido === true;
+
+  const eliminarRegistro = async () => {
+    if (!citaSeleccionada || eliminandoRegistro || !token) return;
+    setEliminandoRegistro(true);
+    setErrorEliminarRegistro('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.id}/registro`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) throw new Error(mensajeApi(result) ?? 'No se pudo eliminar el registro.');
+      setConfirmarEliminarRegistro(false);
+      setCitaSeleccionada(null);
+      await cargarTurnos();
+    } catch (error) {
+      setErrorEliminarRegistro(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo eliminar el registro.');
+    } finally {
+      setEliminandoRegistro(false);
+    }
+  };
+
+  const marcarLlegada = async () => {
+    if (!citaSeleccionada || registrandoLlegada || !token) return;
+    setRegistrandoLlegada(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.id}/llegada`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) throw new Error(mensajeApi(result) ?? 'No se pudo registrar la llegada.');
+      setConfirmarLlegada(false);
+      setCitaSeleccionada(null);
+      await cargarTurnos();
+      Alert.alert('Llegada registrada', 'El turno ya puede ser atendido.');
+    } catch (error) {
+      Alert.alert('No se pudo registrar la llegada', error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'Intentá nuevamente.');
+    } finally {
+      setRegistrandoLlegada(false);
+    }
+  };
+
 
   // Los horarios tomados del mes, para que el campo de hora no ofrezca uno que
   // ya esta ocupado.
@@ -281,7 +329,7 @@ const puedeCancelar =
       setErrorDisponibilidad('');
       setHorariosOcupados([]);
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) {
           throw new Error('Inicia sesión para consultar la disponibilidad.');
         }
@@ -309,7 +357,7 @@ const puedeCancelar =
         setCargandoDisponibilidad(false);
       }
     },
-    []
+    [usuarioSesion]
   );
 
   const abrirEdicion = (turno: TurnoLista) => {
@@ -334,18 +382,6 @@ const puedeCancelar =
   const guardarCambios = async () => {
     if (!citaSeleccionada || guardando) return;
     setErrorGuardado('');
-
-    // El backend tambien lo rechaza, pero avisar aca evita el viaje y deja el
-    // error al lado del campo.
-    if (
-      `${fechaForm.trim()}T${horaForm.trim()}` <
-      `${citaSeleccionada.guardado.fecha}T${citaSeleccionada.guardado.hora}`
-    ) {
-      setErrorGuardado(
-        'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.'
-      );
-      return;
-    }
 
     setGuardando(true);
     try {
@@ -554,29 +590,28 @@ const puedeCancelar =
     </View>
   );
 
-  const cuerpoLista = (citas: CitaLista[], vacio: string) => {
+  const estadoLista = (vacio: string) => {
     if (cargando) {
       return <ActivityIndicator color="#2f7a3f" style={styles.cargandoLista} />;
     }
     if (error) {
       return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{error}</Text>;
     }
-    if (citas.length === 0) {
-      return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{vacio}</Text>;
-    }
-    return <>{citas.map(renderTurno)}</>;
+    return <Text style={[estilos.cardSubtituloTurno, styles.notaVacia]}>{vacio}</Text>;
   };
 
   const seccionLista = (titulo: string, citas: CitaLista[], vacio: string) => (
     <View style={styles.lista}>
       {encabezadoSeccion(titulo, citas)}
-      <ScrollView
+      <FlatList
+        data={cargando || error ? [] : citas}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => renderTurno(item)}
+        ListEmptyComponent={estadoLista(vacio)}
         nestedScrollEnabled
         showsVerticalScrollIndicator
         contentContainerStyle={styles.listaContenido}
-      >
-        {cuerpoLista(citas, vacio)}
-      </ScrollView>
+      />
     </View>
   );
 
@@ -599,6 +634,10 @@ const puedeCancelar =
     : esAdmin
       ? 'No hay turnos próximos agendados.'
       : 'No tenés turnos próximos agendados.';
+
+  const estilosAdaptados = StyleSheet.create({
+    altoAgenda: { height: altoAgendar },
+  });
 
   return (
     <AppDrawer title="Turnos">
@@ -655,7 +694,7 @@ const puedeCancelar =
           {seccionLista(tituloLista, turnosDelDia.map(aCita), vacioLista)}
         </View>
 
-        <View style={[styles.agendar, { height: altoAgendar }]}>
+        <View style={[styles.agendar, estilosAdaptados.altoAgenda]}>
           <Pressable
             style={({ pressed }) => [styles.agendarBoton, pressed && estilos.buttonPressed]}
             onPress={() =>
@@ -773,6 +812,20 @@ const puedeCancelar =
                 </>
               )}
 
+              {puedeMarcarLlegada || puedeEditar || puedeCancelar || puedeEliminarRegistro ? (
+              <View style={styles.accionesTurno}>
+              {puedeMarcarLlegada ? (
+                <Pressable
+                  style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
+                  onPress={() => setConfirmarLlegada(true)}
+                  disabled={registrandoLlegada}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="checkmark-circle-outline" size={19} color="#ffffff" />
+                  <Text style={styles.modificarTexto}>{registrandoLlegada ? 'Registrando...' : 'Marcar que llegó'}</Text>
+                </Pressable>
+              ) : null}
+
               {puedeEditar ? (
                 <Pressable
                   style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
@@ -803,8 +856,93 @@ const puedeCancelar =
                   </View>
                 </Pressable>
               ) : null}
+              {puedeEliminarRegistro ? (
+                <Pressable
+                  style={({ pressed }) => [styles.eliminar, pressed && estilos.buttonPressed]}
+                  onPress={() => { setErrorEliminarRegistro(''); setConfirmarEliminarRegistro(true); }}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.eliminarFila}>
+                    <Ionicons name="trash-outline" size={19} color="#8a5324" />
+                    <Text style={styles.eliminarTexto}>Eliminar registro</Text>
+                  </View>
+                </Pressable>
+              ) : null}
+              </View>
+              ) : null}
             </View>
           )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={confirmarEliminarRegistro}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => { if (!eliminandoRegistro) setConfirmarEliminarRegistro(false); }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable style={estilos.petModalBackdrop} onPress={() => { if (!eliminandoRegistro) setConfirmarEliminarRegistro(false); }} accessibilityRole="button" accessibilityLabel="Cerrar confirmación" />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>¿Eliminar registro?</Text>
+            <Text style={estilos.modalText}>El turno y la descripción de la atención se eliminarán permanentemente del historial de {citaSeleccionada?.mascota ?? 'la mascota'}. Esta acción no se puede deshacer.</Text>
+            {errorEliminarRegistro ? <Text style={styles.errorCancelar} accessibilityRole="alert">{errorEliminarRegistro}</Text> : null}
+            <View style={[estilos.modalActions, styles.accionesCentradas]}>
+              <Pressable style={({ pressed }) => [estilos.modalButton, estilos.modalButtonNeutral, pressed && estilos.buttonPressed]} onPress={() => setConfirmarEliminarRegistro(false)} disabled={eliminandoRegistro} accessibilityRole="button">
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [estilos.modalButton, styles.confirmarCancelacion, pressed && estilos.buttonPressed]} onPress={() => void eliminarRegistro()} disabled={eliminandoRegistro} accessibilityRole="button" accessibilityState={{ busy: eliminandoRegistro }}>
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>{eliminandoRegistro ? 'Eliminando...' : 'Eliminar'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={confirmarLlegada}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => { if (!registrandoLlegada) setConfirmarLlegada(false); }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => { if (!registrandoLlegada) setConfirmarLlegada(false); }}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar confirmación"
+          />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>¿Marcar que llegó?</Text>
+            <Text style={estilos.modalText}>
+              Se registrará la llegada de {citaSeleccionada?.mascota ?? 'la mascota'} a la veterinaria y podrá ser atendido.
+            </Text>
+            <View style={[estilos.modalActions, styles.accionesCentradas]}>
+              <Pressable
+                style={({ pressed }) => [estilos.modalButton, estilos.modalButtonNeutral, pressed && estilos.buttonPressed]}
+                onPress={() => setConfirmarLlegada(false)}
+                disabled={registrandoLlegada}
+                accessibilityRole="button"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [estilos.modalButton, estilos.modalButtonPrimary, pressed && estilos.buttonPressed]}
+                onPress={() => void marcarLlegada()}
+                disabled={registrandoLlegada}
+                accessibilityRole="button"
+                accessibilityState={{ busy: registrandoLlegada }}
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {registrandoLlegada ? 'Registrando...' : 'Confirmar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -1065,26 +1203,26 @@ const puedeCancelar =
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   pantalla: { flex: 1, backgroundColor: '#fffefc' },
   modalNombreMascota: {
     color: '#0f3e17',
     fontSize: 20,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
     marginTop: 2,
   },
   errorGuardado: { color: '#a32828', fontSize: 14, lineHeight: 20, marginTop: 10 },
   label: {
     color: '#4d6154',
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     marginTop: 12,
     marginBottom: 6,
   },
-  filaOpciones: { flexDirection: 'row' as const, gap: 6, marginBottom: 4 },
+  filaOpciones: { flexDirection: 'row', gap: 6, marginBottom: 4 },
   opcion: {
     flex: 1,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     paddingVertical: 11,
     borderWidth: 1.5,
     borderColor: '#cfdcc9',
@@ -1092,33 +1230,33 @@ const styles = {
     backgroundColor: '#fffefc',
   },
   opcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
-  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
+  opcionTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
+  opcionTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
   bloqueCampo: { marginTop: 12 },
-  labelCampo: { color: '#4d6154', fontSize: 13, fontWeight: '600' as const, marginBottom: 6 },
+  labelCampo: { color: '#4d6154', fontSize: 13, fontWeight: '600', marginBottom: 6 },
   confirmar: {
-    alignItems: 'center' as const,
+    alignItems: 'center',
     marginTop: 16,
     paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
+  confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
+  accionesTurno: { marginTop: 18, gap: 10 },
   modificar: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    marginTop: 18,
     paddingVertical: 13,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  modificarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' as const },
+  modificarTexto: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
   motivoLabel: {
     color: '#4d6154',
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     marginTop: 16,
     marginBottom: 6,
   },
@@ -1135,8 +1273,7 @@ const styles = {
   },
   motivoAyuda: { marginTop: 6, color: '#69746a', fontSize: 12, lineHeight: 18 },
   eliminar: {
-    alignItems: 'center' as const,
-    marginTop: 10,
+    alignItems: 'center',
     paddingVertical: 13,
     borderWidth: 1.5,
     borderColor: '#d3a179',
@@ -1144,22 +1281,22 @@ const styles = {
     backgroundColor: '#f7ede6',
   },
   eliminarFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
-  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
+  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' },
   confirmarCancelacion: { backgroundColor: '#a32828' },
   errorCancelar: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
   // La confirmacion es una decision, no una accion de formulario: los botones
   // van al centro de la ventana, parejos y con el mismo peso a los lados. En los
   // formularios siguen a la derecha porque la accion vive abajo del contenido.
-  accionesCentradas: { justifyContent: 'center' as const },
+  accionesCentradas: { justifyContent: 'center' },
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   bloqueSede: { marginBottom: 12 },
-  labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' as const },
-  filaSedes: { flexDirection: 'row' as const, gap: 8 },
+  labelSede: { marginBottom: 8, color: '#4d6154', fontSize: 13, fontWeight: '600' },
+  filaSedes: { flexDirection: 'row', gap: 8 },
   sedeChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1169,8 +1306,8 @@ const styles = {
     backgroundColor: '#fffefc',
   },
   sedeChipActivo: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  sedeTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' as const },
-  sedeTextoActivo: { color: '#0f3e17', fontWeight: 'bold' as const },
+  sedeTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
+  sedeTextoActivo: { color: '#0f3e17', fontWeight: 'bold' },
   // El padding lateral tiene que ser el mismo que el de la cabecera para que la
   // tarjeta de la lista quede del mismo ancho que el calendario de arriba.
   listas: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
@@ -1181,13 +1318,13 @@ const styles = {
     borderColor: '#dcecdc',
     borderRadius: 16,
     backgroundColor: '#f2f9f1',
-    overflow: 'hidden' as const,
+    overflow: 'hidden',
   },
   listaEncabezado: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 9 },
   listaFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
   },
   tituloSeccion: { marginTop: 0, marginBottom: 0, flex: 1 },
@@ -1196,15 +1333,15 @@ const styles = {
   cargandoLista: { paddingVertical: 20 },
   notaVacia: { paddingBottom: 8 },
   turnoFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     minHeight: 64,
   },
   turnoFoto: { width: 56, height: 56, borderRadius: 12 },
   turnoFotoVacia: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#e2f2e4' },
   turnoTexto: { flex: 1 },
-dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+dueno: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
 sello: {
    borderWidth: 1,
    borderColor: '#0f3e17',
@@ -1213,10 +1350,10 @@ sello: {
    paddingVertical: 2,
    backgroundColor: '#e8f3e4',
   },
-  selloTexto: { color: '#0f3e17', fontSize: 11, fontWeight: '700' as const },
+  selloTexto: { color: '#0f3e17', fontSize: 11, fontWeight: '700' },
   turnoEncabezado: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   turnoTitulo: { flexShrink: 1 },
@@ -1226,7 +1363,7 @@ sello: {
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
-  modalEtiqueta: { fontWeight: '700' as const, color: '#0f3e17' },
+  modalEtiqueta: { fontWeight: '700', color: '#0f3e17' },
   irBoton: { marginTop: 20, marginBottom: 0 },
   agendar: {
     paddingHorizontal: 15,
@@ -1235,8 +1372,8 @@ sello: {
   },
   agendarBoton: {
     flex: 1,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     paddingHorizontal: 14,
     borderWidth: 1,
@@ -1247,12 +1384,12 @@ sello: {
   agendarIcono: {
     width: 40,
     height: 40,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 20,
     backgroundColor: '#2f7a3f',
   },
   agendarTexto: { flex: 1 },
-  agendarTitulo: { color: '#0f3e17', fontSize: 17, fontWeight: 'bold' as const },
+  agendarTitulo: { color: '#0f3e17', fontSize: 17, fontWeight: 'bold' },
   agendarSubtitulo: { marginTop: 2, color: '#6b7d6d', fontSize: 13 },
-};
+});

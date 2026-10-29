@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import {
   ActivityIndicator,
   FlatList,
@@ -63,6 +63,7 @@ function resumenDias(dias: string[]): string {
 }
 
 export default function AdminSedesScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -72,7 +73,7 @@ export default function AdminSedesScreen() {
     setCargando(true);
     setErrorLista('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario?.esAdmin) { router.replace('/app'); return; }
       const response = await fetch(`${API_BASE_URL}/api/sedes`, { headers: { Authorization: `Bearer ${usuario.accessToken}` } });
       const resultado = await response.json();
@@ -81,7 +82,7 @@ export default function AdminSedesScreen() {
     } catch (error) {
       setErrorLista(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudieron cargar las sedes.');
     } finally { setCargando(false); }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(useCallback(() => { void cargarSedes(); }, [cargarSedes]));
 
@@ -165,7 +166,7 @@ export default function AdminSedesScreen() {
 
     setGuardando(true);
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario?.esAdmin) { router.replace('/app'); return; }
       const editando = sedeEnEdicion !== null;
       const response = await fetch(`${API_BASE_URL}/api/admin/sedes${editando ? `/${sedeEnEdicion.id}` : ''}`, {
@@ -189,7 +190,7 @@ export default function AdminSedesScreen() {
     setGuardando(true);
     setErrorEliminar('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario?.esAdmin) { router.replace('/app'); return; }
       const response = await fetch(`${API_BASE_URL}/api/admin/sedes/${sedeAEliminar.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${usuario.accessToken}` } });
       if (!response.ok) {
