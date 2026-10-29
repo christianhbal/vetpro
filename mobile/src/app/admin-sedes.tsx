@@ -230,7 +230,9 @@ export default function AdminSedesScreen() {
                 </View>
                 <View style={styles.sedeTexto}>
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
-                  <Text style={estilos.cardSubtitle}>{item.direccion}</Text>
+                  <Text style={estilos.cardSubtitle} numberOfLines={1} ellipsizeMode="tail">
+                    {item.direccion}
+                  </Text>
                   <View style={styles.horarioFila}>
                     <Text style={styles.horarioTexto}>
                       {resumenDias(item.dias)} · {item.horaDesde} a {item.horaHasta}

@@ -173,11 +173,20 @@ function VentanaAviso({
   const turno = turnoDelAviso(aviso);
   const sede = (turno?.sede ?? aviso.sede ?? null) as SedeVeterinaria | null;
   const hora = turno?.hora ?? aviso.hora ?? null;
+  const detalleCambios = tipo === 'modificado' ? aviso.message.split(' cambió: ')[1] : undefined;
+  const cambios = detalleCambios
+    ? detalleCambios.replace(/\.$/, '').split(/, (?=(?:tipo|sede|fecha|hora): )/).map((cambio) => {
+        const separador = cambio.indexOf(': ');
+        return { campo: cambio.slice(0, separador), valor: cambio.slice(separador + 2) };
+      }).filter((cambio) => ['tipo', 'sede', 'fecha', 'hora'].includes(cambio.campo))
+    : [];
   const cuerpo =
     tipo === 'recordatorio' && turno
       ? `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'} el ${turno.fecha.split('-').reverse().join('/')} a las ${turno.hora}.`
       : tipo === 'recordatorio'
         ? 'Este turno ya no está disponible.'
+      : tipo === 'modificado' && cambios.length > 0
+        ? `El turno de ${aviso.mascota?.nombre ?? 'tu mascota'} cambió:`
       : tipo === 'cancelado'
         ? aviso.motivo ?? aviso.message
         : aviso.message;
@@ -203,13 +212,14 @@ function VentanaAviso({
             <Text style={styles.avisoSubtitulo}>{cuerpo}</Text>
           ) : null}
 
-          {sede && hora && turno !== null ? (
+          {(sede && hora && (tipo !== 'recordatorio' || turno !== null)) || (tipo === 'modificado' && cambios.length > 0) ? (
             <View style={styles.avisoDatos}>
+              {sede && hora ? <>
               <View style={styles.avisoDato}>
                 <Ionicons name="location-outline" size={17} color="#0f3e17" />
                 <Text style={styles.avisoDatoTexto}>
                   <Text style={styles.cartelEtiqueta}>Sede: </Text>
-                  {sede}
+                  {cambios.find((cambio) => cambio.campo === 'sede')?.valor ?? sede}
                 </Text>
               </View>
               <View style={styles.avisoDato}>
@@ -223,9 +233,10 @@ function VentanaAviso({
                 <Ionicons name="time-outline" size={17} color="#0f3e17" />
                 <Text style={styles.avisoDatoTexto}>
                   <Text style={styles.cartelEtiqueta}>Hora: </Text>
-                  {hora}
+                  {cambios.find((cambio) => cambio.campo === 'hora')?.valor ?? hora}
                 </Text>
               </View>
+              </> : null}
               {tipo === 'cancelado' ? (
                 <View style={styles.avisoDatoArriba}>
                   <Ionicons name="chatbox-ellipses-outline" size={17} color="#0f3e17" />
@@ -235,6 +246,15 @@ function VentanaAviso({
                   </Text>
                 </View>
               ) : null}
+              {tipo === 'modificado' ? cambios.filter((cambio) => cambio.campo === 'tipo' || cambio.campo === 'fecha' || (!sede || !hora)).map((cambio) => (
+                <View style={styles.avisoDato} key={cambio.campo}>
+                  <Ionicons name={cambio.campo === 'fecha' ? 'calendar-outline' : 'medical-outline'} size={17} color="#0f3e17" />
+                  <Text style={styles.avisoDatoTexto}>
+                    <Text style={styles.cartelEtiqueta}>{cambio.campo.charAt(0).toUpperCase() + cambio.campo.slice(1)}: </Text>
+                    {cambio.campo === 'fecha' ? cambio.valor.replace(/\d{4}-\d{2}-\d{2}/g, (fecha) => fecha.split('-').reverse().join('/')) : cambio.valor}
+                  </Text>
+                </View>
+              )) : null}
             </View>
           ) : null}
 
