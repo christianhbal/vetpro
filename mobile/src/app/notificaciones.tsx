@@ -120,6 +120,9 @@ function turnoDelAviso(aviso: Aviso): Aviso['turno'] {
  */
 function textoDelAviso(aviso: Aviso): string {
   const turno = turnoDelAviso(aviso);
+  if (!aviso.esGlobal && aviso.title === TITULO_MODIFICADO) {
+    return `El turno de ${aviso.mascota?.nombre ?? 'tu mascota'} cambió. Tocá para ver los detalles.`;
+  }
   if (aviso.title !== TITULO_TURNO) return aviso.message;
   if (turno === null) return 'Tocá para ver los detalles de tu turno.';
   return `Turno para ${aviso.mascota?.nombre ?? 'tu mascota'}. Tocá para ver los detalles.`;
@@ -180,16 +183,27 @@ function VentanaAviso({
         return { campo: cambio.slice(0, separador), valor: cambio.slice(separador + 2) };
       }).filter((cambio) => ['tipo', 'sede', 'fecha', 'hora'].includes(cambio.campo))
     : [];
-  const cuerpo =
-    tipo === 'recordatorio' && turno
-      ? `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'} el ${turno.fecha.split('-').reverse().join('/')} a las ${turno.hora}.`
-      : tipo === 'recordatorio'
-        ? 'Este turno ya no está disponible.'
-      : tipo === 'modificado' && cambios.length > 0
-        ? `El turno de ${aviso.mascota?.nombre ?? 'tu mascota'} cambió:`
-      : tipo === 'cancelado'
-        ? aviso.motivo ?? aviso.message
-        : aviso.message;
+  const cuerpo = (() => {
+  if (tipo === 'recordatorio') {
+    if (!turno) {
+      return 'Este turno ya no está disponible.';
+    }
+
+    const mascota = aviso.mascota?.nombre ?? 'tu mascota';
+
+    return `Falta menos de una hora para el turno de ${mascota}.`;
+  }
+
+  if (tipo === 'modificado' && cambios.length > 0) {
+    return `El turno de ${aviso.mascota?.nombre ?? 'tu mascota'} cambió:`;
+  }
+
+  if (tipo === 'cancelado') {
+    return aviso.motivo ?? aviso.message;
+  }
+
+  return aviso.message;
+})();
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
@@ -720,12 +734,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   avisoFoto: {
+    alignSelf: 'center',
     width: 46,
     height: 46,
     borderRadius: 12,
-    backgroundColor: '#cfe7d3',
+    backgroundColor: '#b1dbb8',
   },
   avisoLogo: {
+    alignSelf: 'center',
     width: 58,
     height: 46,
     borderRadius: 12,
@@ -743,6 +759,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   listaVacia: { padding: 24, alignItems: 'center' },
-  filaAviso: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  filaAviso: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   contenidoAviso: { flex: 1 },
 });
