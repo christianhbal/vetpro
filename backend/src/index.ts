@@ -11,6 +11,15 @@ import { initDatabase } from './initDb';
 
 const app = express();
 const prisma = new PrismaClient();
+async function limitarNotificaciones(tx: Prisma.TransactionClient, userId: number) {
+  const avisos = await tx.notification.findMany({ where: { userId }, orderBy: { id: 'desc' }, select: { id: true, createdAt: true } });
+  const limite = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const antiguas = avisos.filter((aviso, indice) => {
+    const fecha = aviso.createdAt.includes('T') ? aviso.createdAt : `${aviso.createdAt.replace(' ', 'T')}Z`;
+    return indice >= 15 || new Date(fecha).getTime() <= limite;
+  });
+  if (antiguas.length) await tx.notification.deleteMany({ where: { id: { in: antiguas.map((aviso) => aviso.id) } } });
+}
 const port = Number(process.env.PORT || 3000);
 const MIN_PASSWORD_LENGTH = 8;
 const APPOINTMENT_REMINDER_WINDOW_MS = 60 * 60 * 1000;
@@ -199,7 +208,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
         });
         if (actualizado.count === 0) return null;
 
-        return transaction.notification.create({
+        const aviso = await transaction.notification.create({
           data: {
             userId: turno.userId,
             turnoId: turno.id,
@@ -209,6 +218,8 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
             message: `Dentro de aproximadamente una hora tienes un turno de ${turno.tipo} para ${turno.mascota.nombre} en la sede ${sede}.`,
           },
         });
+        await limitarNotificaciones(transaction, turno.userId);
+        return aviso;
       });
     } catch (error) {
       console.error(`No se pudo crear el recordatorio del turno ${turno.id}:`, error);
@@ -1101,6 +1112,7 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
           })
         : null;
 
+      if (notification) await limitarNotificaciones(transaction, turno.userId);
       return { turno, notification };
     });
     if (!resultado) {
@@ -1213,6 +1225,7 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
       });
 
       await transaction.turno.delete({ where: { id } });
+      await limitarNotificaciones(transaction, turno.userId);
 
       return { turno, notification };
     });
@@ -1262,6 +1275,13 @@ app.post('/api/notifications/reminders', async (request, response) => {
 app.get('/api/notifications', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
+
+  try {
+    await prisma.$transaction((tx) => limitarNotificaciones(tx, user.id));
+  } catch (error) {
+    console.error('No se pudieron limpiar las notificaciones:', error);
+    return response.status(500).json({ message: 'No se pudieron cargar las notificaciones.' });
+  }
 
   // El recordatorio de "¿tu turno se acerca?" es para el dueno del turno, que
   // es el que tiene que presentarse. Un admin atiende, no espera, asi que no
@@ -1337,13 +1357,12 @@ app.post('/api/notifications/global', async (request, response) => {
     // muestra a uno lo que otro ya leyo) y es la unica forma de que cada
     // cliente vea el suyo en su propia lista.
     const usuarios = await prisma.usuario.findMany({ select: { id: true } });
-    const creados = await prisma.notification.createMany({
-      data: usuarios.map((usuario) => ({
-        userId: usuario.id,
-        title: title.trim(),
-        message: message.trim(),
-        esGlobal: true,
-      })),
+    const creados = await prisma.$transaction(async (tx) => {
+      const resultado = await tx.notification.createMany({ data: usuarios.map((usuario) => ({
+        userId: usuario.id, title: title.trim(), message: message.trim(), esGlobal: true,
+      })) });
+      for (const usuario of usuarios) await limitarNotificaciones(tx, usuario.id);
+      return resultado;
     });
 
     return response.status(201).json({ creadas: creados.count });
@@ -1720,10 +1739,13 @@ app.post('/api/password-reset/request', async (request, response) => {
       for (const admin of admins) {
         // Leída no significa resuelta: no se duplica una solicitud por abrirla.
         const pendiente = await tx.notification.findFirst({ where: { userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email } });
-        if (!pendiente) await tx.notification.create({ data: {
-          userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email,
-          title: 'Recuperación de contraseña', message: usuario.nombre,
-        } });
+        if (!pendiente) {
+          await tx.notification.create({ data: {
+            userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email,
+            title: 'Recuperación de contraseña', message: usuario.nombre,
+          } });
+          await limitarNotificaciones(tx, admin.id);
+        }
       }
     });
     return response.json({ message: 'Si el correo está registrado, la veterinaria recibirá la solicitud.' });

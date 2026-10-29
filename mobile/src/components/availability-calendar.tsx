@@ -1025,6 +1025,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     gap: 5,
     marginTop: 7,
     marginBottom: 10,

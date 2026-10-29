@@ -33,8 +33,7 @@ import { useRecordatorios } from '@/lib/recordatorios';
 import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 
-// La respuesta del admin trae turno ajeno y estado de atención; el usuario
-// normal solo ve los suyos.
+// El admin recibe datos adicionales de los turnos.
 type TurnoLista = TurnoGuardado & {
   atendidoEn?: string | null;
   descripcion?: string | null;
@@ -117,14 +116,12 @@ export default function TurnosScreen() {
   const [eliminandoRegistro, setEliminandoRegistro] = useState(false);
   const [errorEliminarRegistro, setErrorEliminarRegistro] = useState('');
   const [errorCancelar, setErrorCancelar] = useState('');
-  // Datos del turno recien guardado o cancelado, para los avisos de exito.
   const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
     null
   );
   const [turnoCancelado, setTurnoCancelado] = useState<{ mascota: string; texto: string } | null>(
     null
   );
-  // Modificar un turno: solo el admin, y solo sobre los que no tienen sello.
   const [editando, setEditando] = useState(false);
   const [tipo, setTipo] = useState('Control');
   const [sedeForm, setSedeForm] = useState<SedeVeterinaria>('');
@@ -189,8 +186,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     }, [cargarTurnos, sincronizarRecordatorios])
   );
 
-  // El momento se guarda al cargar los datos: es la referencia para saber que
-  // turnos ya pasaron su hora.
   const valorHoy = fechaComoValor(ahora);
 
   const aCita = (turno: TurnoLista): CitaLista => ({
@@ -218,10 +213,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
     [turnos, ahora]
   );
 
-  // Con un dia elegido se ve todo lo agendado para ese dia, aunque la hora ya
-  // haya pasado o el turno figure atendido, y cada rol ve lo suyo:
-  //  - admin: la agenda compartida de la veterinaria, tal cual la devuelve la API.
-  //  - cliente: los turnos vinculados a su cuenta.
   const porDia = useMemo(
     () => turnos.filter((turno) => !turno.ocultoEnAgenda),
     [turnos]
@@ -243,8 +234,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
           ? idsProximos.has(turno.id)
           : turno.fecha === fechaSeleccionada
       )
-      // Los atendidos van al final. Lo primero que se ve es lo que falta
-      // atender, que es lo que interesa; dentro de cada grupo, por hora.
       .sort((a, b) => {
         const atendidoA = a.atendidoEn !== null && a.atendidoEn !== undefined;
         const atendidoB = b.atendidoEn !== null && b.atendidoEn !== undefined;
@@ -255,12 +244,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
       });
   }, [fechaSeleccionada, filtroSede, porDia, proximos, turnos]);
 
-  /**
-   * Un turno se puede cancelar desde aca si todavia no se atendio y el paciente
-   * no llego. Lo puede hacer el dueño de la mascota o el veterinario: es el turno
-   * de ellos.
-
-   */
 const puedeCancelar =
    citaSeleccionada !== null &&
    citaSeleccionada.guardado.id > 0 &&
@@ -1289,9 +1272,6 @@ const styles = StyleSheet.create({
   eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' },
   confirmarCancelacion: { backgroundColor: '#a32828' },
   errorCancelar: { marginTop: 12, color: '#a32828', fontSize: 13, lineHeight: 19 },
-  // La confirmacion es una decision, no una accion de formulario: los botones
-  // van al centro de la ventana, parejos y con el mismo peso a los lados. En los
-  // formularios siguen a la derecha porque la accion vive abajo del contenido.
   accionesCentradas: { justifyContent: 'center' },
   cabecera: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   bloqueSede: { marginBottom: 12 },
@@ -1308,8 +1288,6 @@ const styles = StyleSheet.create({
   sedeChipActivo: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
   sedeTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
   sedeTextoActivo: { color: '#0f3e17', fontWeight: 'bold' },
-  // El padding lateral tiene que ser el mismo que el de la cabecera para que la
-  // tarjeta de la lista quede del mismo ancho que el calendario de arriba.
   listas: { flex: 1, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
   lista: {
     flex: 1,
