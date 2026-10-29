@@ -86,8 +86,6 @@ type Props = {
   sedeFija?: SedeVeterinaria | null;
   /** Nombre a mostrar cuando la mascota viene fija, por si el id no llego. */
   mascotaNombreFija?: string;
-  /** Version mas chica, para cuando la agenda entra dentro de otra pantalla. */
-  compacta?: boolean;
   /**
    * Oculta el boton "Guardar turno". Lo usa la pantalla de atencion, que ya
    * tiene su propio boton y hace las dos cosas juntas.
@@ -173,7 +171,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       mascotaIdFija = null,
       mascotaNombreFija,
       sedeFija = null,
-      compacta = false,
       ocultarBotonGuardar = false,
       comoAdmin = false,
       ocultarAviso = false,
@@ -548,10 +545,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar, elegido }));
 
     // Mantener el calendario legible también en pantallas chicas.
-    const altoDia = Math.max(36, Math.round((compacta ? 32 : 36) * escala));
-    const altoSlot = Math.max(44, Math.round((compacta ? 44 : 46) * escala));
-    const diaText = Math.max(14, Math.round((compacta ? 12 : 13) * escala));
-    const slotText = Math.max(12, Math.round((compacta ? 12 : 13) * escala));
+    const altoDia = Math.max(36, Math.round(36 * escala));
+    const altoSlot = Math.max(44, Math.round(46 * escala));
+    const diaText = Math.max(14, Math.round(13 * escala));
+    const slotText = Math.max(12, Math.round(13 * escala));
     const gapSlot = Math.max(3, Math.round(5 * escala));
 
     // Los margenes tambien se comprimen. Antes eran fijos: en un iPhone SE
@@ -567,9 +564,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const margenPuntito = Math.max(2, Math.round(altoDia * 0.1));
     const franjaPuntito = altoPuntito + margenPuntito;
 
-    // Cuando sede y mascota vienen fijas ya se saben: la pantalla de atencion
-    // las muestra en el encabezado, asi que repetirlas aca es al pedo.
-    const ocultarFilaCampos = compacta && sedeFija !== null && mascotaIdFija !== null;
 
     const estilosAdaptados = StyleSheet.create({
     direccion: { marginTop: hueco(7), marginBottom: hueco(10) },
@@ -578,7 +572,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     dia: { height: altoDia },
     diaConPunto: { paddingBottom: franjaPuntito },
     textoDia: { fontSize: diaText },
-    punto: { width: altoPuntito, height: altoPuntito, bottom: margenPuntito },
     leyenda: { marginTop: hueco(12) },
     horarios: { marginTop: hueco(12), paddingTop: hueco(12) },
     grillaHorarios: { gap: gapSlot },
@@ -595,28 +588,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
   const cuerpoAgenda: ReactNode = (
       <>
-        {ocultarFilaCampos ? null : (
+          {sedeFija && mascotaIdFija ? null : (
           <View style={styles.filaCampos}>
-            <View style={styles.columnaCampo}>
-              {sedeFija ? (
-                <>
-                  {compacta ? null : <Text style={styles.label}>Sede</Text>}
-                  <View
-                    style={[styles.mascotaFijaCampo, compacta && styles.mascotaFijaCampoCompacto]}
-                    accessibilityLabel={`Sede ${sedeFija}`}
-                  >
-                    <View style={[styles.mascotaFijaIcono, compacta && styles.mascotaFijaIconoCompacto]}>
-                      <Ionicons name="location" size={14} color="#0f3e17" />
-                    </View>
-                    <Text
-                      style={[styles.mascotaFijaTexto, compacta && styles.mascotaFijaTextoCompacto]}
-                      numberOfLines={1}
-                    >
-                      {sedeFija}
-                    </Text>
-                  </View>
-                </>
-              ) : (
+            {!sedeFija ? <View style={styles.columnaCampo}>
                 <SelectorCampo
                   label="Sede"
                   icono="location-outline"
@@ -633,23 +607,22 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                   compacto
                   accessibilityLabel="Elegir sede de la veterinaria"
                 />
-              )}
-            </View>
+            </View> : null}
 
-            {mascotaIdFija || mascotaNombreFija ? (
+            {mascotaIdFija ? null : mascotaNombreFija ? (
               <View style={styles.columnaCampo}>
-                {compacta ? null : <Text style={styles.label}>Mascota</Text>}
+                <Text style={styles.label}>Mascota</Text>
                 <View
-                  style={[styles.mascotaFijaCampo, compacta && styles.mascotaFijaCampoCompacto]}
+                  style={[styles.mascotaFijaCampo]}
                   accessibilityLabel={`Mascota ${
                     mascotaSeleccionada?.titulo ?? mascotaNombreFija ?? 'del turno'
                   }`}
                 >
-                  <View style={[styles.mascotaFijaIcono, compacta && styles.mascotaFijaIconoCompacto]}>
+                  <View style={[styles.mascotaFijaIcono]}>
                     <Ionicons name="paw" size={15} color="#5f7d63" />
                   </View>
                   <Text
-                    style={[styles.mascotaFijaTexto, compacta && styles.mascotaFijaTextoCompacto]}
+                    style={[styles.mascotaFijaTexto]}
                     numberOfLines={1}
                   >
                     {mascotaSeleccionada?.titulo ?? mascotaNombreFija ?? 'Mascota del turno'}
@@ -679,12 +652,13 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
               </View>
           )}
           </View>
-        )}
+          )}
+
 
         {/* Direccion de la sede elegida. Va en una linea propia y en letra chica
             para no desarmar la fila de dos columnas: dentro de la columna de Sede
             los dos selectores quedaban desalineados. */}
-        {compacta || sedeFija || !configuracionSede ? null : (
+        {sedeFija || !configuracionSede ? null : (
           <View style={[styles.direccionSede, estilosAdaptados.direccion]}>
             <Ionicons name="location-outline" size={12} color="#0f3e17" />
             <Text style={styles.direccionTexto} numberOfLines={1} ellipsizeMode="tail">
@@ -694,12 +668,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           </View>
         )}
 
-        {compacta ? null : <Text style={styles.label}>Tipo de turno</Text>}
+        <Text style={styles.label}>Tipo de turno</Text>
         <View
           style={[
-            styles.tiposFila,
-            compacta && styles.tiposFilaCompacto,
-            !compacta && estilosAdaptados.tipos,
+            styles.tiposFila,            estilosAdaptados.tipos,
           ]}
         >
           {tiposTurno.map((opcion) => {
@@ -708,9 +680,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
               <Pressable
                 key={opcion}
                 style={({ pressed }) => [
-                  styles.tipoOpcion,
-                  compacta && styles.tipoOpcionCompacto,
-                  seleccionado && styles.tipoOpcionSeleccionada,
+                  styles.tipoOpcion,                  seleccionado && styles.tipoOpcionSeleccionada,
                   pressed && estilos.buttonPressed,
                 ]}
                 onPress={() => {
@@ -731,9 +701,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
         <View
           style={[
-            styles.monthRow,
-            compacta && styles.monthRowCompacto,
-            !compacta && estilosAdaptados.mes,
+            styles.monthRow,            estilosAdaptados.mes,
           ]}
         >
           <Pressable
@@ -742,9 +710,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             accessibilityRole="button"
             accessibilityLabel="Mes anterior"
           >
-            <Text style={[styles.arrow, compacta && styles.arrowCompacto]}>‹</Text>
+            <Text style={[styles.arrow]}>‹</Text>
           </Pressable>
-          <Text style={[styles.month, compacta && styles.monthCompacto]}>
+          <Text style={[styles.month]}>
             {mesVisible.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
           </Text>
           <Pressable
@@ -753,7 +721,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             accessibilityRole="button"
             accessibilityLabel="Mes siguiente"
           >
-            <Text style={[styles.arrow, compacta && styles.arrowCompacto]}>›</Text>
+            <Text style={[styles.arrow]}>›</Text>
           </Pressable>
         </View>
 
@@ -761,7 +729,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           {DIAS_SEMANA.map((dia, index) => (
             <Text
               key={`weekday-${index}`}
-              style={[styles.weekday, compacta && styles.weekdayCompacto]}
+              style={[styles.weekday]}
             >
               {dia}
             </Text>
@@ -776,7 +744,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const completos = horariosDisponibles.length > 0 && ocupados >= horariosDisponibles.length;
             const deshabilitado = !configuracionSede || esPasado || esDiaBloqueado || cargando || Boolean(error);
             const seleccionado = Boolean(configuracionSede) && fechaSeleccionada === value;
-            const llevaPuntito = !esPasado && !seleccionado && esDiaBloqueado;
+            const llevaPuntito = completos && !seleccionado && !cargando && !error;
             const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
             return (
               <Pressable
@@ -807,12 +775,11 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 >
                   {dia}
                 </Text>
-                {/* Marca los días sin atención según la configuración de la sede. */}
-                {esDiaBloqueado && !esPasado && !seleccionado ? (
+                {/* Marca las fechas con todos los horarios ocupados. */}
+                {llevaPuntito ? (
                   <View
                     style={[
                       styles.bloqueoDot,
-                      estilosAdaptados.punto,
                     ]}
                   />
                 ) : null}
@@ -821,33 +788,21 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           })}
         </View>
 
-        {compacta ? null : (
-          <View style={[styles.legend, !compacta && estilosAdaptados.leyenda]}>
-            <View style={styles.legendLibre} />
-            <Text style={styles.legendText}>Libre</Text>
-            <View style={styles.legendOcupado} />
-            <Text style={styles.legendText}>Ocupado</Text>
-            <View style={styles.legendCompleto} />
-            <Text style={styles.legendText}>Completo</Text>
+        <View style={[styles.legend, estilosAdaptados.leyenda]}>
+            <View style={styles.legendPunto} />
+            <Text style={styles.legendText}>Fecha sin horarios disponibles</Text>
           </View>
-        )}
 
         <View
           style={[
-            styles.timesSection,
-            compacta && styles.timesSectionCompacto,
-            !compacta && estilosAdaptados.horarios,
+            styles.timesSection,            estilosAdaptados.horarios,
           ]}
         >
-          {/* En compacto el dia ya se ve marcado en el calendario, asi que el
-              titulo con la fecha es al第四次. */}
-          {compacta ? null : (
-            <Text style={styles.timesTitle}>
+          <Text style={styles.timesTitle}>
               {configuracionSede && fechaSeleccionada
                 ? `Horarios del ${new Date(`${fechaSeleccionada}T12:00:00`).toLocaleDateString('es-AR')}`
                 : 'Horarios'}
             </Text>
-          )}
           {cargando ? (
             <ActivityIndicator color="#0f3e17" style={styles.cargandoBloque} />
           ) : error ? (
@@ -931,9 +886,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         {ocultarBotonGuardar ? null : (
           <Pressable
             style={({ pressed }) => [
-              styles.confirmar,
-              compacta && styles.confirmarCompacto,
-              !compacta && estilosAdaptados.confirmar,
+              styles.confirmar,              estilosAdaptados.confirmar,
               !puedeConfirmar && estilos.buttonPressed,
               pressed && puedeConfirmar && estilos.buttonPressed,
             ]}
@@ -943,7 +896,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             accessibilityLabel="Guardar turno"
             accessibilityState={{ disabled: !puedeConfirmar, busy: guardando }}
           >
-            <Text style={[styles.confirmarTexto, compacta && styles.confirmarTextoCompacto]}>
+            <Text style={[styles.confirmarTexto]}>
               {guardando ? 'Guardando...' : 'Guardar turno'}
             </Text>
           </Pressable>
@@ -955,9 +908,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       <>
         <View
           style={[
-            styles.card,
-            compacta && styles.cardCompacto,
-            !compacta && estilosAdaptados.tarjeta,
+            styles.card,            estilosAdaptados.tarjeta,
           ]}
         >
           {cuerpoAgenda}
@@ -1039,7 +990,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: '#fffefc',
   },
-  cardCompacto: { paddingHorizontal: 0, paddingBottom: 0 },
   filaCampos: { flexDirection: 'row', gap: 8 },
   columnaCampo: { flex: 1 },
   mascotaFijaCampo: {
@@ -1054,13 +1004,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#f3f7f1',
   },
-  mascotaFijaCampoCompacto: {
-    minHeight: 36,
-    gap: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
   mascotaFijaIcono: {
     width: 28,
     height: 28,
@@ -1069,9 +1012,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: '#e4f1e0',
   },
-  mascotaFijaIconoCompacto: { width: 22, height: 22, borderRadius: 7 },
   mascotaFijaTexto: { flex: 1, color: '#1e3326', fontSize: 14, fontWeight: '600' },
-  mascotaFijaTextoCompacto: { fontSize: 13 },
   label: {
     marginBottom: 6,
     color: '#4d6154',
@@ -1098,7 +1039,6 @@ const styles = StyleSheet.create({
   direccionEtiqueta: { fontWeight: '700', color: '#0f3e17' },
   cargandoBloque: { paddingVertical: 12 },
   tiposFila: { flexDirection: 'row', gap: 6, marginBottom: 10 },
-  tiposFilaCompacto: { gap: 5, marginTop: 6, marginBottom: 6 },
   tipoOpcion: {
     flex: 1,
     alignItems: 'center',
@@ -1108,7 +1048,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#fffefc',
   },
-  tipoOpcionCompacto: { paddingVertical: 6, borderRadius: 10 },
   tipoOpcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
   tipoTexto: { color: '#1e3326', fontSize: 13, fontWeight: '500' },
   tipoTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
@@ -1119,12 +1058,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 8,
   },
-  monthRowCompacto: { marginTop: 6, marginBottom: 4 },
   monthButton: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center' },
   arrow: { color: '#0f3e17', fontSize: 26, fontWeight: '600' },
-  arrowCompacto: { fontSize: 21 },
   month: { color: '#263b32', fontSize: 15, fontWeight: 'bold', textTransform: 'capitalize' },
-  monthCompacto: { fontSize: 14 },
   calendar: { flexDirection: 'row', flexWrap: 'wrap' },
   weekday: {
     width: '14.2857%',
@@ -1134,7 +1070,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  weekdayCompacto: { paddingVertical: 1, fontSize: 11 },
   day: {
     width: '14.2857%',
     height: 36,
@@ -1148,44 +1083,22 @@ const styles = StyleSheet.create({
   disabledText: { color: '#a0a69f' },
   bloqueoDot: {
     position: 'absolute',
+    width: 5,
+    height: 5,
+    bottom: 4,
     borderRadius: 3,
-    backgroundColor: '#c0392b',
+    backgroundColor: '#c05a32',
   },
-  legendCompleto: {
-    width: 15,
-    height: 15,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#7d1f14',
-    backgroundColor: '#c0392b',
-  },
+  legendPunto: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#c05a32' },
   legend: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 12,
   },
-  legendLibre: {
-    width: 15,
-    height: 15,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#a8c3a4',
-    backgroundColor: '#ffffff',
-  },
-  legendOcupado: {
-    width: 15,
-    height: 15,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#a36a3c',
-    backgroundColor: colorOcupadoFondo,
-  },
-  legendText: { color: '#69746a', fontSize: 12, marginRight: 6 },
+  legendText: { color: '#69746a', fontSize: 13 },
   timesSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#dfe8db' },
   timesTitle: { marginBottom: 9, color: '#263b32', fontSize: 13, fontWeight: '600' },
-  timesSectionCompacto: { marginTop: 6, paddingTop: 6 },
-  confirmarCompacto: { marginTop: 8, paddingVertical: 10 },
   sinHoras: {
     marginBottom: 9,
     color: '#8a6a4a',
@@ -1218,7 +1131,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3e17',
   },
   confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
-  confirmarTextoCompacto: { fontSize: 14 },
   avisoRaiz: {
     flex: 1,
     alignItems: 'center',

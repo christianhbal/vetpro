@@ -296,7 +296,7 @@ export default function TurnoDateTimeField({
                               styles.slot,
                               anchoHorarios > 0 && estilosAdaptados.anchoHorario,
                               seleccionado && styles.selectedDay,
-                              deshabilitado && styles.disabledSlot,
+                              ocupado && styles.occupiedSlot,
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected: seleccionado, disabled: deshabilitado }}
@@ -306,11 +306,16 @@ export default function TurnoDateTimeField({
                               style={[
                                 styles.slotText,
                                 seleccionado && styles.selectedText,
-                                deshabilitado && styles.disabledText,
+                                ocupado && styles.occupiedSlotText,
                               ]}
                             >
                               {horario}
                             </Text>
+                            {ocupado ? (
+                              <View style={styles.slotIcon}>
+                                <Ionicons name="lock-closed" size={9} color="#7d4322" />
+                              </View>
+                            ) : null}
                           </Pressable>
                         );
                       })}
@@ -370,7 +375,9 @@ const styles = StyleSheet.create({
   slotsScroll: { maxHeight: 300, marginTop: 12 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8 },
   slot: { width: '30%', minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#e1f4df' },
-  disabledSlot: { backgroundColor: '#f0f1ee' },
+  occupiedSlot: { backgroundColor: '#f2ddcd', borderColor: '#d3a179', borderWidth: 1 },
+  occupiedSlotText: { color: '#7d4322' },
+  slotIcon: { position: 'absolute', top: 2, right: 2 },
   slotText: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },

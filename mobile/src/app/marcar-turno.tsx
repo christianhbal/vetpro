@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
 import {
   AvailabilityCalendar,
@@ -27,12 +26,6 @@ import { useSedeSeleccionada } from '@/lib/sede';
 
 const MAX_DESCRIPCION = 500;
 
-// Reparto aproximado del alto de esta pantalla. Todo entra sin scrollear, asi
-// que la parte variable es la agenda de seguimiento y el resto se mide fijo.
-// ALTO_ENCABEZADO es la barra del drawer (safe area + boton de volver).
-const ALTO_ENCABEZADO = 64;
-const PARTE_FIJA = 300;
-const ALTO_AGENDA = 415;
 
 export default function MarcarTurnoScreen() {
   const { usuario: usuarioSesion } = useSesion();
@@ -60,14 +53,6 @@ export default function MarcarTurnoScreen() {
     seguimiento: TurnoElegido | null;
   } | null>(null);
   const agenda = useRef<AgendaHandle>(null);
-  const { height: windowHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-
-  // La agenda de seguimiento va debajo de la descripcion y del Si/No, asi que
-  // se comprime con lo que sobra de la pantalla para que todo entre entero.
-  const disponible =
-    windowHeight - insets.top - insets.bottom - ALTO_ENCABEZADO - PARTE_FIJA;
-  const escalaSeguimiento = Math.max(0.68, Math.min(1, disponible / ALTO_AGENDA));
 
   const turnoId = Number(params.id);
   const mascotaId = Number(params.mascotaId);
@@ -245,8 +230,6 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
                 selector normal en vez de quedar hidden. */}
             <AvailabilityCalendar
               ref={agenda}
-              escala={escalaSeguimiento}
-              compacta
               ocultarBotonGuardar
               ocultarAviso
               comoAdmin
