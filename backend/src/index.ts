@@ -944,7 +944,7 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
-      orderBy: [{ llegadaEn: 'desc' }, { hora: 'asc' }],
+      orderBy: [{ llegadaEn: 'asc' }, { hora: 'asc' }, { id: 'asc' }],
     });
     return response.json(turnos);
   } catch (error) {
@@ -1508,17 +1508,20 @@ app.delete('/api/admin/users/:id', async (request, response) => {
   }
 
   try {
-    const target = await prisma.usuario.findUnique({ where: { id }, select: { role: true } });
-    if (!target) {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const target = await tx.usuario.findUnique({ where: { id }, select: { role: true, email: true } });
+      if (!target) return 'no-existe';
+      if (target.role === 'ADMIN' && (await tx.usuario.count({ where: { role: 'ADMIN' } })) <= 1) return 'ultimo-admin';
+      await tx.notification.updateMany({ where: { tipo: 'recuperacion', solicitanteEmail: target.email }, data: { tipo: 'recuperacion-resuelta', readAt: new Date().toISOString() } });
+      await tx.usuario.delete({ where: { id } });
+      return 'eliminado';
+    });
+    if (resultado === 'no-existe') {
       return response.status(404).json({ message: 'No se encontró el usuario.' });
     }
-    if (
-      target.role === 'ADMIN' &&
-      (await prisma.usuario.count({ where: { role: 'ADMIN' } })) <= 1
-    ) {
+    if (resultado === 'ultimo-admin') {
       return response.status(400).json({ message: 'No se puede eliminar al último administrador.' });
     }
-    await prisma.usuario.delete({ where: { id } });
     return response.status(204).send();
   } catch (error) {
     if (isMissingRecord(error)) {
@@ -1526,6 +1529,31 @@ app.delete('/api/admin/users/:id', async (request, response) => {
     }
     console.error('No se pudo eliminar el usuario:', error);
     return response.status(500).json({ message: 'No se pudo eliminar el usuario.' });
+  }
+});
+
+// El usuario solo puede eliminar su propia cuenta y nunca al último administrador.
+app.delete('/api/users/:id', async (request, response) => {
+  const usuario = await requireAuthenticatedUser(request, response);
+  if (!usuario) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id no es válido.' });
+  if (id !== usuario.id) return response.status(403).json({ message: 'Solo puedes eliminar tu propia cuenta.' });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const actual = await tx.usuario.findUnique({ where: { id } });
+      if (!actual) return 'no-existe';
+      if (actual.role === 'ADMIN' && (await tx.usuario.count({ where: { role: 'ADMIN' } })) <= 1) return 'ultimo-admin';
+      await tx.notification.updateMany({ where: { tipo: 'recuperacion', solicitanteEmail: actual.email }, data: { tipo: 'recuperacion-resuelta', readAt: new Date().toISOString() } });
+      await tx.usuario.delete({ where: { id } });
+      return 'eliminado';
+    });
+    if (resultado === 'no-existe') return response.status(404).json({ message: 'No se encontró el usuario.' });
+    if (resultado === 'ultimo-admin') return response.status(409).json({ message: 'No se puede eliminar al último administrador.' });
+    return response.status(204).send();
+  } catch (error) {
+    console.error('No se pudo eliminar la cuenta:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar la cuenta.' });
   }
 });
 
@@ -1671,6 +1699,68 @@ app.patch('/api/users/:id/password', async (request, response) => {
     }
     console.error('No se pudo cambiar la contraseña:', error);
     return response.status(500).json({ message: 'No se pudo cambiar la contraseña.' });
+  }
+});
+
+function passwordTemporal(nombre: string): string {
+  const apellido = nombre.trim().split(/\s+/).pop()
+    ?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${apellido || 'vetpro'}12345`;
+}
+
+// Solicitud sin cambio de contraseña: cada administrador recibe un aviso pendiente.
+app.post('/api/password-reset/request', async (request, response) => {
+  const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
+  if (!/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({ message: 'Escribí un correo válido.' });
+  try {
+    await prisma.$transaction(async (tx) => {
+      const usuario = await tx.usuario.findUnique({ where: { email } });
+      if (!usuario) return;
+      const admins = await tx.usuario.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
+      for (const admin of admins) {
+        // Leída no significa resuelta: no se duplica una solicitud por abrirla.
+        const pendiente = await tx.notification.findFirst({ where: { userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email } });
+        if (!pendiente) await tx.notification.create({ data: {
+          userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email,
+          title: 'Recuperación de contraseña', message: usuario.nombre,
+        } });
+      }
+    });
+    return response.json({ message: 'Si el correo está registrado, la veterinaria recibirá la solicitud.' });
+  } catch (error) {
+    console.error('No se pudo solicitar la recuperación:', error);
+    return response.status(500).json({ message: 'No se pudo enviar la solicitud.' });
+  }
+});
+
+// El administrador confirma desde una solicitud pendiente o desde Administrar usuarios.
+app.post('/api/admin/password-reset', async (request, response) => {
+  const adminId = await requireAdmin(request, response);
+  if (adminId === null) return;
+  const { userId, solicitudId } = request.body ?? {};
+  const desdeSolicitud = solicitudId !== undefined;
+  const id = desdeSolicitud ? solicitudId : userId;
+  if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ message: 'Indica el usuario o la solicitud a restablecer.' });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const solicitud = desdeSolicitud ? await tx.notification.findFirst({ where: { id: solicitudId, userId: adminId } }) : null;
+      if (desdeSolicitud && (!solicitud || solicitud.tipo !== 'recuperacion' || !solicitud.solicitanteEmail)) return { error: 'solicitud' as const };
+      const usuario = await tx.usuario.findUnique({ where: desdeSolicitud ? { email: solicitud!.solicitanteEmail! } : { id: userId } });
+      if (!usuario) return { error: 'usuario' as const };
+      const password = passwordTemporal(usuario.nombre);
+      await tx.usuario.update({ where: { id: usuario.id }, data: { password } });
+      // Resuelve las copias de todos los administradores, incluso las ya leídas.
+      await tx.notification.updateMany({
+        where: { tipo: 'recuperacion', solicitanteEmail: usuario.email },
+        data: { tipo: 'recuperacion-resuelta', readAt: new Date().toISOString() },
+      });
+      return { id: usuario.id, nombre: usuario.nombre, email: usuario.email, password };
+    });
+    if ('error' in resultado) return response.status(resultado.error === 'usuario' ? 404 : 409).json({ message: resultado.error === 'usuario' ? 'No se encontró el usuario.' : 'La solicitud ya fue resuelta o no está disponible.' });
+    return response.json(resultado);
+  } catch (error) {
+    console.error('No se pudo restablecer la contraseña:', error);
+    return response.status(500).json({ message: 'No se pudo restablecer la contraseña.' });
   }
 });
 

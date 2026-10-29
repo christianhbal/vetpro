@@ -15,6 +15,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
+import { RestablecerPassword } from '@/components/restablecer-password';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
@@ -52,6 +53,7 @@ export default function AdminUsuariosScreen() {
   const { usuario: usuarioSesion } = useSesion();
   const [usuarios, setUsuarios] = useState<UsuarioAdministrado[]>([]);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<UsuarioAdministrado | null>(null);
+  const [usuarioAResetear, setUsuarioAResetear] = useState<UsuarioAdministrado | null>(null);
   const [usuarioEliminado, setUsuarioEliminado] = useState<string | null>(null);
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [veterinarioCreado, setVeterinarioCreado] = useState<UsuarioAdministrado | null>(null);
@@ -311,6 +313,15 @@ export default function AdminUsuariosScreen() {
                   </Text>
                 </View>
                 {item.id !== miId ? (
+                  <>
+                  <Pressable
+                    onPress={() => setUsuarioAResetear(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Restablecer contraseña de ${item.nombre}`}
+                    style={styles.accionUsuario}
+                  >
+                    <Ionicons name="key-outline" size={22} color="#0f3e17" />
+                  </Pressable>
                   <Pressable
                     onPress={() => setUsuarioAEliminar(item)}
                     accessibilityRole="button"
@@ -319,12 +330,20 @@ export default function AdminUsuariosScreen() {
                   >
                     <Ionicons name="trash-outline" size={22} color="#a32d2d" />
                   </Pressable>
+                  </>
                 ) : null}
               </View>
             </View>
           )}
         />
       </View>
+
+      {usuarioAResetear ? (
+        <RestablecerPassword
+          destino={{ userId: usuarioAResetear.id, nombre: usuarioAResetear.nombre, email: usuarioAResetear.email }}
+          onCerrar={() => setUsuarioAResetear(null)}
+        />
+      ) : null}
 
       <Modal
         visible={mostrarCrear}

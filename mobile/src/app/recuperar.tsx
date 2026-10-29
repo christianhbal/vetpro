@@ -4,6 +4,7 @@ import { router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { estilos } from '../lib/estilos';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 
 export default function Recuperar() {
   const [email, setEmail] = useState('');
@@ -30,10 +31,19 @@ export default function Recuperar() {
 
     setEnviando(true);
     try {
-      setAviso({
-        titulo: 'Función no disponible',
-        mensaje: 'La recuperación de contraseña todavía no está disponible. No se envió ningún correo. Contactá a la veterinaria para recibir ayuda.',
+      const response = await fetch(`${API_BASE_URL}/api/password-reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
       });
+      const resultado = await response.json();
+      if (!response.ok) throw new Error(typeof resultado.message === 'string' ? resultado.message : 'No se pudo enviar la solicitud.');
+      setAviso({
+        titulo: 'Solicitud recibida',
+        mensaje: 'Si el correo está registrado, la veterinaria recibirá la solicitud. Contactá a un veterinario para continuar con la recuperación.',
+      });
+    } catch (error) {
+      setError(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo enviar la solicitud.');
     } finally {
       setEnviando(false);
     }
@@ -57,7 +67,7 @@ export default function Recuperar() {
           />
           <Text style={styles.title}>Recuperar contraseña</Text>
           <Text style={styles.subtitle}>
-            La recuperación por correo todavía no está disponible. Consultá el aviso para más información.
+            Ingresá tu correo para solicitar ayuda a la veterinaria. Un administrador deberá confirmar el restablecimiento.
           </Text>
         </View>
 
@@ -92,9 +102,9 @@ export default function Recuperar() {
           onPress={enviarRecuperacion}
           disabled={enviando}
           accessibilityRole="button"
-          accessibilityLabel="Consultar disponibilidad de recuperación"
+          accessibilityLabel="Solicitar recuperación de contraseña"
         >
-          <Text style={styles.enviarButtonText}>Consultar</Text>
+          <Text style={styles.enviarButtonText}>{enviando ? 'Enviando...' : 'Enviar solicitud'}</Text>
         </Pressable>
 
         <View style={styles.loginRow}>

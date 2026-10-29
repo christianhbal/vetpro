@@ -14,6 +14,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
+import { RestablecerPassword, type DestinoRecuperacion } from '@/components/restablecer-password';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
   type SedeVeterinaria,
@@ -76,6 +77,8 @@ type Aviso = {
    * paciente, porque no hay ninguno.
    */
   esGlobal?: boolean | null;
+  tipo?: string | null;
+  solicitanteEmail?: string | null;
 };
 
 function esMascotaDelAviso(value: unknown): value is NonNullable<Aviso['mascota']> {
@@ -102,7 +105,9 @@ function esAviso(value: unknown): value is Aviso {
     (typeof aviso.motivo === 'string' || aviso.motivo === null) &&
     (typeof aviso.sede === 'string' || aviso.sede === null || aviso.sede === undefined) &&
     (typeof aviso.hora === 'string' || aviso.hora === null || aviso.hora === undefined) &&
-    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined)
+    (typeof aviso.esGlobal === 'boolean' || aviso.esGlobal === null || aviso.esGlobal === undefined) &&
+    (aviso.tipo == null || typeof aviso.tipo === 'string') &&
+    (aviso.solicitanteEmail == null || typeof aviso.solicitanteEmail === 'string')
   );
 }
 
@@ -350,6 +355,7 @@ export default function NotificacionesScreen() {
   // La ventana que salta sale de la ultima notificacion de "Tu turno se
   // acerca": no hay ningun cartel armado a mano.
   const [avisoTurno, setAvisoTurno] = useState<Aviso | null>(null);
+  const [solicitudReset, setSolicitudReset] = useState<DestinoRecuperacion | null>(null);
 
   const cargarAvisos = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) {
@@ -531,6 +537,8 @@ export default function NotificacionesScreen() {
         }
         renderItem={({ item }) => {
           const conVentana = abreVentana(item);
+          const recuperacion = item.tipo === 'recuperacion' || item.tipo === 'recuperacion-resuelta';
+          const nombreSolicitante = item.message.replace(/ quiere recuperar su contraseña\.$/, '');
           return (
             <Pressable
               style={({ pressed }) => [
@@ -539,6 +547,11 @@ export default function NotificacionesScreen() {
                 pressed && estilos.buttonPressed,
               ]}
               onPress={() => {
+                if (esAdmin && recuperacion && item.solicitanteEmail) {
+                  setSolicitudReset({ solicitudId: item.id, nombre: nombreSolicitante, email: item.solicitanteEmail, resuelta: item.tipo === 'recuperacion-resuelta' });
+                  void marcarLeido(item);
+                  return;
+                }
                 // Los avisos de proximidad abren la ventana; el resto se marca
                 // como leido nomas.
                 if (conVentana) setAvisoTurno(item);
@@ -548,7 +561,7 @@ export default function NotificacionesScreen() {
               accessibilityLabel={`${item.readAt ? '' : 'No leída. '}${item.title}${conVentana ? '. Ver detalle del aviso' : ''}`}
             >
             <View style={styles.filaAviso}>
-              {item.esGlobal ? (
+              {item.esGlobal || recuperacion ? (
                 // El aviso global no es de una mascota, asi que va el logo. Con
                 // "contain" y un fondo claro el logo horizontal se lee entero
                 // en el cuadrado en vez de quedar con los bordes cortados.
@@ -576,7 +589,8 @@ export default function NotificacionesScreen() {
               )}
               <View style={styles.contenidoAviso}>
                 <Text style={estilos.cardTitle}>{item.title}</Text>
-                <Text style={estilos.cardSubtitle}>{textoDelAviso(item)}</Text>
+                <Text style={estilos.cardSubtitle}>{recuperacion ? nombreSolicitante : textoDelAviso(item)}</Text>
+                {item.tipo === 'recuperacion-resuelta' ? <Text style={styles.date}>Resuelta</Text> : null}
                 <Text style={styles.date}>
                   {new Date(item.createdAt).toLocaleDateString('es-AR')}
                 </Text>
@@ -589,6 +603,18 @@ export default function NotificacionesScreen() {
       />
 
       <VentanaAviso aviso={avisoTurno} onCerrar={() => setAvisoTurno(null)} />
+
+      {solicitudReset ? (
+        <RestablecerPassword
+          destino={solicitudReset}
+          onCerrar={() => setSolicitudReset(null)}
+          onRestablecido={(email) => setAvisos((actuales) => actuales.map((aviso) =>
+            aviso.tipo === 'recuperacion' && aviso.solicitanteEmail === email
+              ? { ...aviso, tipo: 'recuperacion-resuelta', readAt: aviso.readAt ?? new Date().toISOString() }
+              : aviso
+          ))}
+        />
+      ) : null}
 
       <Modal
         visible={modalNuevo}

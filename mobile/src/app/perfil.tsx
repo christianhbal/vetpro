@@ -23,6 +23,7 @@ const opciones: Opcion[] = [
   { id: '1', nombre: 'Editar Perfil', icon: 'person-outline' },
   { id: '2', nombre: 'Cambiar contraseña', icon: 'key-outline' },
   { id: '3', nombre: 'Soporte: Ayuda', icon: 'help-buoy-outline' },
+  { id: '5', nombre: 'Eliminar cuenta', icon: 'trash-outline', color: '#a32828' },
   { id: '4', nombre: 'Cerrar Sesión', icon: 'log-out-outline', color: '#0c2f10' },
 ];
 
@@ -37,6 +38,10 @@ export default function PerfilScreen() {
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [guardandoPassword, setGuardandoPassword] = useState(false);
   const [errorPassword, setErrorPassword] = useState('');
+  const [modalEliminarCuenta, setModalEliminarCuenta] = useState(false);
+  const [eliminandoCuenta, setEliminandoCuenta] = useState(false);
+  const [cuentaEliminada, setCuentaEliminada] = useState(false);
+  const [errorEliminarCuenta, setErrorEliminarCuenta] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -61,7 +66,38 @@ export default function PerfilScreen() {
       setModalAyuda(true);
       return;
     }
+    if (id === '5') {
+      setErrorEliminarCuenta('');
+      setModalEliminarCuenta(true);
+      return;
+    }
     setModalCerrarSesion(true);
+  };
+
+  const eliminarCuenta = async () => {
+    if (!usuario || eliminandoCuenta) return;
+    setEliminandoCuenta(true);
+    setErrorEliminarCuenta('');
+    try {
+      if (!cuentaEliminada) {
+        const response = await fetch(`${API_BASE_URL}/api/users/${usuario.id}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${usuario.accessToken}` },
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(typeof result.message === 'string' ? result.message : 'No se pudo eliminar la cuenta.');
+        }
+        setCuentaEliminada(true);
+      }
+      await cancelarRecordatorios();
+      await cerrarSesion();
+      setModalEliminarCuenta(false);
+      router.replace('/');
+    } catch (error) {
+      setErrorEliminarCuenta(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo completar la operación.');
+    } finally {
+      setEliminandoCuenta(false);
+    }
   };
 
   const cambiarPassword = async () => {
@@ -164,6 +200,7 @@ export default function PerfilScreen() {
                 style={[
                   estilos.profileOptionText,
                   opcion.color && estilos.profileOptionTextHighlight,
+                  opcion.id === '5' && styles.textoEliminar,
                 ]}
               >
                 {opcion.nombre}
@@ -173,6 +210,32 @@ export default function PerfilScreen() {
           </Pressable>
         ))}
       </View>
+
+      <Modal
+        visible={modalEliminarCuenta}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => { if (!eliminandoCuenta && !cuentaEliminada) setModalEliminarCuenta(false); }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable style={estilos.petModalBackdrop} onPress={() => setModalEliminarCuenta(false)} disabled={eliminandoCuenta || cuentaEliminada} accessibilityRole="button" accessibilityLabel="Cerrar confirmación" />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>{cuentaEliminada ? 'Cuenta eliminada' : '¿Eliminar tu cuenta?'}</Text>
+            <Text style={estilos.modalText}>{cuentaEliminada ? 'Tu cuenta ya fue eliminada. Falta cerrar la sesión en este dispositivo.' : 'Se eliminarán permanentemente tu cuenta, tus mascotas, sus turnos e historial y tus notificaciones. Esta acción no se puede deshacer.'}</Text>
+            {errorEliminarCuenta ? <Text style={estilos.formError} accessibilityRole="alert">{errorEliminarCuenta}</Text> : null}
+            <View style={estilos.modalActions}>
+              {!cuentaEliminada ? <Pressable style={[estilos.modalButton, estilos.modalButtonNeutral]} onPress={() => setModalEliminarCuenta(false)} disabled={eliminandoCuenta} accessibilityRole="button">
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Cancelar</Text>
+              </Pressable> : null}
+              <Pressable style={[estilos.modalButton, styles.botonEliminar]} onPress={() => void eliminarCuenta()} disabled={eliminandoCuenta} accessibilityRole="button" accessibilityState={{ busy: eliminandoCuenta }}>
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>{eliminandoCuenta ? 'Procesando...' : cuentaEliminada ? 'Cerrar sesión' : 'Eliminar'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={modalCambiarPassword}
@@ -376,6 +439,8 @@ export default function PerfilScreen() {
 }
 
 const styles = StyleSheet.create({
+  textoEliminar: { color: '#a32828' },
+  botonEliminar: { backgroundColor: '#a32828' },
   passwordInput: {
     marginBottom: 12,
   },

@@ -66,7 +66,7 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
   const cargarContadorNotificaciones = useCallback(async () => {
     try {
       const usuario = usuarioSesion;
-      if (!usuario || usuario.esAdmin) {
+      if (!usuario) {
         setNotificacionesSinLeer(0);
         return;
       }

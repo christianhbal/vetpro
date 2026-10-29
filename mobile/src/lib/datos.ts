@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 export type TurnoGuardado = {
   id: number;
@@ -44,9 +44,17 @@ export function formatearFechaTurno(fecha: string, hora: string): string {
 }
 
 /** Abre Google Maps con el camino a la sede; sirve en web y en el celular. */
-export function abrirMapa(sede: string, direccion: string | undefined): void {
+export async function abrirMapa(sede: string, direccion: string | undefined): Promise<void> {
+  if (!direccion?.trim()) {
+    Alert.alert('Dirección no disponible', 'La sede todavía no tiene una dirección para mostrar en el mapa.');
+    return;
+  }
   const destino = encodeURIComponent([sede, direccion].filter(Boolean).join(', '));
-  void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destino}`);
+  try {
+    await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destino}`);
+  } catch {
+    Alert.alert('No se pudo abrir el mapa', 'Intentá nuevamente.');
+  }
 }
 
 export function turnoSiguePendiente(turno: Pick<TurnoGuardado, 'fecha' | 'hora'>, ahora: Date): boolean {

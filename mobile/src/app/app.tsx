@@ -22,6 +22,7 @@ import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo'
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import {
+  abrirMapa,
   descripcionEspecieMascota,
   nombreEspecieMascota,
   turnoSiguePendiente,
@@ -228,10 +229,9 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     .sort((a, b) => a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)),
     [turnosGuardados, ahora]);
 
-  // El administrador ve los turnos de la sede seleccionada; el cliente, los propios.
+  // El administrador ve todas las sedes; el cliente, sus propios turnos.
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
-        .filter((turno) => turno.sede === sedeSeleccionada)
         .slice(0, COTAS_ADMIN)
         .map((turno) => ({
           id: turno.id,
@@ -239,7 +239,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           mascota: turno.mascota.nombre,
           motivo: turno.tipo,
           cuando: `${fechaRelativaCorta(turno.fecha, ahora)} - ${turno.hora} hs`,
-          detalle: turno.user?.nombre ?? null,
+          detalle: [turno.user?.nombre, turno.sede].filter(Boolean).join(' · ') || null,
           dueno: turno.user?.nombre ?? null,
           guardado: turno,
         }))
@@ -473,7 +473,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
             {esAdmin ? (
               <View style={styles.bloqueSede}>
                 <SelectorCampo
-                  label="Sede"
+                  label="Sede del QR"
                   icono="location-outline"
                   placeholder="Elegí una sede"
                   opciones={opcionesSede}
@@ -483,8 +483,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                     if (esAdmin) void guardarFiltroTurnos(opcion.valor).catch(() => {});
                   }}
                   compacto
-                  ocultarLabel
-                  accessibilityLabel="Elegir sede de la veterinaria"
+                  accessibilityLabel="Elegir sede del QR de llegada"
                 />
               </View>
             ) : null}
@@ -686,12 +685,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                   {direccionesSedes[citaSeleccionada.guardado.sede]}
                 </Text>
               </View>
-
-              {/* Boton de adorno: todavia no abre nada. Se saco el Linking,
-                  que en web no existe y en Android se lleva la app afuera.
-                  Cuando se defina a donde lleva, se le pone el onPress. */}
-              {!esAdmin ? (
-                <Pressable
+              <Pressable
                   // Mismo verde y mismo radio que "Escanear QR de llegada": dos
                   // botones distintos al lado en la misma pantalla se ven mal.
                   style={({ pressed }) => [
@@ -699,16 +693,13 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                     styles.irBoton,
                     pressed && estilos.buttonPressed,
                   ]}
-                  onPress={() => {
-                    // Sin accion a proposito.
-                  }}
+                  onPress={() => void abrirMapa(citaSeleccionada.guardado.sede, direccionesSedes[citaSeleccionada.guardado.sede])}
                   accessibilityRole="button"
                   accessibilityLabel="Ir a la sede"
-                  accessibilityHint="Todavía no está disponible"
+                  accessibilityHint="Abre el mapa con la dirección de la sede"
                 >
                   <Text style={estilos.buttonTextPrimary}>Ir</Text>
                 </Pressable>
-              ) : null}
 
               {/* Sin descripcion: son turnos proximos, todavia no fueron
                   atendidos. La descripcion la carga el veterinario al completar
