@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
 import type { UsuarioActual } from '@/lib/session';
+import { cancelarRecordatorios } from '@/lib/recordatorios';
 
 type Campo = {
   id: 'nombre' | 'email' | 'telefono';
@@ -30,7 +31,7 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 export default function EditarPerfil() {
-  const { usuario: usuarioSesion, guardarUsuarioActual } = useSesion();
+  const { usuario: usuarioSesion, guardarUsuarioActual, cerrarSesion } = useSesion();
   const router = useRouter();
   const { top } = useSafeAreaInsets();
 
@@ -40,6 +41,10 @@ export default function EditarPerfil() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [modalEliminarCuenta, setModalEliminarCuenta] = useState(false);
+  const [eliminandoCuenta, setEliminandoCuenta] = useState(false);
+  const [cuentaEliminada, setCuentaEliminada] = useState(false);
+  const [errorEliminarCuenta, setErrorEliminarCuenta] = useState('');
 
   const margenSeguro = useMemo(() => StyleSheet.create({ contenedor: { paddingTop: top } }), [top]);
   const contenedor = [estilos.formContent, margenSeguro.contenedor];
@@ -165,6 +170,39 @@ export default function EditarPerfil() {
     }
   };
 
+  const eliminarCuenta = async () => {
+    if (!usuario || eliminandoCuenta) return;
+    setEliminandoCuenta(true);
+    setErrorEliminarCuenta('');
+    try {
+      if (!cuentaEliminada) {
+        const response = await fetch(`${API_BASE_URL}/api/users/${usuario.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${usuario.accessToken}` },
+        });
+        const result: unknown = response.status === 204 ? null : await response.json();
+        if (!response.ok) {
+          throw new Error(mensajeApi(result) ?? 'No se pudo eliminar la cuenta.');
+        }
+        setCuentaEliminada(true);
+      }
+      await cancelarRecordatorios();
+      await cerrarSesion();
+      setModalEliminarCuenta(false);
+      router.replace('/');
+    } catch (error) {
+      setErrorEliminarCuenta(
+        error instanceof TypeError
+          ? apiUnreachableMessage(error)
+          : error instanceof Error
+            ? error.message
+            : 'No se pudo completar la operación.'
+      );
+    } finally {
+      setEliminandoCuenta(false);
+    }
+  };
+
   const campos: Campo[] = [
     {
       id: 'nombre',
@@ -259,6 +297,19 @@ export default function EditarPerfil() {
                 {cargando ? 'Cargando perfil...' : guardando ? 'Guardando...' : 'Guardar cambios'}
               </Text>
             </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.eliminarCuenta, pressed && estilos.buttonPressed]}
+              onPress={() => {
+                setCuentaEliminada(false);
+                setErrorEliminarCuenta('');
+                setModalEliminarCuenta(true);
+              }}
+              disabled={cargando || guardando}
+              accessibilityRole="button"
+              accessibilityLabel="Eliminar cuenta"
+            >
+              <Text style={styles.eliminarCuentaTexto}>Eliminar cuenta</Text>
+            </Pressable>
           </View>
         }
       />
@@ -273,10 +324,82 @@ export default function EditarPerfil() {
           router.replace('/perfil');
         }}
       />
+
+      <Modal
+        visible={modalEliminarCuenta}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => {
+          if (!eliminandoCuenta && !cuentaEliminada) setModalEliminarCuenta(false);
+        }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => setModalEliminarCuenta(false)}
+            disabled={eliminandoCuenta || cuentaEliminada}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar confirmación"
+          />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>
+              {cuentaEliminada ? 'Cuenta eliminada' : '¿Eliminar tu cuenta?'}
+            </Text>
+            <Text style={estilos.modalText}>
+              {cuentaEliminada
+                ? 'Tu cuenta ya fue eliminada. Falta cerrar la sesión en este dispositivo.'
+                : 'Se eliminarán permanentemente tu cuenta, tus mascotas, sus turnos, historial y notificaciones. Esta acción no se puede deshacer.'}
+            </Text>
+            {errorEliminarCuenta ? (
+              <Text style={estilos.formError} accessibilityRole="alert">
+                {errorEliminarCuenta}
+              </Text>
+            ) : null}
+            <View style={estilos.modalActions}>
+              {!cuentaEliminada ? (
+                <Pressable
+                  style={[estilos.modalButton, estilos.modalButtonNeutral]}
+                  onPress={() => setModalEliminarCuenta(false)}
+                  disabled={eliminandoCuenta}
+                  accessibilityRole="button"
+                >
+                  <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>
+                    Cancelar
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={[estilos.modalButton, styles.botonEliminar]}
+                onPress={() => void eliminarCuenta()}
+                disabled={eliminandoCuenta}
+                accessibilityRole="button"
+                accessibilityState={{ busy: eliminandoCuenta }}
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {eliminandoCuenta ? 'Procesando...' : cuentaEliminada ? 'Cerrar sesión' : 'Eliminar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   guardando: { opacity: 0.65 },
+  eliminarCuenta: {
+    alignItems: 'center',
+    backgroundColor: '#f7ede6',
+    borderColor: '#d3a179',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    marginTop: 10,
+    paddingVertical: 13,
+  },
+  eliminarCuentaTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' },
+  botonEliminar: { backgroundColor: '#a32828' },
 });

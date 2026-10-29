@@ -540,7 +540,7 @@ const puedeCancelar =
             >
               {cita.mascota} - {cita.motivo}
             </Text>
-            {sello !== null && esAdmin ? (
+            {sello !== null ? (
               <View style={styles.sello}>
                 <Text style={styles.selloTexto}>{TEXTOS_SELLO[sello]}</Text>
               </View>
@@ -774,8 +774,8 @@ const puedeCancelar =
                 </Text>
               ) : null}
 
-              {/* La dirección y el boton "Ir" sirven para el cliente y para el
-                  veterinario; en un turno que ya pasó no aportan nada. */}
+              {/* La sede se informa mientras el turno sigue vigente. El mapa solo
+                  le resulta útil al cliente, que debe trasladarse a la sede. */}
               {turnoYaPaso ? null : (
                 <>
                   <View style={styles.modalSede}>
@@ -789,26 +789,26 @@ const puedeCancelar =
                     </Text>
                   </View>
 
-                  <Pressable
-                    // Mismo verde y mismo radio que "Escanear QR de llegada": dos
-                    // botones distintos al lado en la misma pantalla se ven mal.
-                    style={({ pressed }) => [
-                      estilos.qrBoton,
-                      styles.irBoton,
-                      pressed && estilos.buttonPressed,
-                    ]}
-                    onPress={() =>
-                      abrirMapa(
-                        citaSeleccionada.guardado.sede,
-                        direccionesSedes[citaSeleccionada.guardado.sede]
-                      )
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel="Ir a la sede"
-                    accessibilityHint="Abre el mapa con la dirección de la sede"
-                  >
-                    <Text style={estilos.buttonTextPrimary}>Ir</Text>
-                  </Pressable>
+                  {!esAdmin ? (
+                    <Pressable
+                      style={({ pressed }) => [
+                        estilos.qrBoton,
+                        styles.irBoton,
+                        pressed && estilos.buttonPressed,
+                      ]}
+                      onPress={() =>
+                        abrirMapa(
+                          citaSeleccionada.guardado.sede,
+                          direccionesSedes[citaSeleccionada.guardado.sede]
+                        )
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel="Ir a la sede"
+                      accessibilityHint="Abre el mapa con la dirección de la sede"
+                    >
+                      <Text style={estilos.buttonTextPrimary}>Ir</Text>
+                    </Pressable>
+                  ) : null}
                 </>
               )}
 

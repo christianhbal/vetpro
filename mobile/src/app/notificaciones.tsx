@@ -17,6 +17,7 @@ import { AvisoExito } from '@/components/aviso-exito';
 import { RestablecerPassword, type DestinoRecuperacion } from '@/components/restablecer-password';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import {
+  abrirMapa,
   type SedeVeterinaria,
 } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
@@ -162,8 +163,9 @@ function turnoDelAviso(aviso: Aviso): Aviso['turno'] {
  */
 function textoDelAviso(aviso: Aviso): string {
   const turno = turnoDelAviso(aviso);
-  if (aviso.title !== TITULO_TURNO || turno === null) return aviso.message;
-  return `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'} en ${turno.sede}, ${turno.fecha.split('-').reverse().join('/')} a las ${turno.hora}.`;
+  if (aviso.title !== TITULO_TURNO) return aviso.message;
+  if (turno === null) return 'Tocá para ver la información de tu turno.';
+  return `Turno de ${turno.tipo} para ${aviso.mascota?.nombre ?? 'tu mascota'}. Tocá para ver los detalles.`;
 }
 
 /** Titulos que usa el backend. Cada uno abre su propia ventana. */
@@ -258,7 +260,13 @@ function VentanaAviso({
         <View style={styles.aviso}>
           <Pressable
             style={({ pressed }) => [styles.avisoCerrar, pressed && estilos.buttonPressed]}
-            onPress={onCerrar}
+            onPress={() => {
+              if (tipo === 'recordatorio' && sede) {
+                void abrirMapa(sede, direccionesSedes[sede]);
+                return;
+              }
+              onCerrar();
+            }}
             accessibilityRole="button"
             accessibilityLabel="Cerrar aviso"
           >
@@ -589,7 +597,9 @@ export default function NotificacionesScreen() {
               )}
               <View style={styles.contenidoAviso}>
                 <Text style={estilos.cardTitle}>{item.title}</Text>
-                <Text style={estilos.cardSubtitle}>{recuperacion ? nombreSolicitante : textoDelAviso(item)}</Text>
+                <Text style={estilos.cardSubtitle} numberOfLines={2} ellipsizeMode="tail">
+                  {recuperacion ? nombreSolicitante : textoDelAviso(item)}
+                </Text>
                 {item.tipo === 'recuperacion-resuelta' ? <Text style={styles.date}>Resuelta</Text> : null}
                 <Text style={styles.date}>
                   {new Date(item.createdAt).toLocaleDateString('es-AR')}
