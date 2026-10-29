@@ -75,8 +75,6 @@ export default function AdminTurnosActivosScreen() {
   const [sedeElegida, setSedeElegida] = useState<string | null>(null);
   const sedeSeleccionada = sedeElegida ?? (esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida);
 
-  // Esta pantalla se entra desde Turnos o desde la portada, asi que la
-  // cabecera muestra la flecha de volver en lugar del menu.
   const volver = () => {
     if (router.canGoBack()) {
       router.back();
@@ -123,12 +121,8 @@ export default function AdminTurnosActivosScreen() {
     }
   }, [router, usuarioSesion]);
 
-  // El veterinario elige en que sede esta trabajando y solo ve las llegadas
-// de esa sede.
 const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || turno.sede === sedeSeleccionada);
 
-// Marcar ya no es un toggle: lleva a la pantalla donde se escribe lo que
-  // paso, y recien ahi se completa el turno.
   const registrarAtencion = (turno: TurnoActivo) => {
     router.push({
       pathname: '/marcar-turno',
@@ -140,8 +134,7 @@ const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || 
         sede: turno.sede,
         filtroOrigen: sedeSeleccionada,
         fecha: formatearFechaTurno(turno.fecha, turno.hora),
-        // La descripcion y "atendido" son cosas distintas: un turno pendiente
-        // puede venir con una nota y sigue sin estar atendido.
+
         atendido: String(turno.atendidoEn !== null),
         descripcion: turno.descripcion ?? undefined,
       },
@@ -200,7 +193,7 @@ const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || 
                   <Ionicons
                   name="checkmark-done-outline"
                   size={30}
-                  // Mismo verde del aviso de turno creado: #1f6b33.
+
                   color="#1f6b33"
                 />
                 </View>
@@ -270,8 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef5ea',
   },
   vacioTitulo: {
-    // alignSelf + textAlign ensures the wrapped lines are centered and not
-    // left-aligned like the icon above it.
+
     alignSelf: 'stretch',
     color: '#0f3e17',
     fontSize: 16,
@@ -285,8 +277,7 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 64,
   },
-  // Mismo color que estilos.cardTurno (#d9f0da): la foto va con contain y no
-  // llena el cuadro.
+
   foto: {
     width: 46,
     height: 46,

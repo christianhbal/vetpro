@@ -34,14 +34,11 @@ export default function EditarMascota() {
     () => dividirEspecieMascota(params.especie ?? '', params.raza ?? ''),
     [params.especie, params.raza]
   );
-  // Solo para mostrar. La especie no se manda en el PATCH, asi que no hace
-  // falta un estado editable: sale de dividirEspecieMascota.
+
   const datosAnimal = inicial.otra || inicial.seleccion || 'Sin definir';
-  // La raza si se edita: es el unico de los tres que el usuario puede haber
-  // dejado en blanco al crearla y querer completar despues.
+
   const [raza, setRaza] = useState(params.raza ?? '');
-  // El sexo solo se muestra, pero se relee de la API al entrar para que no se vea
-  // viejo si se entro por un link directo.
+
   const [sexoDatos, setSexoDatos] = useState<SexoMascota | ''>(
     esSexoMascota(params.sexo) ? params.sexo : ''
   );
@@ -150,9 +147,7 @@ export default function EditarMascota() {
       const response = await fetch(`${API_BASE_URL}/api/mascotas/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuario.accessToken}` },
-// Solo van los campos que esta pantalla deja cambiar. El PATCH es parcial, asi
-      // que animal, sexo y raza se quedan como estan: no se mandan y el backend
-      // no los toca.
+
       body: JSON.stringify({
         nombre: nombre.trim(),
         raza: raza.trim() || null,
@@ -168,8 +163,6 @@ export default function EditarMascota() {
         return;
       }
 
-      // La navegacion se hace al cerrar el aviso: si se cambia de pantalla
-      // antes, el componente se desmonta y el modal nunca llega a verse.
       setGuardada(nombre.trim());
     } catch (error) {
       setMensaje(apiUnreachableMessage(error));
@@ -416,7 +409,7 @@ const styles = StyleSheet.create({
     paddingBottom: 26,
   },
   bloque: { marginBottom: 10 },
-  // Bloque de solo lectura: los datos que no se cambian desde esta pantalla.
+
   fijoBloque: {
     marginBottom: 14,
     padding: 12,
@@ -491,7 +484,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3e17',
   },
   guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
-  // Mismos valores que "Eliminar sede": es la misma accion, borrar algo.
+
   eliminar: {
     alignItems: 'center',
     marginTop: 10,

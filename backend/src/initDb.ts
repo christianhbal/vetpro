@@ -6,7 +6,6 @@ config({ path: path.resolve(__dirname, '..', '.env') });
 
 const prisma = new PrismaClient();
 
-// Comprueba la conexion y que las tablas definidas en Prisma esten disponibles.
 export async function initDatabase(): Promise<void> {
   try {
     await prisma.$connect();

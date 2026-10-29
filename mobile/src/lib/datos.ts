@@ -43,7 +43,6 @@ export function formatearFechaTurno(fecha: string, hora: string): string {
   return `${date.toLocaleDateString('es-AR')} · ${hora}`;
 }
 
-/** Abre Google Maps con el camino a la sede; sirve en web y en el celular. */
 export async function abrirMapa(sede: string, direccion: string | undefined): Promise<void> {
   if (!direccion?.trim()) {
     Alert.alert('Dirección no disponible', 'La sede todavía no tiene una dirección para mostrar en el mapa.');
@@ -73,18 +72,16 @@ export function turnoSiguePendiente(turno: Pick<TurnoGuardado, 'fecha' | 'hora'>
   );
 }
 
-
 export function nombreEspecieMascota(especie: string, raza?: string | null): string {
   const animal = especie.trim();
   if (animal.toLocaleLowerCase() === 'otro') return raza?.trim() ?? '';
   return animal;
 }
 
-//las pantallas que solo muestran el animal usannombreEspecieMascota.
 export function descripcionEspecieMascota(especie: string, raza?: string | null): string {
   const animal = nombreEspecieMascota(especie, raza);
   const tipo = raza?.trim() ?? '';
-  // Con "Otro" el tipo ES el animal, asi que no se repite ni se agrega.
+
   if (
     especie.trim().toLocaleLowerCase() === 'otro' ||
     !tipo ||
@@ -98,12 +95,6 @@ export function descripcionEspecieMascota(especie: string, raza?: string | null)
 export const ESPECIES_MASCOTA = ['Perro', 'Gato', 'Otro'] as const;
 export const ESPECIE_OTRO = 'Otro';
 
-/**
- * Sexo de una mascota.
- *
- * Son solo dos y no se inventan mas: el backend valida contra esta misma lista
- * en el POST y en el PATCH de mascotas.
- */
 export const SEXOS_MASCOTA = ['Macho', 'Hembra'] as const;
 
 export type SexoMascota = (typeof SEXOS_MASCOTA)[number];

@@ -26,7 +26,6 @@ import { useSedeSeleccionada } from '@/lib/sede';
 
 const MAX_DESCRIPCION = 500;
 
-
 export default function MarcarTurnoScreen() {
   const { usuario: usuarioSesion } = useSesion();
   const params = useLocalSearchParams<{
@@ -46,7 +45,7 @@ export default function MarcarTurnoScreen() {
   const [agendarSeguimiento, setAgendarSeguimiento] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
-  // Los avisos de "falta algo" salen en cartel, no escritos en la pantalla.
+
   const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
   const [exito, setExito] = useState<{
     conSeguimiento: boolean;
@@ -56,9 +55,7 @@ export default function MarcarTurnoScreen() {
 
   const turnoId = Number(params.id);
   const mascotaId = Number(params.mascotaId);
-  // Volver a la lista de pacientes tiene que conservar la sede: sin pasarla, la
-  // pantalla caia siempre en Recoleta y el veterinario atendia en una sede y
-  // volvia a ver los pacientes de otra.
+
   const [sedeCompartida] = useSedeSeleccionada();
 const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrigen : esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
   const esperaDeLaSede = {
@@ -83,16 +80,14 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
       return;
     }
     if (!descripcion.trim()) {
-      // El boton siempre se puede apretar: si falta la descripcion sale el
-      // aviso, en vez de dejarlo apagado sin explicar por que.
+
       setAviso({
         titulo: 'Falta una descripción',
         mensaje: 'Contá lo que pasó antes de completar el turno.',
       });
       return;
     }
-    // Si pidio seguimiento, la fecha y la hora tienen que estar elegidas antes
-    // de completar el turno.
+
     if (agendarSeguimiento && (!agenda.current || !agenda.current.listo || !agenda.current.elegido)) {
       setAviso({
         titulo: 'Faltan datos para agendar',
@@ -226,8 +221,7 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
 
         {agendarSeguimiento ? (
           <View style={styles.bloqueAgenda}>
-            {/* Si el id de la mascota no llego, el calendario muestra su
-                selector normal en vez de quedar hidden. */}
+
             <AvailabilityCalendar
               ref={agenda}
               ocultarBotonGuardar
@@ -493,8 +487,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3e17',
   },
   avisoBotonTexto: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' },
-  // Padding extra arriba para que la X de la esquina y la X de error no queden
-  // alineadas en la misma altura.
+
   avisoFalta: { paddingTop: 48 },
   avisoFaltaIcono: {
     width: 54,

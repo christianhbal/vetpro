@@ -1,24 +1,12 @@
 import { Platform } from 'react-native';
 
-/**
- * `EXPO_PUBLIC_*` variables are inlined by babel-preset-expo when Metro builds
- * the bundle. That happens once, at dev-server startup, from the `.env` file as
- * it exists *at that moment*. If you create or edit `.env` later you MUST
- * restart `npx expo start` -- hot reload and re-scanning the QR will not pick
- * the new value up, and `process.env.EXPO_PUBLIC_API_URL` stays `undefined`.
- */
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 
-/** Simulators and the web target share the machine running Metro. */
 const hostFallback = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
 
 export const API_BASE_URL = (configuredApiUrl || hostFallback).replace(/\/+$/, '');
 
-/**
- * On a physical device a loopback host points at the phone itself, so the
- * request can never reach the dev machine. This is the single most common
- * cause of "no hay conexion con la API" and it is otherwise invisible.
- */
+// En un celular físico, localhost apunta al propio dispositivo.
 export const pointsAtThisDevice =
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(API_BASE_URL);
 

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-// Import de la impresion del QR (ver imprimirQr mas abajo).
+
 import { toString } from 'qrcode';
 import type { DimensionValue } from 'react-native';
 import { AppDrawer } from '@/components/app-drawer';
@@ -44,8 +44,6 @@ type Mascota = {
   foto: string | null;
 };
 
-// La agenda del admin trae el turno con su dueño y su estado de atención; los
-// turnos del propio usuario vienen mas pelados.
 type TurnoAgenda = TurnoGuardado & {
   atendidoEn?: string | null;
   user?: { nombre: string } | null;};
@@ -55,19 +53,14 @@ type CitaLista = {
   key: string;
   mascota: string;
   motivo: string;
-  /** "Hoy - 11:30 hs" o "13/10 - 09:00 hs". */
+
   cuando: string;
-  /** Tercera linea: el dueño en la agenda del admin, la sede para el cliente. */
+
   detalle: string | null;
   dueno: string | null;
   guardado: TurnoAgenda;
 };
 
-
-/**
- * "Hoy", "Mañana" o "13/10". Antes la tarjeta showed solo la hora y dos turnos
- * de dias distintos a las 10 parecian el mismo, uno repetido.
- */
 function fechaRelativaCorta(fecha: string, ahora: Date): string {
   const [year, month, day] = fecha.split('-').map(Number);
   if (!year || !month || !day) return fecha;
@@ -81,13 +74,8 @@ function fechaRelativaCorta(fecha: string, ahora: Date): string {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
 }
 
-// Alto de la tarjeta de "Tus Mascotas". La lista y la tarjeta usan el mismo
-// numero: si difieren, el texto se pisa con la foto o sobra aire abajo.
 const ALTO_CARD_MASCOTA = 132;
 
-// Los accesos rapidos de la portada. El admin no ve "Mascotas" porque es la
-// agenda de la veterinaria, no la de una persona. "Historial" ya no esta: la
-// pantalla se saco del proyecto.
 const accesosRapidos = [
   { label: 'Turnos', href: '/turnos', icon: 'calendar-outline' },
   { label: 'Mascotas', href: '/mascotas', icon: 'paw-outline' },
@@ -107,8 +95,7 @@ export default function InicioScreen() {
   const [cargandoMascotas, setCargandoMascotas] = useState(true);
   const [errorMascotas, setErrorMascotas] = useState('');
   const [turnosGuardados, setTurnosGuardados] = useState<TurnoAgenda[]>([]);
-  // El momento se guarda al cargar los datos: es la referencia para saber que
-  // turnos ya pasaron su hora.
+
   const [ahora, setAhora] = useState(() => new Date());
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
@@ -119,8 +106,7 @@ export default function InicioScreen() {
   const [imprimiendoQr, setImprimiendoQr] = useState(false);
   const [qrAviso, setQrAviso] = useState('');
   const [sedeQr, setSedeQr] = useState<SedeVeterinaria>('');
-  // La sede es la misma que en la pantalla de Turnos: el hook la guarda en el
-  // dispositivo, asi no hay que elegirla de nuevo en cada pantalla.
+
 const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
 
   const accesos = esAdmin
@@ -140,15 +126,9 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     Math.min(windowWidth * 0.82, windowHeight - 200, 640)
   );
 
-  // En la portada van 3 citas. La agenda completa esta en la pantalla de
-  // Turnos, asi que aca no hace falta ver mas.
   const COTAS_PROXIMAS = 3;
 
   const COTAS_ADMIN = 6;
-
-  // Las tarjetas se miden como las de la pantalla de Turnos: alto del contenido
-  // y foto cuadrada de 56. Antes el alto salia de una cuenta sobre el alto de la
-  // pantalla y las tarjetas quedaban enormes en telefonos altos.
 
   const cargarMascotas = useCallback(async () => {
     setCargandoMascotas(true);
@@ -194,7 +174,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
         return;
       }
       const response = await fetch(
-        // El admin mira la agenda de la veterinaria, no la de una persona.
+
         usuario.esAdmin
           ? `${API_BASE_URL}/api/admin/turnos`
           : `${API_BASE_URL}/api/turnos?userId=${encodeURIComponent(String(usuario.id))}`,
@@ -223,13 +203,11 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     }, [cargarTurnos, sincronizarRecordatorios])
   );
 
-
   const turnosPendientes = useMemo(() => turnosGuardados
     .filter((turno) => !turno.atendidoEn && turnoSiguePendiente(turno, ahora))
     .sort((a, b) => a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)),
     [turnosGuardados, ahora]);
 
-  // El administrador ve todas las sedes; el cliente, sus propios turnos.
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
         .slice(0, COTAS_ADMIN)
@@ -251,8 +229,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
           mascota: turno.mascota.nombre,
           motivo: turno.tipo,
           cuando: `${fechaRelativaCorta(turno.fecha, ahora)} - ${turno.hora} hs`,
-          // El cliente no tiene filtro de sede en la portada: decir en cual va
-          // a atenderse es lo unico que aporta la tercera linea.
+
           detalle: turno.sede,
           dueno: nombreCompleto || null,
           guardado: turno,
@@ -287,8 +264,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
    styles.tamanoFotoCita,
    ]}
    >
-   {/* La huella se escala con el lado de la foto: fijo en 26 llenaba
-   todo el cuadro de 56 y se veía desproporcionado al achicarlo. */}
+
    <Ionicons
    name="paw-outline"
    size={24}
@@ -319,16 +295,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
     </Pressable>
   );
 };
-  // ------------------------------------------------------------------
-  // IMPRIMIR EL QR (solo admin, desde la ventana del QR de la portada).
-  //
-  // Sirve para tener el QR en papel, colgado en la puerta de la sede.
-  // El aviso de error va en un texto abajo del boton y no en setErrorTurnos:
-  // ese estado se muestra en la franja de "Proximos turnos", que es del
-  // usuario normal, asi que para el admin el errorseria invisible.
-  // ------------------------------------------------------------------
-  // El veterinario a veces quiere el QR en papel para colgarlo en la puerta. Se
-  // arma una hoja simple con el mismo valor que muestra el cartel.
+
   const imprimirQr = async (sede: SedeVeterinaria) => {
     if (imprimiendoQr) return;
     const sedeActual = sedes.find((item) => item.nombre === sede);
@@ -337,8 +304,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
     setImprimiendoQr(true);
 
     try {
-      // El SVG del QR se arma aca y no con un script de internet: antes la hoja
-      // pedia el qrcode-generator a un CDN y sin conexion salia en blanco.
+
       const svgQr = await toString(checkInDeSede(sedeActual.id), {
         type: 'svg',
         errorCorrectionLevel: 'M',
@@ -361,8 +327,6 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
   <h3 style="color: #0f3e17;">${sede}</h3>
 </body></html>`;
 
-      // expo-print es nativo y no existe en web: ahi se usa el dialogo del
-      // navegador. Antes salia "No se pudo abrir la impresion desde aca".
       if (Platform.OS === 'web') {
         try {
           const ventana = window.open('', '_blank', 'width=520,height=760');
@@ -402,9 +366,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
       accessibilityRole="button"
       accessibilityLabel={`Ver foto de ${item.nombre}`}
     >
-      {/* La foto vive en un contenedor con flex: 1, o sea que se achica solo
-          para dejarle lugar a los dos textos de abajo. Antes tenia alto fijo y
-          con una raza larga el nombre salia debajo de la foto, superpuesto. */}
+
       <View style={styles.mascotaFotoArea}>
         {item.foto ? (
           <Image
@@ -458,16 +420,6 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
               ))}
             </View>
 
-            {/* Todo el aire que sobra va entre los accesos y el bloque de abajo.
-                Repartido en partes iguales dejaba los accesos pegados a "Tus
-                Mascotas" y un hueco grande antes del boton de QR. Este separador
-                va FUERA de la fila de accesos: adentro le robaba ancho a las
-                cajas y "Notificaciones" se partia a mitad de palabra. */}
-            {/* El empuje elástico solo va en la portada de usuario, que tiene el
-                carrusel de mascotas abajo para consumirlo. En el admin no hay
-                carrusel: el separador se convertia en un hueco enorme entre los
-                accesos y la sede y el encabezado quedaba amontonado contra el
-                techo de la pantalla. */}
             {esAdmin ? null : <View style={styles.empujeEncabezado} />}
 
             {esAdmin ? (
@@ -549,12 +501,8 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
 
           </View>
 
-        {/* La lista ocupa el espacio disponible bajo el encabezado. */}
         <View style={styles.portadaLista}>
-          {/* Absorbe el aire sobrante con tope: sin maxHeight, en pantallas
-              muy altas el hueco entre el encabezado y el titulo crecia sin
-              limite. El limite deja una banda de respiracion razonable y el
-              resto lo toma la franja de las tarjetas, que queda al pie. */}
+
           <View style={styles.huecoLista} />
           <Text style={styles.tituloSeccion}>Próximos turnos</Text>
           {cargandoTurnos ? (
@@ -674,7 +622,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                 )}
               </Text>
               <Text style={estilos.modalText}>Hora: {citaSeleccionada.guardado.hora}</Text>
-              
+
               <View style={styles.modalSede}>
                 <Text style={estilos.modalText}>
                   <Text style={styles.modalEtiqueta}>Sede: </Text>
@@ -686,8 +634,7 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                 </Text>
               </View>
               <Pressable
-                  // Mismo verde y mismo radio que "Escanear QR de llegada": dos
-                  // botones distintos al lado en la misma pantalla se ven mal.
+
                   style={({ pressed }) => [
                     estilos.qrBoton,
                     styles.irBoton,
@@ -701,9 +648,6 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
                   <Text style={estilos.buttonTextPrimary}>Ir</Text>
                 </Pressable>
 
-              {/* Sin descripcion: son turnos proximos, todavia no fueron
-                  atendidos. La descripcion la carga el veterinario al completar
-                  el turno, en la pantalla de atencion. */}
             </View>
           )}
         </View>
@@ -746,8 +690,6 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
               <Text style={styles.qrAdminSede}>{sedeQr}</Text>
             </View>
 
-            {/* Boton de imprimir. Solo aparece en esta ventana, que es la unica
-                parte de la portada que es del admin (esAdmin). */}
             <Pressable
               style={({ pressed }) => [
                 estilos.addPetButton,
@@ -766,9 +708,6 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
               </Text>
             </Pressable>
 
-            {/* El aviso va aca adentro y no en setErrorTurnos: ese estado se
-                muestra en la franja de "Proximos turnos", que es del usuario
-                normal, y para el admin no existiria en pantalla. */}
             {qrAviso ? <Text style={styles.qrAdminAviso}>{qrAviso}</Text> : null}
           </View>
         </View>
@@ -777,47 +716,30 @@ style={[styles.citaFoto, styles.tamanoFotoCita]}
   );
 }
 
-
 const styles = StyleSheet.create({
 
   portada: { flex: 1, backgroundColor: '#fffefc' },
 
-  // "Proximos turnos" arranca al 55% de la pantalla y se lleva el 45% que queda.
-  // El alto del encabezado se calcula con la pantalla en vez de con un
-  // porcentaje: la barra de arriba de la app queda fuera del reparto y con
-  // flexBasis el titulo se corria.
   portadaEncabezado: {
     justifyContent: 'flex-start',
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
-    // Los accesos llevan su propio marginBottom, pero el separador elastico
-    // (flex: 1) solo existe en la portada de usuario. Sin este minHeight el
-    // admin queda pegado al borde inferior del encabezado.
+
     minHeight: 4,
   },
-  // Sin justifyContent: el espaciador huecoLista (flex: 1) ya empuja el titulo
-  // y las tarjetas al pie. Con flex-end y un hijo flex: 1 los dos se pelean.
+
   portadaLista: {
     flex: 1,
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 10,
   },
-  // El alto lo fija altoZonaTurnos desde el JSX con flexGrow/flexShrink
-  // explicitos. OJO: no usar el atajo `flex: 0` ni `flex: 1` aca, porque ambos
-  // expanden a flexBasis: 0%, que le gana al height y deja la zona de tarjetas
-  // aplastada contra el pie de la pantalla.
-  // El ScrollView toma el alto que sobra y scrollea por dentro. El hueco de
-  // arriba esta topeado en 34, asi que todo el resto queda para las tarjetas y
-  // el titulo "Proximos turnos" se sigue arrancando en el mismo lugar.
+
   tarjetasCitas: { flex: 1 },
-  // El gap va en el contenido, no en el ScrollView: el gap del contenedor es
-  // el espacio entre el borde y las tarjetas y se pierde al scrollear.
+
   tarjetasCitasContenido: { gap: 8, paddingBottom: 2 },
-  // Espaciador entre el encabezado y el titulo, con tope: sin maxHeight se
-  // come todo el aire y deja un hueco enorme; sin tope las tarjetas quedan
-  // pegadas al encabezado. 34 es una banda de respiracion razonable.
+
   huecoLista: { flex: 1, maxHeight: 34 },
 sinCitas: {
    flexDirection: 'row',
@@ -840,8 +762,7 @@ sinCitas: {
    backgroundColor: '#e4f1e0',
    },
   sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' },
-  // La altura la pone altoCita en el JSX (1/3 de la franja), no flex: 1: con
-  // flex la tarjeta se estira hasta llenar la franja y deforma el reparto.
+
   citaTarjeta: {
     justifyContent: 'center',
     marginBottom: 0,
@@ -851,14 +772,9 @@ sinCitas: {
     alignItems: 'center',
     gap: 13,
   },
-  // Sin backgroundColor: la foto va con resizeMode="contain", asi que no
-  // siempre llena el cuadro. Con fondo, las fotos apaisadas dejaban barras
-  // verdes a los lados y las verticales arriba y abajo, y el cuadrado se leia
-  // como un marco. Sin fondo el sobrante es transparente y se ve el verde de la
-  // tarjeta, que es lo unico que hay que ver ahi.
+
   citaFoto: { borderRadius: 14 },
-  // El estado sin foto si lleva fondo: no hay imagen que lo ocupe y sin el
-  // cuadro el icono queda flotando sobre la tarjeta.
+
   citaFotoVacia: {
     borderRadius: 14,
     alignItems: 'center',
@@ -874,11 +790,9 @@ sinCitas: {
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
-  // "Sede:" y "Direccion:" en negrita, el dato despues. Antes la sede
-  // venia toda en negrita y la direccion suelta, sin etiqueta.
+
   modalEtiqueta: { fontWeight: '700', color: '#0f3e17' },
-  // El fondo, el radio y el alto salen de estilos.qrBoton: el mismo verde que
-  // "Escanear QR de llegada".
+
   irBoton: { marginTop: 20, marginBottom: 0 },
   tituloSeccion: {
     marginBottom: 10,
@@ -940,15 +854,13 @@ saludo: {
   },
   accesoTexto: {
     color: '#1e3326',
-    // 11 y no 12: con 12 "Notificaciones" no entra en el ancho de la caja y se
-    // partia a mitad de palabra ("Notificacion / es").
+
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
   },
   bloqueSede: { marginTop: 4 },
-  // El alto va en la lista y no en la card: con el alto fijo y el overflow
-  // hidden en la card, una raza larga que hacia dos lineas la cortaba.
+
   listaMascotas: { height: ALTO_CARD_MASCOTA, marginBottom: 0 },
   mascotaCard: {
    width: 106,
@@ -960,8 +872,7 @@ saludo: {
    borderWidth: 1,
    alignItems: 'center',
   },
-  // flex: 1 para que la foto tome lo que sobra y los dos textos de abajo
-  // siempre entren: con el alto fijo la foto se comia el espacio del nombre.
+
   mascotaFotoArea: {
    flex: 1,
    width: '100%',
@@ -969,8 +880,7 @@ saludo: {
    justifyContent: 'center',
    borderRadius: 10,
    overflow: 'hidden',
-   // Mismo color que mascotaCard: la foto va con contain y no llena el marco,
-   // asi que con otro color se veia el contraste alrededor de la imagen.
+
    backgroundColor: '#e1f4df',
   },
   mascotaFoto: { width: '100%', height: '100%' },
@@ -993,17 +903,14 @@ saludo: {
     paddingVertical: 16,
     paddingHorizontal: 8,
   },
-  // Sin el margen vertical de estilos.qrBoton: el de abajo empujaba todo el
-  // bloque hacia arriba y dejaba los accesos pegados a "Tus Mascotas".
+
   botonQrPortada: { marginVertical: 0, marginTop: 14 },
-  // 10 de separation con la sede de arriba: el bloque de QR pegado al selector
-  // se leia como un solo control y no se distinguia donde terminaba uno.
+
   qrAdminBloque: {
     marginVertical: 0,
     marginTop: 10,
   },
-  // estilos.modalTitle no tiene textAlign, asi que el titulo se pegaba a la
-  // izquierda mientras el subtitizado de abajo si iba centrado.
+
   qrAdminTitulo: {
     textAlign: 'center',
   },
@@ -1033,7 +940,7 @@ saludo: {
     fontSize: 18,
     fontWeight: 'bold',
   },
-  // El boton de imprimir va debajo del marco del QR, con aire de la sede.
+
   qrAdminBotonImprimir: {
     alignSelf: 'stretch',
     marginTop: 20,

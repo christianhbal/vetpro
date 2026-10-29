@@ -10,7 +10,7 @@ type AvisoProps = {
   textoBoton?: string;
   etiquetaBoton: string;
   onCerrar: () => void;
-  /** "exito" (con tilde verde) o "error" (sobrio, sin ícono). */
+
   variante?: 'exito' | 'error';
   children?: ReactNode;
 };
@@ -108,8 +108,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  // El error va sin ícono: un título en rojo apagado alcanza y no parece un
-  // cartel genérico de alerta.
+
   tituloError: {
     color: '#8f2f2f',
   },

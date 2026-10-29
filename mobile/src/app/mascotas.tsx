@@ -22,8 +22,7 @@ type Mascota = {
   nombre: string;
   especie: string;
   raza: string | null;
-  // Se trae de la API para pasarlo a la ficha, pero la lista no lo muestra: el
-  // sexo se ve entrando en la mascota, no en la lista.
+
   sexo: string | null;
   fechaNacimiento: string;
   foto: string | null;
@@ -200,8 +199,7 @@ const styles = StyleSheet.create({
     gap: 14,
     minHeight: 64,
   },
-  // Mismo color que estilos.cardVertical: la foto va con contain y no llena el
-  // cuadro, asi que con otro color se veia el contraste alrededor de la imagen.
+
   foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#b1dbb8' },
   fotoSinFoto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
   fotoVacio: { alignItems: 'center', justifyContent: 'center' },

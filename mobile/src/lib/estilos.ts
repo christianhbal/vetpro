@@ -1,6 +1,5 @@
 import { StyleSheet } from 'react-native';
 
-// Estilo compartido por los botones de cierre y el modal de fotos.
 const compartidos = StyleSheet.create({ cerrarCirculo: {
   width: 40,
   height: 40,
@@ -234,9 +233,7 @@ petPhotoClose: {
   modalButtonTextLight: {
     color: '#fffefc',
   },
-  // Contraseña temporal que muestra el aviso de recuperación. Va en un bloque
-  // propio para que el veterinario la lea y la copie sin confundirla con el
-  // texto del cartel.
+
   resetPassword: {
     marginTop: 14,
     paddingVertical: 10,

@@ -23,12 +23,9 @@ async function limitarNotificaciones(tx: Prisma.TransactionClient, userId: numbe
 const port = Number(process.env.PORT || 3000);
 const MIN_PASSWORD_LENGTH = 8;
 const APPOINTMENT_REMINDER_WINDOW_MS = 60 * 60 * 1000;
-// Titulo del recordatorio de proximidad. Va en una constante porque se usa al
-// crearlo y tambien al filtrar la lista: si el texto cambia en un solo lado,
-// el filtro deja de pegar con lo guardado.
+
 const TITULO_RECORDATORIO_TURNO = 'Tu turno se acerca';
 
-// No arrancamos el servidor si PORT no es un puerto valido.
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('PORT debe ser un numero entero entre 1 y 65535.');
 }
@@ -36,11 +33,6 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// La API nunca se cachea. Sin esto el navegador revalidaba con If-None-Match y
-// Express contestaba 304, o sea que la app seguia dibujando la respuesta vieja:
-// la pantalla Turnos mostraba los 15 turnos viejos aunque la base ya estuviera
-// filtrada. Sacar las cabeceras de revalidacion de la peticion es lo que corta
-// el 304; el Cache-Control solo evita que se guarde.
 app.use('/api', (request, response, next) => {
   delete request.headers['if-none-match'];
   delete request.headers['if-modified-since'];
@@ -48,7 +40,6 @@ app.use('/api', (request, response, next) => {
   next();
 });
 
-// Convierte el parametro :id a un entero positivo para Prisma.
 function parseId(value: string | undefined): number | null {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
@@ -98,7 +89,6 @@ function isValidAppointmentSlot(fecha: string, hora: string, sede: { dias: strin
   return inicio >= desde && inicio + 30 <= hasta && (inicio - desde) % 30 === 0 && new Date(year, month - 1, day, h, m) > new Date();
 }
 
-// Prisma usa P2025 cuando se intenta actualizar o borrar un registro inexistente.
 function isMissingRecord(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
 }
@@ -172,21 +162,14 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
     where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
     include: {
       mascota: { select: { nombre: true, foto: true } },
-      // La relacion se llama user, no usuario. El rol se filtra en el where: el
-      // recordatorio es para el dueno del turno, que es el que tiene que
-      // presentarse. Un admin tambien puede tener turnos propios en la tabla,
-      // pero no es cliente: atiende, no espera. Sin este filtro el admin
-      // recibia "Tu turno se acerca".
+
       user: { select: { role: true } },
     },
   });
   const ahora = Date.now();
 
   for (const turno of turnos) {
-    // Los admins no reciben recordatorios de proximity. Se saltea antes de
-    // tocar recordatorioEnviadoEn para no marcar el turno como notificado: si
-    // un admin tomara el turno de un cliente mas adelante, el recordatorio
-    // tendria que salir igual.
+
     if (turno.user.role === 'ADMIN') continue;
 
     const inicioTurno = new Date(`${turno.fecha}T${turno.hora}:00`).getTime();
@@ -227,15 +210,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
     }
   }
 }
-// -----------------------------------------------------------------------------
-// 1. Rutas de salud y mascotas
-// -----------------------------------------------------------------------------
 
-// GET /api/health
-// Confirma que la API y la base de datos estan disponibles.
-// Sexo de una mascota. El POST y el PATCH validan contra esta misma lista: si
-// cada uno escribiera la suya, el POST podria aceptar un valor que el PATCH
-// rechaza y la mascota quedaria guardada con un sexo que la app no muestra.
 const SEXOS_MASCOTA = ['Macho', 'Hembra'];
 
 app.get('/api/health', async (_request, response) => {
@@ -248,7 +223,6 @@ app.get('/api/health', async (_request, response) => {
   }
 });
 
-// Las sedes se consultan con sesión; solo un administrador puede modificarlas.
 app.get('/api/sedes', async (request, response) => {
   if (!(await requireAuthenticatedUser(request, response))) return;
   try {
@@ -323,8 +297,6 @@ app.delete('/api/admin/sedes/:id', async (request, response) => {
   }
 });
 
-// GET /api/mascotas?userId=1
-// Devuelve solo las mascotas vinculadas al usuario indicado.
 app.get('/api/mascotas', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -349,8 +321,6 @@ app.get('/api/mascotas', async (request, response) => {
   }
 });
 
-// POST /api/mascotas
-// Valida y guarda una mascota relacionada con su usuario.
 app.post('/api/mascotas', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -416,8 +386,6 @@ app.post('/api/mascotas', async (request, response) => {
   }
 });
 
-// PATCH /api/mascotas/:id
-// Actualiza solamente los campos enviados.
 app.patch('/api/mascotas/:id', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -502,8 +470,6 @@ app.patch('/api/mascotas/:id', async (request, response) => {
   }
 });
 
-// DELETE /api/mascotas/:id
-// Elimina una mascota por su id.
 app.delete('/api/mascotas/:id', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -532,16 +498,8 @@ app.delete('/api/mascotas/:id', async (request, response) => {
   }
 });
 
-// -----------------------------------------------------------------------------
-// 2. Rutas de turnos
-// -----------------------------------------------------------------------------
-
 const PREFIJO_CHECK_IN = 'vetpro://check-in';
 
-/**
- * Extrae la sede de un QR de llegada `vetpro://check-in?sede=Recoleta`.
- * Devuelve null si el QR no es de VetPro o si la sede no existe.
- */
 async function sedeDeCheckIn(code: unknown): Promise<string | null> {
   if (typeof code !== 'string') return null;
   const [base, consulta] = code.split('?');
@@ -553,8 +511,6 @@ async function sedeDeCheckIn(code: unknown): Promise<string | null> {
   return sede?.nombre ?? null;
 }
 
-// GET /api/turnos/disponibilidad?mes=AAAA-MM&sede=Recoleta
-// Devuelve las fechas y horas ocupadas para una sede, sin datos de clientes.
 app.get('/api/turnos/disponibilidad', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -583,8 +539,6 @@ app.get('/api/turnos/disponibilidad', async (request, response) => {
   }
 });
 
-// GET /api/turnos?userId=1
-// Devuelve los turnos del usuario junto con el nombre de cada mascota.
 app.get('/api/turnos', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -612,13 +566,6 @@ app.get('/api/turnos', async (request, response) => {
   }
 });
 
-// DELETE /api/turnos/:id
-// El dueño cancela su propio turno.
-//
-// Es distinto del DELETE del admin (que cancela el turno de cualquiera y le
-// avisa al dueño con un motivo): acá no se manda aviso porque el aviso le
-// llegaria a la misma persona que lo pidió. La agenda del veterinario lo ve
-// desaparecer, que es lo que tiene que pasar.
 app.delete('/api/turnos/:id', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -633,8 +580,7 @@ app.delete('/api/turnos/:id', async (request, response) => {
       where: { id, userId: user.id },
       select: { id: true, atendidoEn: true, llegadaEn: true },
     });
-    // findFirst y no findUnique: un turno de otro tiene que ser un 404, no un
-    // permiso que le diga al usuario que el turno existe.
+
     if (!turno) {
       return response.status(404).json({ message: 'No se encontró el turno.' });
     }
@@ -658,8 +604,6 @@ app.delete('/api/turnos/:id', async (request, response) => {
   }
 });
 
-// POST /api/turnos/check-in
-// Registra la llegada del usuario al escanear el QR de la veterinaria.
 app.post('/api/turnos/check-in', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -713,8 +657,6 @@ app.post('/api/turnos/check-in', async (request, response) => {
   }
 });
 
-// POST /api/turnos
-// Guarda un turno asociado al dueño y a una de sus mascotas.
 app.post('/api/turnos', async (request, response) => {
   const usuario = await requireAuthenticatedUser(request, response);
   if (!usuario) return;
@@ -794,10 +736,6 @@ app.post('/api/turnos', async (request, response) => {
   }
 });
 
-// POST /api/admin/turnos
-// Agenda el turno de seguimiento de una mascota que es de un cliente. El
-// dueño se resuelve desde la mascota: el admin solo elige el horario, asi que
-// no puede inventarse a nombre de otra persona.
 app.post('/api/admin/turnos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -835,8 +773,7 @@ app.post('/api/admin/turnos', async (request, response) => {
     if (!mascota || mascota.userId === null) {
       return response.status(404).json({ message: 'La mascota no existe o no tiene dueño.' });
     }
-    // Se copia el id a una constante porque TypeScript no mantiene el
-    // estrechamiento de una propiedad dentro del closure de la transaccion.
+
     const duenoId = mascota.userId;
 
     const turno = await prisma.$transaction(async (transaction) => {
@@ -878,12 +815,6 @@ app.post('/api/admin/turnos', async (request, response) => {
   }
 });
 
-// GET /api/admin/turnos
-// Lista todos los turnos para su administración.
-// GET /api/admin/turnos
-// Por defecto no devuelve los turnos fuera de agenda (los dias completos y el
-// historial): son Hundreds de filas que solo ocupan un horario. El Historial los
-// necesita, asi que los pide con ?incluirOcultos=1.
 app.get('/api/admin/turnos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -906,7 +837,6 @@ app.get('/api/admin/turnos', async (request, response) => {
   }
 });
 
-// Registra manualmente la llegada de un turno de hoy.
 app.patch('/api/admin/turnos/:id/llegada', async (request, response) => {
   if ((await requireAdmin(request, response)) === null) return;
   const id = parseId(request.params.id);
@@ -926,9 +856,6 @@ app.patch('/api/admin/turnos/:id/llegada', async (request, response) => {
   }
 });
 
-// GET /api/admin/turnos-activos
-// Lista los turnos de hoy que ya registraron su llegada y que todavia
-// no fueron atendidos.
 app.get('/api/admin/turnos-activos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -942,13 +869,11 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
 
   try {
     const turnos = await prisma.turno.findMany({
-      // Turno activo = ya llego (QR) y todavia no fue atendido. Al completarlo
-      // sale de esta lista y pasa a "Turnos completados".
+
       where: {
         llegadaEn: { not: null },
         atendidoEn: null,
-        // Los turnos fuera de agenda (dias completos, historial) nunca estan
-        // esperando: solo ocupan un horario o son de dias pasados.
+
         ocultoEnAgenda: false,
         fecha: fechaActual,      },
       include: {
@@ -964,7 +889,6 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
   }
 });
 
-// Completa la atención y el seguimiento en la misma transacción.
 app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
   if ((await requireAdmin(request, response)) === null) return;
   const id = parseId(request.params.id);
@@ -1004,8 +928,6 @@ app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
   }
 });
 
-// PATCH /api/admin/turnos/:id
-// Permite a un administrador cambiar el tipo, la sede, la fecha o la hora del turno.
 app.patch('/api/admin/turnos/:id', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1142,8 +1064,6 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
-
-// Elimina un registro atendido, conservando los datos de sus notificaciones.
 app.delete('/api/admin/turnos/:id/registro', async (request, response) => {
   if ((await requireAdmin(request, response)) === null) return;
   const id = parseId(request.params.id);
@@ -1169,7 +1089,6 @@ app.delete('/api/admin/turnos/:id/registro', async (request, response) => {
   }
 });
 
-// Cancela un turno. No se permite si el paciente ya fue atendido
 app.delete('/api/admin/turnos/:id', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1179,8 +1098,6 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
     return response.status(400).json({ message: 'El id del turno no es válido.' });
   }
 
-  // El motivo es opcional: si la veterinaria no escribe nada, el aviso igual
-  // dice por que se cancelo, pero en una linea generica.
   const motivoPedido =
     typeof request.body?.motivo === 'string' ? request.body.motivo.trim() : '';
   const motivo =
@@ -1205,12 +1122,7 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
         return { blocked: 'llegada' as const };
       }
 
-      // La notificación se crea antes del borrado y sin turnoId: al eliminar el
-      // turno la relación queda en null (onDelete: SetNull) y el aviso sobrevive.
-      // La foto va copiada porque, sin el turno, no habria de donde sacarla y
-      // el aviso salia sin imagen mientras todos los demas la traen. La sede y
-      // la hora tambien: sin ellas la ventana del aviso no puede decir de que
-      // sede era el turno que se cayo.
+      // Conserva los datos del turno en el aviso antes de eliminarlo.
       const notification = await transaction.notification.create({
         data: {
           userId: turno.userId,
@@ -1256,8 +1168,6 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
-// POST /api/notifications/reminders
-// Genera avisos pendientes. La transacción evita duplicarlos al repetir el pedido.
 app.post('/api/notifications/reminders', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -1270,8 +1180,6 @@ app.post('/api/notifications/reminders', async (request, response) => {
   }
 });
 
-// GET /api/notifications
-// Devuelve los avisos del usuario autenticado, con el total de avisos sin leer.
 app.get('/api/notifications', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -1283,10 +1191,6 @@ app.get('/api/notifications', async (request, response) => {
     return response.status(500).json({ message: 'No se pudieron cargar las notificaciones.' });
   }
 
-  // El recordatorio de "¿tu turno se acerca?" es para el dueno del turno, que
-  // es el que tiene que presentarse. Un admin atiende, no espera, asi que no
-  // le sirve de nada. Se filtran los que ya quedaron guardados antes de que
-  // existiera el filtro al crear el recordatorio.
   const where = {
     userId: user.id,
     ...(user.role === 'ADMIN' ? { title: { not: TITULO_RECORDATORIO_TURNO } } : {}),
@@ -1297,9 +1201,7 @@ app.get('/api/notifications', async (request, response) => {
       prisma.notification.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        // El turno viene adentro para que la app no tenga que adivinar de que
-        // sede hablaba el mensaje: el aviso de "Tu turno se acerca" tiene que
-        // mostrar la direccion de ESE turno, no la del proximo turno pendiente.
+
         include: {
           turno: {
             select: {
@@ -1314,9 +1216,7 @@ app.get('/api/notifications', async (request, response) => {
       }),
       prisma.notification.count({ where: { ...where, readAt: null } }),
     ]);
-    // La mascota va arriba del aviso y no adentro del turno: cuando el turno
-    // se borra al cancelar, los campos copiados en el aviso siguen siendo la
-    // unica fuente, y asi todas las tarjetas se ven igual.
+
     const conMascota = items.map((item) => ({
       ...item,
       mascota:
@@ -1333,8 +1233,6 @@ app.get('/api/notifications', async (request, response) => {
   }
 });
 
-// POST /api/notifications/global
-// Aviso general de la veterinaria para todos los usuarios.
 app.post('/api/notifications/global', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1352,10 +1250,7 @@ app.post('/api/notifications/global', async (request, response) => {
   }
 
   try {
-    // Se crea una fila por usuario y no una sola compartida: la tabla obliga a
-    // que cada aviso pertenezca a alguien (asi el "marcar como leido" no le
-    // muestra a uno lo que otro ya leyo) y es la unica forma de que cada
-    // cliente vea el suyo en su propia lista.
+
     const usuarios = await prisma.usuario.findMany({ select: { id: true } });
     const creados = await prisma.$transaction(async (tx) => {
       const resultado = await tx.notification.createMany({ data: usuarios.map((usuario) => ({
@@ -1374,8 +1269,6 @@ app.post('/api/notifications/global', async (request, response) => {
   }
 });
 
-// PATCH /api/notifications/:id/read
-// Marca como leído un aviso perteneciente al usuario autenticado.
 app.patch('/api/notifications/:id/read', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -1406,12 +1299,6 @@ app.patch('/api/notifications/:id/read', async (request, response) => {
   }
 });
 
-// -----------------------------------------------------------------------------
-// 3. Rutas de registro e inicio de sesion
-// -----------------------------------------------------------------------------
-
-// POST /api/users
-// Crea una cuenta y guarda la contraseña como texto para el ejercicio de clase.
 app.post('/api/users', async (request, response) => {
   const { nombre, email, password, telefono } = request.body ?? {};
 
@@ -1448,8 +1335,6 @@ app.post('/api/users', async (request, response) => {
   }
 });
 
-// GET /api/admin/users
-// Devuelve las cuentas sin incluir sus contraseñas.
 app.get('/api/admin/users', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1473,8 +1358,6 @@ app.get('/api/admin/users', async (request, response) => {
   }
 });
 
-// POST /api/admin/users
-// Solo un administrador autenticado puede crear otras cuentas administradoras.
 app.post('/api/admin/users', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1512,8 +1395,6 @@ app.post('/api/admin/users', async (request, response) => {
   }
 });
 
-// DELETE /api/admin/users/:id
-// Evita que un administrador se elimine a sí mismo o quite al último administrador.
 app.delete('/api/admin/users/:id', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1551,7 +1432,6 @@ app.delete('/api/admin/users/:id', async (request, response) => {
   }
 });
 
-// El usuario solo puede eliminar su propia cuenta y nunca al último administrador.
 app.delete('/api/users/:id', async (request, response) => {
   const usuario = await requireAuthenticatedUser(request, response);
   if (!usuario) return;
@@ -1576,8 +1456,6 @@ app.delete('/api/users/:id', async (request, response) => {
   }
 });
 
-// GET /api/users/:id
-// Devuelve los datos de perfil, sin contraseña.
 app.get('/api/users/:id', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -1586,7 +1464,6 @@ app.get('/api/users/:id', async (request, response) => {
     return response.status(400).json({ message: 'El id de usuario no es valido.' });
   }
   if (id !== autenticado.id) return response.status(403).json({ message: 'Solo puedes acceder a tu propio perfil.' });
-
 
   try {
     const user = await prisma.usuario.findUnique({
@@ -1603,8 +1480,6 @@ app.get('/api/users/:id', async (request, response) => {
   }
 });
 
-// PATCH /api/users/:id
-// Actualiza los datos de contacto opcionales y básicos del usuario.
 app.patch('/api/users/:id', async (request, response) => {
   const autenticado = await requireAuthenticatedUser(request, response);
   if (!autenticado) return;
@@ -1664,8 +1539,6 @@ app.patch('/api/users/:id', async (request, response) => {
   }
 });
 
-// PATCH /api/users/:id/password
-// Permite al usuario cambiar su contraseña y revoca el token anterior.
 app.patch('/api/users/:id/password', async (request, response) => {
   const user = await requireAuthenticatedUser(request, response);
   if (!user) return;
@@ -1727,7 +1600,6 @@ function passwordTemporal(nombre: string): string {
   return `${apellido || 'vetpro'}12345`;
 }
 
-// Solicitud sin cambio de contraseña: cada administrador recibe un aviso pendiente.
 app.post('/api/password-reset/request', async (request, response) => {
   const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
   if (!/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({ message: 'Escribí un correo válido.' });
@@ -1737,7 +1609,8 @@ app.post('/api/password-reset/request', async (request, response) => {
       if (!usuario) return;
       const admins = await tx.usuario.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
       for (const admin of admins) {
-        // Leída no significa resuelta: no se duplica una solicitud por abrirla.
+
+        // Una solicitud leída todavía puede estar pendiente.
         const pendiente = await tx.notification.findFirst({ where: { userId: admin.id, tipo: 'recuperacion', solicitanteEmail: email } });
         if (!pendiente) {
           await tx.notification.create({ data: {
@@ -1755,7 +1628,6 @@ app.post('/api/password-reset/request', async (request, response) => {
   }
 });
 
-// El administrador confirma desde una solicitud pendiente o desde Administrar usuarios.
 app.post('/api/admin/password-reset', async (request, response) => {
   const adminId = await requireAdmin(request, response);
   if (adminId === null) return;
@@ -1771,7 +1643,7 @@ app.post('/api/admin/password-reset', async (request, response) => {
       if (!usuario) return { error: 'usuario' as const };
       const password = passwordTemporal(usuario.nombre);
       await tx.usuario.update({ where: { id: usuario.id }, data: { password } });
-      // Resuelve las copias de todos los administradores, incluso las ya leídas.
+
       await tx.notification.updateMany({
         where: { tipo: 'recuperacion', solicitanteEmail: usuario.email },
         data: { tipo: 'recuperacion-resuelta', readAt: new Date().toISOString() },
@@ -1786,8 +1658,6 @@ app.post('/api/admin/password-reset', async (request, response) => {
   }
 });
 
-// POST /api/sessions
-// Comprueba las credenciales y devuelve los datos publicos del usuario.
 app.post('/api/sessions', async (request, response) => {
   const { email, password } = request.body ?? {};
 
@@ -1801,16 +1671,12 @@ app.post('/api/sessions', async (request, response) => {
     });
 
     if (!user) {
-      // El correo no existe. Se le dice explícitamente porque el dueño que se
-      // equivoca al tipear el correo necesita saber si se equivocó al escribir
-      // o al escribir la clave, si no vuelve a intentar lo mismo tres veces.
+
       return response.status(401).json({ message: 'Correo no registrado.' });
     }
 
     if (user.password !== password) {
-      // Acá sí sabemos que la cuenta existe, asi que se le puede decir al dueño
-      // que fue la contraseña. Es la falta de información más comun y la que
-      // mas confunde cuando el mensaje es "correo o contraseña".
+
       return response.status(401).json({ message: 'Contraseña incorrecta.' });
     }
 
@@ -1829,10 +1695,6 @@ app.post('/api/sessions', async (request, response) => {
     return response.status(500).json({ message: 'No se pudo iniciar sesion.' });
   }
 });
-
-// -----------------------------------------------------------------------------
-// 4. Arranque del servidor
-// -----------------------------------------------------------------------------
 
 export async function start(): Promise<void> {
   await initDatabase();

@@ -274,8 +274,6 @@ export default function Registro() {
         }
       />
 
-      {/* Aviso de exito o de error. Misma ventana que la del admin, con el
-          titulo en rojo cuando algo esta mal. */}
       <Modal
         visible={aviso !== null}
         transparent
@@ -422,7 +420,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  // Pregunta y pastilla en la misma línea, como en el ingreso.
+
   loginRow: {
     ...estilos.linkRow,
     marginTop: 22,

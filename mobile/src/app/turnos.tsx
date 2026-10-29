@@ -32,12 +32,10 @@ import { useSesion } from '@/lib/sesion-context';
 import { useRecordatorios } from '@/lib/recordatorios';
 import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 
-
-// El admin recibe datos adicionales de los turnos.
 type TurnoLista = TurnoGuardado & {
   atendidoEn?: string | null;
   descripcion?: string | null;
-  /** Ocupa la agenda pero no se muestra en las listas de esta pantalla. */
+
   ocultoEnAgenda?: boolean;
   user?: { nombre: string } | null;
 };
@@ -83,7 +81,6 @@ const TEXTOS_SELLO: Record<SelloTurno, string> = {
 
 const TIPOS_TURNO = ['Control', 'Vacunas', 'Estética'];
 
-/** Un horario tomado, como lo devuelve GET /api/turnos/disponibilidad. */
 type HorarioOcupado = { fecha: string; hora: string };
 
 function esHorarioOcupado(value: unknown): value is HorarioOcupado {
@@ -155,7 +152,6 @@ const setFiltroSede = (valor: 'Todas' | SedeVeterinaria) => {
         return;
       }
 
-      // El admin ve la agenda completa; el usuario, solo sus turnos.
       const response = await fetch(
         usuario.esAdmin
           ? `${API_BASE_URL}/api/admin/turnos`
@@ -302,9 +298,6 @@ const puedeCancelar =
     }
   };
 
-
-  // Los horarios tomados del mes, para que el campo de hora no ofrezca uno que
-  // ya esta ocupado.
   const cargarDisponibilidad = useCallback(
     async (year: number, month: number, sedeConsultada: SedeVeterinaria) => {
       const mes = `${year}-${String(month).padStart(2, '0')}`;
@@ -399,7 +392,7 @@ const puedeCancelar =
       setEditando(false);
       setCitaSeleccionada(null);
       await cargarTurnos();
-      // El aviso va despues de recargar, por el mismo motivo que el cancelado.
+
       setTurnoGuardado({
         mascota: nombreMascota,
         texto: `${tipo} · ${sedeForm} · ${fechaCorta(fechaForm.trim())} a las ${horaForm.trim()} hs`,
@@ -421,9 +414,6 @@ const puedeCancelar =
     if (!citaSeleccionada || cancelando || !token) return;
     setErrorCancelar('');
 
-    // El motivo lo lee el dueño en la notificación del cancelación, asi que el
-    // veterinario tiene que escribirlo. Al cliente no se le pide: él no le avisa
-    // a nadie, el motivo no tendria a donde ir.
     const motivo = motivoCancelacion.trim();
     if (esAdmin && motivo.length < 4) {
       setErrorCancelar('Contá por qué se cancela: es lo que va a leer el dueño.');
@@ -432,9 +422,7 @@ const puedeCancelar =
 
     setCancelando(true);
     try {
-      // El veterinario cancela el turno de cualquiera y le avisa al dueño con un
-      // motivo. El dueño cancela el suyo y no se manda aviso: le llegaría a la
-      // misma persona que lo pidió.
+
       const respuesta = esAdmin
         ? `${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.guardado.id}`
         : `${API_BASE_URL}/api/turnos/${citaSeleccionada.guardado.id}`;
@@ -463,12 +451,9 @@ const puedeCancelar =
       setConfirmarCancelacion(false);
       setMotivoCancelacion('');
       setCitaSeleccionada(null);
-      // Se recarga la agenda para que el turno desaparezca de la lista. Si la
-      // recarga falla, la pantalla avisa con su propio error y el turno sigue
-      // visible: mejor eso que un cartel de "listo" con un turno que ya no se
-      // puede volver a tocar.
+
       await cargarTurnos();
-      // El aviso va despues de recargar, por el mismo motivo.
+
       if (esAdmin) {
         setTurnoCancelado({
           mascota: citaSeleccionada.guardado.mascota.nombre,
@@ -535,11 +520,7 @@ const puedeCancelar =
             </Text>
           ) : null}
           <Text style={estilos.cardSubtituloTurno} numberOfLines={1} ellipsizeMode="tail">
-            {/* La sede va al lado de la hora solo para el usuario normal: es el
-              unico que puede tener turnos en varias sedes y necesita saber a
-              cual tiene que presentarse. El admin ya tiene el filtro de sede
-              arriba de la lista y ve la agenda de una sola sede, asi que la
-              linea le repetia informacion. */}
+
           {fechaCorta(cita.guardado.fecha)} - {cita.hora} hs
           {esAdmin ? null : ` · ${cita.guardado.sede}`}
           </Text>
@@ -598,9 +579,6 @@ const puedeCancelar =
     </View>
   );
 
-  // Un turno de un dia ya pasado no tiene sentido mostrarle la direccion ni el
-  // boton "Ir": ese turno ya se hizo. Los de hoy y los de adelante si, aunque la
-  // hora ya haya pasado, porque el cliente todavia tiene que ir.
   const turnoYaPaso =
     citaSeleccionada !== null && citaSeleccionada.guardado.fecha < valorHoy;
 
@@ -757,8 +735,6 @@ const puedeCancelar =
                 </Text>
               ) : null}
 
-              {/* La sede se informa mientras el turno sigue vigente. El mapa solo
-                  le resulta útil al cliente, que debe trasladarse a la sede. */}
               {turnoYaPaso ? null : (
                 <>
                   <View style={styles.modalSede}>
@@ -929,7 +905,6 @@ const puedeCancelar =
         </View>
       </Modal>
 
-      {/* Confirmacion. Sin campo de texto: aca se responde si o no. */}
       <Modal
         visible={confirmarCancelacion}
         transparent
@@ -1021,9 +996,6 @@ const puedeCancelar =
         </View>
       </Modal>
 
-      {/* Modificar el turno. Modal propio y no campos dentro del de detalle:
-          son cuatro datos y un calendario de horarios, y metidos en el detalle
-          el cartel queda mas alto que la pantalla. */}
       <Modal
         visible={editando}
         transparent

@@ -6,7 +6,6 @@ import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
 
-
 type Campo = {
   id: string;
   placeholder: string;
@@ -255,18 +254,12 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginBottom: 15,
     paddingRight: 15,
-    // En la web el campo es un <input> de verdad, y el navegador lo pinta con
-    // esquinas rectas y a veces con fondo (cuando autocompleta). Como la
-    // pastilla es redondeada, ese cuadrado asomaba por las esquinas derechas y
-    // se veía una manchita blanca pegada al borde. Con overflow hidden el
-    // recorte lo hace la pastilla y no el input.
+
     overflow: 'hidden',
   },
   input: {
     flex: 1,
-    // Sin esto el input no baja nunca de su ancho mínimo propio del navegador
-    // (unos 217px) y en pantallas angostas se sale de la pastilla por la
-    // derecha. Con minWidth 0 sí se encoge hasta el ancho que le queda.
+
     minWidth: 0,
     padding: 18,
     fontSize: 16,
@@ -319,13 +312,8 @@ registerText: {
   olvideText: {
     ...estilos.linkPillText,
   },
-  // Un solo botón, asi que al medio de la ventana y no pegado a la derecha
-  // como en los formularios, donde conviven con otro botón.
+
   accionesCentradas: {
     justifyContent: 'center',
   },
-  // A diferencia de las ventanas de formulario, que tienen campos para
-  // completar y por eso van con el texto a la izquierda, esta es un aviso: no
-  // hay nada que completar, se lee y se cierra. Por eso todo va centrado y
-  // lleva aire arriba para que la X de la esquina no se monte sobre el título.
 });

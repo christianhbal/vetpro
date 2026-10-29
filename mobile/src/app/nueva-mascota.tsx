@@ -22,10 +22,9 @@ export default function NuevaMascota() {
   const [foto, setFoto] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Nombre de la mascota recien registrada, para el aviso de exito.
+
   const [mascotaGuardada, setMascotaGuardada] = useState<string | null>(null);
 
-  // Si se entra por un link directo no hay historial, asi que caemos a Mascotas.
   const volver = () => {
     if (router.canGoBack()) {
       router.back();
@@ -111,8 +110,6 @@ export default function NuevaMascota() {
         return;
       }
 
-      // La navegacion se hace al cerrar el aviso: si se cambia de pantalla
-      // antes, el componente se desmonta y el modal nunca llega a verse.
       setMascotaGuardada(nombre.trim());
     } catch (error) {
       setMensaje(apiUnreachableMessage(error));
@@ -168,8 +165,6 @@ export default function NuevaMascota() {
           </View>
         </View>
 
-        {/* Va arriba de Sexo y Raza: es el desglose del boton "Otro", asi que
-            tiene que quedar pegado a la pregunta que lo abre. */}
         {especie === ESPECIE_OTRO ? (
           <View style={styles.bloque}>
             <Text style={styles.label}>¿Qué animal es?</Text>

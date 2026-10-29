@@ -10,8 +10,7 @@ export default function Recuperar() {
   const [email, setEmail] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
-  // Error del formulario, escrito arriba del boton. El modal queda solo para el
-  // exito, que hay que reconocer a mano.
+
   const [error, setError] = useState('');
   const { top } = useSafeAreaInsets();
 

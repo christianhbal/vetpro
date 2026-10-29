@@ -45,7 +45,6 @@ type Sede = {
 
 const DIAS_SEMANA = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
 
-
 function esHoraValida(valor: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(valor.trim());
 }
@@ -89,11 +88,11 @@ export default function AdminSedesScreen() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [sedeEnEdicion, setSedeEnEdicion] = useState<Sede | null>(null);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
-  // Nombre de la sede recien guardada, para el aviso de exito.
+
   const [sedeGuardada, setSedeGuardada] = useState<{ nombre: string; editando: boolean } | null>(
     null
   );
-  // Avisos de eliminacion: exito y error, separados del formulario.
+
   const [sedeEliminada, setSedeEliminada] = useState<string | null>(null);
   const [errorEliminar, setErrorEliminar] = useState('');
   const [nombre, setNombre] = useState('');
@@ -586,8 +585,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  // La confirmacion es una decision, no una accion de formulario: los
-  // botones van al centro de la ventana, parejos y con el mismo peso a los lados.
+
   accionesCentradas: { justifyContent: 'center' as const },
   deleteButton: {
     backgroundColor: '#a32d2d',

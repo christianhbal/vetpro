@@ -53,8 +53,9 @@ function sincronizarRecordatorios(usuario: UsuarioActual | null, pedirPermiso: b
   return encolar(async () => {
     const Notifications = await import('expo-notifications');
     if (!usuario) return;
-    // Android necesita el canal antes de mostrar la solicitud de permiso.
+
     if (Platform.OS === 'android') {
+      // Android necesita el canal antes de solicitar el permiso.
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Avisos de VetPro', importance: Notifications.AndroidImportance.HIGH,
       });

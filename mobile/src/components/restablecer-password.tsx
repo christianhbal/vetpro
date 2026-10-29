@@ -21,7 +21,6 @@ type Props = {
   onRestablecido?: (email: string) => void;
 };
 
-// Una misma confirmación para la llave de usuarios y las notificaciones.
 export function RestablecerPassword({ destino, onCerrar, onRestablecido }: Props) {
   const { usuario, cerrarSesion } = useSesion();
   const [guardando, setGuardando] = useState(false);

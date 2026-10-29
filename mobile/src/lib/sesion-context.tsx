@@ -45,7 +45,6 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     [usuario, guardarUsuarioActual, cerrarSesion]
   );
 
-  // Las pantallas se montan cuando ya conocemos la sesión persistida.
   if (cargando || error) {
     return (
       <View style={styles.espera}>

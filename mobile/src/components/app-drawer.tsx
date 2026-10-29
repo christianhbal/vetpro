@@ -37,7 +37,7 @@ const adminMenuItems = [
 type AppDrawerProps = {
   title: string;
   children: ReactNode;
-  /** Si se pasa, la barra superior muestra una flecha en vez del menu. */
+
   onVolver?: () => void;
   etiquetaVolver?: string;
 };
@@ -106,9 +106,6 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
     }, [cargarContadorNotificaciones, desplazamiento])
   );
 
-  // El admin ve Notificaciones y Perfil al final, debajo de sus secciones de
-  // administracion: son pantallas personales, no herramientas de la veterinaria.
-  // Para el cliente quedan donde estan, que ya es la cola del menu.
   const items = esAdmin
     ? [
         ...menuItems.filter(
@@ -136,15 +133,15 @@ export function AppDrawer({ title, children, onVolver, etiquetaVolver }: AppDraw
       if (finished) setVisible(false);
     });
   };
-  // Solo el enlace al valor animado va fuera de StyleSheet: no es un tamaño fijo.
+
+  // El desplazamiento animado se vincula dinámicamente al estilo.
   const movimientoMenu = { transform: [{ translateX: desplazamiento }] };
   const espaciosSeguros = StyleSheet.create({
     header: { paddingTop: insets.top },
     drawer: { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
   });
 
-  // Solo empieza desde el borde al abrir; con el menú abierto se puede cerrar
-  // desde toda la superficie. Los movimientos verticales quedan para el scroll.
+  // El gesto horizontal deja el movimiento vertical para el scroll.
   const gestoMenu = Gesture.Pan()
     // Sin Reanimated: los callbacks JS solo deciden abrir/cerrar al finalizar.
     .runOnJS(true)

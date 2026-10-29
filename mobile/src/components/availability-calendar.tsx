@@ -34,7 +34,6 @@ import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo'
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
-
 type TipoTurno = (typeof tiposTurno)[number];
 
 const colorOcupadoFondo = '#f2ddcd';
@@ -60,7 +59,6 @@ type TurnoCreado = {
   hora: string;
 };
 
-/** Lo que quedo elegido en la agenda, para que la pantalla lo muestre. */
 export type TurnoElegido = {
   tipo: TipoTurno;
   fecha: string;
@@ -70,47 +68,31 @@ export type TurnoElegido = {
 
 type Props = {
   onTurnoGuardado?: () => void;
-  /** Se llama cuando el usuario cierra el aviso de turno creado. */
+
   onTurnoCerrado?: () => void;
-  /**
-   * Factor de compresion vertical (0.8 a 1). Lo calcula la pantalla para que
-   * el formulario entre entero y la vista no tenga que scrollear.
-   */
+
   escala?: number;
-  /**
-   * Cuando viene, el selector de mascota queda fijo en esa. Se usa para
-   * agendar el seguimiento de un turno ya atendido.
-   */
+
   mascotaIdFija?: number | null;
-  /** Cuando viene, la sede queda fija en esa, sin selector. */
+
   sedeFija?: SedeVeterinaria | null;
-  /** Nombre a mostrar cuando la mascota viene fija, por si el id no llego. */
+
   mascotaNombreFija?: string;
-  /**
-   * Oculta el boton "Guardar turno". Lo usa la pantalla de atencion, que ya
-   * tiene su propio boton y hace las dos cosas juntas.
-   */
+
   ocultarBotonGuardar?: boolean;
-  /**
-   * Agenda en nombre de un cliente. El admin no es el dueño de la mascota, asi
-   * que el turno va por un endpoint propio en vez de POST /api/turnos.
-   */
+
   comoAdmin?: boolean;
-  /**
-   * No muestra el aviso de turno creado, porque quien lo muestra es la pantalla
-   * que contiene la agenda.
-   */
+
   ocultarAviso?: boolean;
 
 };
 
-/** Lo que la pantalla que contiene la agenda puede pedirle. */
 export type AgendaHandle = {
-  /** Guarda el turno elegido. Devuelve false si faltaba algo o falló la API. */
+
   guardar: () => Promise<boolean>;
-  /** True cuando ya se eligió tipo, fecha y hora y se puede guardar. */
+
   listo: boolean;
-  /** Lo elegido en la agenda, para mostrarlo en el aviso de la pantalla. */
+
   elegido: TurnoElegido | null;
 };
 
@@ -186,7 +168,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     const [fechaSeleccionada, setFechaSeleccionada] = useState(() =>
       fechaComoValor(new Date())
     );
-    // Con sedeFija arranca en esa sede y el selector desaparece.
+
     const [sede, setSede] = useState<SedeVeterinaria>(sedeFija ?? '');
     const { sedes, errorSedes, cargandoSedes } = useSedes();
     const configuracionSede = sedes.find((item) => item.nombre === sede);
@@ -237,7 +219,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         }
         if (idSolicitud === solicitud.current) {
           setHorariosOcupados(result);
-          // El horario elegido pudo ocuparse mientras recargabamos.
+
           setHoraSeleccionada((actual) =>
             actual !== '' && result.some((slot) => slot.hora === actual && slot.fecha === fechaSeleccionada)
               ? ''
@@ -265,9 +247,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       }, [cargarDisponibilidad])
     );
 
+    // En seguimiento, la mascota pertenece al cliente y no al administrador.
     const cargarMascotas = useCallback(async () => {
-      // Con la mascota fija no hace falta la lista: es la de un cliente y no
-      // va a estar entre las del admin. Se evita el pedido.
+
       if (mascotaIdFija !== null) {
         setMascotas([]);
         setCargandoMascotas(false);
@@ -344,12 +326,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       [opcionesSede, sede]
     );
 
-// Con mascotaIdFija el selector queda bloqueado en esa mascota, que es lo que
-    // se usa al agendar el seguimiento de un turno ya atendido.
-    //
-    // Ojo: esa mascota es de un cliente, no del admin que esta agendando, asi
-    // que no aparece en la lista de /api/mascotas. Cuando no esta, se arma la
-    // opcion a mano con el nombre que trae el turno.
     const mascotaSeleccionada = useMemo(() => {
       const idBuscado = String(mascotaIdFija ?? mascotaId);
       const enMiLista = opcionesMascota.find((opcion) => opcion.valor === idBuscado);
@@ -444,8 +420,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         if (!usuario) {
           throw new Error('Inicia sesión para guardar el turno.');
         }
-        // El admin agenda en nombre de un cliente, asi que va por su propio endpoint:
-        // POST /api/turnos exige que la mascota sea del que esta llamando.
+
         const response = await fetch(
           `${API_BASE_URL}${comoAdmin ? '/api/admin/turnos' : '/api/turnos'}`,
           {
@@ -480,8 +455,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         }
 
         const mascota = mascotas.find((item) => item.id === mascotaAUsar);
-        // Con ocultarAviso no se muestra nada: el aviso lo pone la pantalla de
-        // atencion, que ademas muestra como quedo el turno original.
+
         if (!ocultarAviso) {
           setTurnoCreado({
             mascota: mascota?.nombre ?? mascotaSeleccionada.titulo,
@@ -533,8 +507,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         horaComoMinutos(horaSeleccionada) <= ahoraMinutos
       );
 
-    // La pantalla de atencion guarda el turno de seguimiento con su propio
-    // boton, asi que le prestamos el guardado y le decimos si esta completo.
     const elegido: TurnoElegido | null =
       tipo !== '' &&
       fechaSeleccionada !== '' &&
@@ -544,26 +516,18 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         : null;
     useImperativeHandle(ref, () => ({ guardar: confirmar, listo: puedeConfirmar, elegido }));
 
-    // Mantener el calendario legible también en pantallas chicas.
     const altoDia = Math.max(36, Math.round(36 * escala));
     const altoSlot = Math.max(44, Math.round(46 * escala));
     const diaText = Math.max(14, Math.round(13 * escala));
     const slotText = Math.max(12, Math.round(13 * escala));
     const gapSlot = Math.max(3, Math.round(5 * escala));
 
-    // Los margenes tambien se comprimen. Antes eran fijos: en un iPhone SE
-    // (375x667, unos 580px utiles) el formulario no entra ni con la grilla
-    // comprimida al limite, porque los huecos entre bloques se suman.
     const esp = Math.max(0.55, Math.min(1.2, escala));
     const hueco = (valor: number) => Math.max(4, Math.round(valor * esp));
 
-    // El puntito de "dia con turno" y el rojo de "dia completo" van abajo, como
-    // siempre. Para que no se le suba encima del numero cuando la celda se
-    // comprime, la celda reserva la franja de abajo y el numero sube.
     const altoPuntito = Math.max(4, Math.round(altoDia * 0.16));
     const margenPuntito = Math.max(2, Math.round(altoDia * 0.1));
     const franjaPuntito = altoPuntito + margenPuntito;
-
 
     const estilosAdaptados = StyleSheet.create({
     direccion: { marginTop: hueco(7), marginBottom: hueco(10) },
@@ -654,10 +618,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           </View>
           )}
 
-
-        {/* Direccion de la sede elegida. Va en una linea propia y en letra chica
-            para no desarmar la fila de dos columnas: dentro de la columna de Sede
-            los dos selectores quedaban desalineados. */}
         {sedeFija || !configuracionSede ? null : (
           <View style={[styles.direccionSede, estilosAdaptados.direccion]}>
             <Ionicons name="location-outline" size={12} color="#0f3e17" />
@@ -775,7 +735,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 >
                   {dia}
                 </Text>
-                {/* Marca las fechas con todos los horarios ocupados. */}
+
                 {llevaPuntito ? (
                   <View
                     style={[
@@ -1019,8 +979,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // Pastilla en vez de texto suelto: asi se lee como un dato mas de la sede
-  // y no como un texto que se colo abajo de los selectores.
+
   direccionSede: {
     flexDirection: 'row',
     alignItems: 'center',

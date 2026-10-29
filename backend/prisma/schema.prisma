@@ -20,10 +20,7 @@ model Mascota {
   id        Int     @id @default(autoincrement())
   nombre    String
   especie   String
-  raza      String?
-  // Macho o Hembra. Va suelto y no como parte de la especie porque la ficha
-  // lo muestra solo y las otras pantallas no lo necesitan.
-  sexo      String?
+  raza      String?  sexo      String?
   fechaNacimiento String
   foto      String?
   userId    Int?
@@ -80,27 +77,9 @@ model Notification {
   title     String
   message   String
   readAt    String?
-  createdAt String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  // Nombre y foto de la mascota, copiados del turno. Al cancelar, el turno se
-  // borra y la relacion queda en null: sin esto el aviso de "Tu turno fue
-  // cancelado" salia sin foto, distinto de todos los demas.
-  mascotaNombre String?
-  mascotaFoto   String?
-  // Por que se cancelo, en palabras. Va aparte del mensaje porque el mensaje es
-  // la linea corta de la lista y el motivo es lo que se abre al apretar.
-  motivo        String?
-  // Sede y hora del turno cancelado, copiadas por la misma razon que el nombre
-  // y la foto: al cancelar el turno se borra y la relacion queda en null. Sin
-  // esto el aviso de "Tu turno fue cancelado" no podria decir donde era el turno
-  // que se cayo, y queda distinto de todos los demas.
-  sede          String?
-  hora          String?
-  // Aviso general de la veterinaria ("feriado", "se muda de sede"). No es de
-  // una mascota ni de un turno: la tarjeta lleva el logo de VetPro en vez de la
-  // foto del paciente. Se marca para no adivinarlo en la app.
-  esGlobal      Boolean   @default(false)
-  // Datos históricos de solicitudes de recuperación; se conservan sin uso en la interfaz.
-  tipo              String?
+  createdAt String   @default(dbgenerated("CURRENT_TIMESTAMP"))  mascotaNombre String?
+  mascotaFoto   String?  motivo        String?  sede          String?
+  hora          String?  esGlobal      Boolean   @default(false)  tipo              String?
   solicitanteEmail  String?
   user      Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
   turno     Turno?   @relation(fields: [turnoId], references: [id], onDelete: SetNull)

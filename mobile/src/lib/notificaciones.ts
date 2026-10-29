@@ -1,7 +1,6 @@
 import { API_BASE_URL } from './api';
 import type { UsuarioActual } from './session';
 
-// La escritura es explícita. El GET posterior solamente consulta los avisos.
 export async function consultarNotificaciones(usuario: UsuarioActual) {
   const headers = { Authorization: `Bearer ${usuario.accessToken}` };
   if (!usuario.esAdmin) {

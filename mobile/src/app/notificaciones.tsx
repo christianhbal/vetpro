@@ -24,7 +24,6 @@ import { estilos } from '@/lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
 import { useSedes } from '@/lib/sede';
 
-// Logo para los avisos globales.
 const logoVetPro = require('../../assets/images/vetpro-logo-horizontal.jpg');
 
 type Aviso = {
@@ -113,11 +112,6 @@ function turnoDelAviso(aviso: Aviso): Aviso['turno'] {
   return aviso.turno;
 }
 
-/**
- * Texto que se ve en la tarjeta sin apretarla.
- *
- * La tarjeta resume; el detalle se muestra solo en el modal.
- */
 function textoDelAviso(aviso: Aviso): string {
   const turno = turnoDelAviso(aviso);
   if (!aviso.esGlobal && aviso.title === TITULO_MODIFICADO) {
@@ -159,7 +153,6 @@ function mensajeApi(resultado: unknown): string | null {
   return typeof resultado.message === 'string' ? resultado.message : null;
 }
 
-// Modal de detalle para avisos de turno y generales.
 function VentanaAviso({
   aviso,
   onCerrar,
@@ -220,8 +213,7 @@ function VentanaAviso({
           </Pressable>
 
           <Text style={styles.avisoTitulo}>{tituloDeVentana(tipo, aviso)}</Text>
-          {/* El cancelado no lleva texto arriba: su motivo va adentro del
-              bloque, como la fila de Sede y Direccion. */}
+
           {tipo !== 'cancelado' ? (
             <Text style={styles.avisoSubtitulo}>{cuerpo}</Text>
           ) : null}

@@ -135,8 +135,7 @@ export function CalendarioTurnos({
 
 const styles = StyleSheet.create({
   contenedor: {
-    // Antes 4: las celdas quedaban pegadas al borde y entre si, y los numeros
-    // se leian amontonados.
+
     paddingHorizontal: 10,
     paddingBottom: 10,
     marginBottom: 10,
@@ -164,9 +163,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textTransform: 'capitalize',
   },
-  // Las celdas ocupan 13% en vez de 1/7 exacto: con 100/7 quedaban pegadas unas
-  // a otras y los dias con fondo formaban una banda corrida. Con space-between
-  // la fila reparte el aire sobrante.
+
   grilla: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   weekday: {
     width: '13%',
@@ -205,8 +202,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#2f7a3f',
   },
-  // La leyenda va como una pila centrada: antes era un punto suelto pegado al
-  // borde y a cinco pixeles del texto, y se leia como un error de maquetado.
+
   legend: {
     flexDirection: 'row',
     alignItems: 'center',

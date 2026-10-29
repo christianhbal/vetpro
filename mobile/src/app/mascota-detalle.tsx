@@ -24,8 +24,7 @@ type Mascota = {
 function descripcionMascota(mascota: Mascota): string {
   return [
     descripcionEspecieMascota(mascota.especie, mascota.raza),
-    // Solo se muestra aca y no en la lista de Mascotas: eldueño lo busca cuando
-    // abre la ficha, no cuando esta recorriendo los nombres.
+
     mascota.sexo,
     edadDesdeNacimiento(mascota.fechaNacimiento) !== null ? `${edadDesdeNacimiento(mascota.fechaNacimiento)} años` : null,
   ]
@@ -33,14 +32,7 @@ function descripcionMascota(mascota: Mascota): string {
     .join(' · ');
 }
 
-/**
- * Ficha de una mascota con su historial de turnos.
- *
- * La pantalla de Mascotas pasa la mascota por parametro. Se manda solo el id y
- * el nombre porque los parametros de router son strings y no pueden llevar la
- * foto entera (una data URI larga rompe el enlace); el resto se reconstruye
- * aca.
- */
+// La mascota se consulta por ID para no enviar la foto completa en la ruta.
 export default function MascotaHistorialScreen() {
   const { usuario: usuarioSesion } = useSesion();
   const params = useLocalSearchParams<{
@@ -63,11 +55,6 @@ export default function MascotaHistorialScreen() {
 
   const id = Number(params.id ?? 0);
 
-  // Lo que se paso por parametro es una foto del momento en que se abrio la
-  // pantalla: si edita la mascota y vuelve, esos valores estan viejos. Se
-  // vuelven a pedir en cada foco, asi que lo guardado gana sobre el parametro
-  // apenas llega. Antes solo se refrescaba la foto, por eso el nombre y la
-  // raza no cambiaban hasta salir y volver a entrar.
   const [desdeParams] = useState<Mascota>(() => ({
     id,
     nombre: params.nombre ?? 'Mascota',
@@ -146,8 +133,7 @@ export default function MascotaHistorialScreen() {
         contentContainerStyle={[estilos.listPadding, styles.contenido]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Encabezado: foto grande y datos. Va arriba de todo, antes del
-            historial, para que se sepa de quien es la ficha al entrar. */}
+
         <View style={styles.encabezado}>
           {mascota.foto ? (
             <Pressable
@@ -229,9 +215,6 @@ export default function MascotaHistorialScreen() {
                   />
                 </Pressable>
 
-                {/* La descripcion se despliega al apretar. Se muestra sola si no
-                    hay nada que colapsar, para que un turno con descripcion
-                    nunca quede escondido. */}
                 {estaAbierto ? (
                   <View style={styles.descripcion}>
                     <Text style={estilos.cardSubtitle}>
@@ -245,8 +228,6 @@ export default function MascotaHistorialScreen() {
         )}
       </ScrollView>
 
-      {/* Foto ampliada. Modal y no otra pantalla porque es una vista rapida:
-          se abre, se mira y se cierra, sin volver atras en la pila. */}
       <Modal
         visible={ampliada && mascota.foto !== null}
         transparent
@@ -276,8 +257,7 @@ export default function MascotaHistorialScreen() {
                 source={{ uri: mascota.foto }}
                 style={[
                   estilos.petPhoto,
-                  // Se pisa el fondo verde de estilos.petPhoto: con contain la
-                  // foto no llena el cuadro y el sobrante se veria como marco.
+
                   estilosAdaptados.fotoAmpliada,
                 ]}
                 resizeMode="contain"
@@ -295,12 +275,9 @@ export default function MascotaHistorialScreen() {
 const styles = StyleSheet.create({
   contenido: { paddingBottom: 32 },
   encabezado: { alignItems: 'center', marginBottom: 8 },
-  // SIN backgroundColor: la foto va con resizeMode="contain" y no siempre
-  // llena el cuadrado. Con fondo, las fotos apaisadas dejaban barras verdes a
-  // los lados y el cuadro se leia como un marco suelto. Sin fondo, el sobrante
-  // se ve del color de la pantalla.
+
   fotoGrande: { width: 132, height: 132, borderRadius: 20 },
-  // El estado sin foto si lleva fondo: no hay imagen que ocupe el cuadro.
+
   fotoVaciaFondo: {
    backgroundColor: '#e4f1e0',
    alignItems: 'center',
@@ -349,8 +326,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#d8e3d5',
   },
   vacio: { alignItems: 'center', paddingVertical: 32, gap: 10 },
-  // Contenedor del modal: centra la foto y le da fondo propio para que se
-  // distinga del fondo oscurecido del backdrop.
+
   modalFotoContenedor: {
     alignItems: 'center',
     justifyContent: 'center',

@@ -21,18 +21,14 @@ type SelectorCampoProps = {
   cargando?: boolean;
   vacio?: string;
   accessibilityLabel: string;
-  /** Oculta el subtitulo y achica el campo, para las columnas angostas. */
+
   compacto?: boolean;
-  /** Saca el texto de arriba. Para cuando el valor ya se entiende solo. */
+
   ocultarLabel?: boolean;
-  /** Usa el mismo aspecto que los campos de fecha y horario del turno. */
+
   estiloTurno?: boolean;
 };
 
-/**
- * Campo de seleccion con hoja inferior propia. Se usa para sede y mascota
- * porque el Picker nativo no deja controlar la tipografia ni el avatar.
- */
 export function SelectorCampo({
   label,
   icono,
@@ -328,7 +324,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fbfdf9',
   },
   opcionElegida: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  // Mismo color que la fila que lo contiene (#fbfdf9).
+
   opcionAvatar: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#fbfdf9' },
   opcionAvatarIcono: { alignItems: 'center', justifyContent: 'center' },
   opcionTextoBloque: { flex: 1 },
