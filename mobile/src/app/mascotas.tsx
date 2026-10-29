@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
+import { StyleSheet,
   ActivityIndicator,
   FlatList,
   Image,
@@ -14,7 +14,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { descripcionEspecieMascota, edadDesdeNacimiento } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 type Mascota = {
   id: number;
@@ -29,22 +29,24 @@ type Mascota = {
 };
 
 export default function MascotasScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const { bottom } = useSafeAreaInsets();
 
-  const pie = useMemo(
-    () => [estilos.actionFooter, { paddingBottom: bottom + 24 }],
+  const margenSeguro = useMemo(
+    () => StyleSheet.create({ pie: { paddingBottom: bottom + 24 } }),
     [bottom]
   );
+  const pie = [estilos.actionFooter, margenSeguro.pie];
 
   const cargarMascotas = useCallback(async () => {
     setCargando(true);
     setMascotas([]);
     setError('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -70,7 +72,7 @@ export default function MascotasScreen() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -97,7 +99,7 @@ export default function MascotasScreen() {
           onRefresh={() => void cargarMascotas()}
           refreshing={cargando}
           ListEmptyComponent={
-            <View style={{ alignItems: 'center', padding: 24 }}>
+            <View style={styles.listaVacia}>
               {cargando ? (
                 <ActivityIndicator color="#0f3e17" />
               ) : (
@@ -172,10 +174,10 @@ export default function MascotasScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   fila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
     minHeight: 64,
   },
@@ -183,6 +185,7 @@ const styles = {
   // cuadro, asi que con otro color se veia el contraste alrededor de la imagen.
   foto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#b1dbb8' },
   fotoSinFoto: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#cfe7d3' },
-  fotoVacio: { alignItems: 'center' as const, justifyContent: 'center' as const },
+  fotoVacio: { alignItems: 'center', justifyContent: 'center' },
   texto: { flex: 1 },
-};
+  listaVacia: { alignItems: 'center', padding: 24 },
+});

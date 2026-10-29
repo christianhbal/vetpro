@@ -1,9 +1,0 @@
-[INFO] 17:12:18 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
-◇ injected env (1) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
-◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
-API escuchando en http://0.0.0.0:3000
-[INFO] 17:52:33 Restarting: C:\Users\PC\Desktop\UCA\app moviles\vetpro\backend\src\index.ts has been modified
-◇ injected env (1) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
-◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
-API escuchando en http://0.0.0.0:3000
-^C^C

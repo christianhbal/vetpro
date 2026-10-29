@@ -160,7 +160,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
     String(hoy.getDate()).padStart(2, '0'),
   ].join('-');
   const turnos = await prisma.turno.findMany({
-    where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
+    where: { userId, fecha: { gte: fechaActual }, recordatorioEnviadoEn: null, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
     include: {
       mascota: { select: { nombre: true, foto: true } },
       // La relacion se llama user, no usuario. El rol se filtra en el where: el
@@ -193,7 +193,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
             fecha: turno.fecha,
             hora: turno.hora,
             recordatorioEnviadoEn: null,
-            llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false,
+            llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false,
           },
           data: { recordatorioEnviadoEn: new Date().toISOString() },
         });
@@ -212,6 +212,7 @@ async function createUpcomingAppointmentReminders(userId: number): Promise<void>
       });
     } catch (error) {
       console.error(`No se pudo crear el recordatorio del turno ${turno.id}:`, error);
+      throw error;
     }
   }
 }
@@ -664,7 +665,7 @@ app.post('/api/turnos/check-in', async (request, response) => {
 
   try {
     const turno = await prisma.turno.findFirst({
-      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null, atendidoEn: null, esDemo: false, ocultoEnAgenda: false },
+      where: { userId: user.id, fecha: fechaActual, sede, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
       include: {
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
       },
@@ -906,17 +907,14 @@ app.get('/api/admin/turnos-activos', async (request, response) => {
   try {
     const turnos = await prisma.turno.findMany({
       // Turno activo = ya llego (QR) y todavia no fue atendido. Al completarlo
-      // sale de esta lista y pasa a "Turnos completados". Los de ejemplo
-      // flotan: aparecen mas alla de la fecha de hoy.
+      // sale de esta lista y pasa a "Turnos completados".
       where: {
         llegadaEn: { not: null },
         atendidoEn: null,
         // Los turnos fuera de agenda (dias completos, historial) nunca estan
         // esperando: solo ocupan un horario o son de dias pasados.
         ocultoEnAgenda: false,
-        fecha: fechaActual,
-        esDemo: false,
-      },
+        fecha: fechaActual,      },
       include: {
         user: { select: { id: true, nombre: true, email: true } },
         mascota: { select: { id: true, nombre: true, especie: true, raza: true, foto: true } },
@@ -943,7 +941,7 @@ app.patch('/api/admin/turnos/:id/atendido', async (request, response) => {
     const resultado = await prisma.$transaction(async (tx) => {
       const actual = await tx.turno.findUnique({ where: { id } });
       if (!actual) return { error: 'no-existe' as const };
-      if (actual.atendidoEn || !actual.llegadaEn || actual.esDemo || actual.ocultoEnAgenda) return { error: 'estado' as const };
+      if (actual.atendidoEn || !actual.llegadaEn || actual.ocultoEnAgenda) return { error: 'estado' as const };
       if (seguimiento) {
         if (seguimiento.sede !== actual.sede) return { error: 'sede' as const };
         const sede = await tx.sede.findUnique({ where: { nombre: seguimiento.sede } });
@@ -1215,6 +1213,20 @@ app.delete('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
+// POST /api/notifications/reminders
+// Genera avisos pendientes. La transacción evita duplicarlos al repetir el pedido.
+app.post('/api/notifications/reminders', async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  try {
+    if (user.role !== 'ADMIN') await createUpcomingAppointmentReminders(user.id);
+    return response.status(204).send();
+  } catch (error) {
+    console.error('No se pudieron generar los recordatorios:', error);
+    return response.status(500).json({ message: 'No se pudieron generar los recordatorios.' });
+  }
+});
+
 // GET /api/notifications
 // Devuelve los avisos del usuario autenticado, con el total de avisos sin leer.
 app.get('/api/notifications', async (request, response) => {
@@ -1231,7 +1243,6 @@ app.get('/api/notifications', async (request, response) => {
   };
 
   try {
-    if (user.role !== 'ADMIN') await createUpcomingAppointmentReminders(user.id);
     const [items, unreadCount] = await Promise.all([
       prisma.notification.findMany({
         where,

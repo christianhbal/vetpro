@@ -53,13 +53,12 @@ model Usuario {
 model Turno {
   id            Int            @id @default(autoincrement())
   tipo          String
-  sede          String         @default("Recoleta")
+  sede          String
   fecha         String
   hora          String
   llegadaEn     String?
   atendidoEn    String?
   descripcion   String?
-  esDemo        Boolean         @default(false)
   ocultoEnAgenda Boolean        @default(false)
   recordatorioEnviadoEn String?
   userId        Int
@@ -100,6 +99,9 @@ model Notification {
   // una mascota ni de un turno: la tarjeta lleva el logo de VetPro en vez de la
   // foto del paciente. Se marca para no adivinarlo en la app.
   esGlobal      Boolean   @default(false)
+  // Datos históricos de solicitudes de recuperación; se conservan sin uso en la interfaz.
+  tipo              String?
+  solicitanteEmail  String?
   user      Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
   turno     Turno?   @relation(fields: [turnoId], references: [id], onDelete: SetNull)
 

@@ -7,10 +7,12 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { sedeDeCheckIn } from '@/lib/check-in';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 
 export default function EscanearQr() {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
   const [permiso, pedirPermiso] = useCameraPermissions();
@@ -22,18 +24,19 @@ export default function EscanearQr() {
   const [vistaCamara, setVistaCamara] = useState({ width: 0, height: 0 });
   const [altoPie, setAltoPie] = useState(0);
 
-  const contenedor = useMemo(
-    () => [estilos.escanerContenedor, { paddingTop: top, paddingBottom: bottom }],
+  const margenSeguro = useMemo(
+    () => StyleSheet.create({ contenedor: { paddingTop: top, paddingBottom: bottom } }),
     [bottom, top]
   );
+  const contenedor = [estilos.escanerContenedor, margenSeguro.contenedor];
   const altoEscaneo = Math.max(0, vistaCamara.height - altoPie);
   const tamanoMarco = Math.min(vistaCamara.width * 0.76, altoEscaneo * 0.72, 320);
-  const posicionMarco = {
+  const medidas = StyleSheet.create({ marco: {
     top: Math.max(0, (altoEscaneo - tamanoMarco) / 2),
     left: (vistaCamara.width - tamanoMarco) / 2,
     width: tamanoMarco,
     height: tamanoMarco,
-  };
+  } });
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (escaneoEnCurso.current) return;
@@ -46,7 +49,7 @@ export default function EscanearQr() {
       if (sedeEscaneada === null) {
         throw new Error('Este no es un código QR de llegada de VetPro.');
       }
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -194,7 +197,7 @@ export default function EscanearQr() {
             onBarcodeScanned={escaniado ? undefined : handleBarcodeScanned}
           />
 
-          <View style={[estilos.escanerMarco, posicionMarco]} />
+          <View style={[estilos.escanerMarco, medidas.marco]} />
 
           <View
             style={estilos.escanerPie}

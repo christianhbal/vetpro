@@ -14,7 +14,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import { esSedeVeterinaria, formatearFechaTurno, type SedeVeterinaria } from '@/lib/datos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import { useSedeSeleccionada } from '@/lib/sede';
 
 type TurnoActivo = {
@@ -25,9 +25,7 @@ type TurnoActivo = {
   hora: string;
   llegadaEn: string;
   atendidoEn: string | null;
-  descripcion: string | null;
-  esDemo: boolean;
-  user: { nombre: string; email: string };
+  descripcion: string | null;  user: { nombre: string; email: string };
   mascota: { id: number; nombre: string; especie: string; raza: string | null; foto: string | null };
 };
 
@@ -56,9 +54,7 @@ function esTurnoActivo(value: unknown): value is TurnoActivo {
     typeof turno.hora === 'string' &&
     typeof turno.llegadaEn === 'string' &&
     (typeof turno.atendidoEn === 'string' || turno.atendidoEn === null) &&
-    (typeof turno.descripcion === 'string' || turno.descripcion === null) &&
-    typeof turno.esDemo === 'boolean' &&
-    typeof datosUsuario.nombre === 'string' &&
+    (typeof turno.descripcion === 'string' || turno.descripcion === null) &&    typeof datosUsuario.nombre === 'string' &&
     typeof datosUsuario.email === 'string' &&
     typeof datosMascota.id === 'number' &&
     typeof datosMascota.nombre === 'string' &&
@@ -69,6 +65,7 @@ function esTurnoActivo(value: unknown): value is TurnoActivo {
 }
 
 export default function AdminTurnosActivosScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const router = useRouter();
 
   // La sede se elige en la pantalla de Turnos y llega por parametro. Acá no
@@ -95,7 +92,7 @@ export default function AdminTurnosActivosScreen() {
     setCargando(true);
     setError('');
     try {
-      const sesion = await obtenerUsuarioActual();
+      const sesion = usuarioSesion;
       if (!sesion?.esAdmin) {
         router.replace('/app');
         return;
@@ -123,7 +120,7 @@ export default function AdminTurnosActivosScreen() {
     } finally {
       setCargando(false);
     }
-  }, [router]);
+  }, [router, usuarioSesion]);
 
   // El veterinario elige en que sede esta trabajando y solo ve las llegadas
 // de esa sede.

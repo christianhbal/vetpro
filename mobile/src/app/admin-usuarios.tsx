@@ -17,7 +17,7 @@ import { AppDrawer } from '@/components/app-drawer';
 import { AvisoExito } from '@/components/aviso-exito';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 type UsuarioAdministrado = {
   id: number;
@@ -49,6 +49,7 @@ function esUsuarioAdministrado(value: unknown): value is UsuarioAdministrado {
 }
 
 export default function AdminUsuariosScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const [usuarios, setUsuarios] = useState<UsuarioAdministrado[]>([]);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<UsuarioAdministrado | null>(null);
   const [usuarioEliminado, setUsuarioEliminado] = useState<string | null>(null);
@@ -59,8 +60,8 @@ export default function AdminUsuariosScreen() {
   const [telefonoNuevo, setTelefonoNuevo] = useState('');
   const [creando, setCreando] = useState(false);
   const [errorCrear, setErrorCrear] = useState('');
-  const [miId, setMiId] = useState<number | null>(null);
-  const [token, setToken] = useState('');
+  const miId = usuarioSesion?.id ?? null;
+  const token = usuarioSesion?.accessToken ?? '';
   const [cargando, setCargando] = useState(true);
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState('');
@@ -71,13 +72,11 @@ export default function AdminUsuariosScreen() {
     setCargando(true);
     setError('');
     try {
-      const sesion = await obtenerUsuarioActual();
+      const sesion = usuarioSesion;
       if (!sesion?.esAdmin) {
         router.replace('/app');
         return;
       }
-      setMiId(sesion.id);
-      setToken(sesion.accessToken);
       const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { Authorization: `Bearer ${sesion.accessToken}` },
       });
@@ -99,7 +98,7 @@ export default function AdminUsuariosScreen() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -284,7 +283,7 @@ export default function AdminUsuariosScreen() {
             </View>
           }
           ListEmptyComponent={
-            <View style={{ paddingVertical: 18 }}>
+            <View style={styles.cargaLista}>
               {cargando ? (
                 <ActivityIndicator color="#0f3e17" />
               ) : (
@@ -299,8 +298,8 @@ export default function AdminUsuariosScreen() {
           }
           renderItem={({ item }) => (
             <View style={estilos.cardVertical}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ flex: 1 }}>
+              <View style={styles.filaUsuario}>
+                <View style={styles.datosUsuario}>
                   <Text style={estilos.cardTitle}>{item.nombre}</Text>
                   <Text style={estilos.cardSubtitle}>{item.email}</Text>
                   {item.telefono ? (
@@ -316,7 +315,7 @@ export default function AdminUsuariosScreen() {
                     onPress={() => setUsuarioAEliminar(item)}
                     accessibilityRole="button"
                     accessibilityLabel={`Eliminar a ${item.nombre}`}
-                    style={{ padding: 10 }}
+                    style={styles.accionUsuario}
                   >
                     <Ionicons name="trash-outline" size={22} color="#a32d2d" />
                   </Pressable>
@@ -348,7 +347,7 @@ export default function AdminUsuariosScreen() {
               showsVerticalScrollIndicator={false}
             >
               <Text style={estilos.modalTitle}>Crear veterinario</Text>
-              <Text style={[estilos.modalText, { marginBottom: 16 }]}>
+              <Text style={[estilos.modalText, styles.ayudaFormulario]}>
                 Completa los datos de la cuenta. La contraseña inicial será su nombre completo y
                 podrá cambiarla desde su perfil.
               </Text>
@@ -431,13 +430,13 @@ export default function AdminUsuariosScreen() {
               name="checkmark-circle"
               size={44}
               color="#0f3e17"
-              style={{ alignSelf: 'center', marginBottom: 10 }}
+              style={styles.iconoConfirmacion}
             />
-            <Text style={[estilos.modalTitle, { textAlign: 'center' }]}>
+            <Text style={[estilos.modalTitle, styles.tituloConfirmacion]}>
               Veterinario creado con éxito
             </Text>
             {veterinarioCreado ? (
-              <Text style={[estilos.modalText, { marginTop: 8 }]}>
+              <Text style={[estilos.modalText, styles.textoConfirmacion]}>
                 Puede iniciar sesión con:
                 {'\n'}Correo: {veterinarioCreado.email}
                 {'\n'}Contraseña inicial: {veterinarioCreado.nombre}
@@ -525,15 +524,15 @@ export default function AdminUsuariosScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   addUserButton: {
     gap: 24,
     marginBottom: 16,
   },
   searchBox: {
     minHeight: 48,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     paddingHorizontal: 12,
     marginBottom: 12,
@@ -550,14 +549,14 @@ const styles = {
     fontSize: 15,
   },
   filterRow: {
-    flexDirection: 'row' as const,
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 16,
   },
   filterTab: {
     flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     minHeight: 40,
     paddingHorizontal: 8,
     borderWidth: 1,
@@ -572,25 +571,25 @@ const styles = {
   filterTabText: {
     color: '#365247',
     fontSize: 14,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   filterTabTextSelected: {
     color: '#0f3e17',
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
   },
   deleteButton: {
     backgroundColor: '#a32d2d',
   },
   createModalCard: {
-    width: '92%' as const,
+    width: '92%',
     maxWidth: 520,
-    maxHeight: '88%' as const,
+    maxHeight: '88%',
     backgroundColor: '#fffefc',
     borderRadius: 12,
     padding: 20,
   },
   createInput: {
-    width: '100%' as const,
+    width: '100%',
     minHeight: 48,
     backgroundColor: '#f3f7f1',
     borderColor: '#d8e3d5',
@@ -607,4 +606,12 @@ const styles = {
     lineHeight: 20,
     marginTop: 8,
   },
-};
+  cargaLista: { paddingVertical: 18 },
+  filaUsuario: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  datosUsuario: { flex: 1 },
+  accionUsuario: { padding: 10 },
+  ayudaFormulario: { marginBottom: 16 },
+  iconoConfirmacion: { alignSelf: 'center', marginBottom: 10 },
+  tituloConfirmacion: { textAlign: 'center' },
+  textoConfirmacion: { marginTop: 8 },
+});

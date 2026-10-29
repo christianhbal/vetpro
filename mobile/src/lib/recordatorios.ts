@@ -1,10 +1,13 @@
-import { Platform } from 'react-native';
+import { useCallback } from 'react';
+import { Alert, Linking, Platform } from 'react-native';
 import { API_BASE_URL } from '@/lib/api';
-import { obtenerUsuarioActual } from '@/lib/session';
+import type { UsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 const PREFIJO = 'vetpro-turno-';
 const UNA_HORA = 60 * 60 * 1000;
 let cola: Promise<void> = Promise.resolve();
+let avisoPermisoMostrado = false;
 
 type TurnoRecordatorio = {
   id: number;
@@ -13,9 +16,7 @@ type TurnoRecordatorio = {
   tipo: string;
   sede: string;
   llegadaEn: string | null;
-  atendidoEn: string | null;
-  esDemo: boolean;
-  ocultoEnAgenda: boolean;
+  atendidoEn: string | null;  ocultoEnAgenda: boolean;
   mascota: { nombre: string };
 };
 
@@ -29,7 +30,7 @@ function esTurno(value: unknown): value is TurnoRecordatorio {
     typeof turno.tipo === 'string' && typeof turno.sede === 'string' &&
     (turno.llegadaEn === null || typeof turno.llegadaEn === 'string') &&
     (turno.atendidoEn === null || typeof turno.atendidoEn === 'string') &&
-    typeof turno.esDemo === 'boolean' && typeof turno.ocultoEnAgenda === 'boolean' &&
+    typeof turno.ocultoEnAgenda === 'boolean' &&
     typeof mascota === 'object' && mascota !== null &&
     'nombre' in mascota && typeof mascota.nombre === 'string';
 }
@@ -39,20 +40,47 @@ function encolar(tarea: () => Promise<void>): Promise<void> {
   return cola;
 }
 
-export function sincronizarRecordatorios(pedirPermiso = false): Promise<void> {
+export function useRecordatorios() {
+  const { usuario } = useSesion();
+  return useCallback(
+    (pedirPermiso = false) => sincronizarRecordatorios(usuario, pedirPermiso),
+    [usuario]
+  );
+}
+
+function sincronizarRecordatorios(usuario: UsuarioActual | null, pedirPermiso: boolean): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();
   return encolar(async () => {
     const Notifications = await import('expo-notifications');
-    const usuario = await obtenerUsuarioActual();
     if (!usuario) return;
-    let permiso = await Notifications.getPermissionsAsync();
-    if (!permiso.granted && pedirPermiso && !usuario.esAdmin && permiso.status === 'undetermined') permiso = await Notifications.requestPermissionsAsync();
-    if (!permiso.granted) return;
+    // Android necesita el canal antes de mostrar la solicitud de permiso.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Avisos de VetPro', importance: Notifications.AndroidImportance.HIGH,
       });
     }
+
+    let permiso = await Notifications.getPermissionsAsync();
+    if (!permiso.granted && pedirPermiso && !usuario.esAdmin && permiso.canAskAgain) {
+      permiso = await Notifications.requestPermissionsAsync();
+    }
+    if (!permiso.granted) {
+      if (pedirPermiso && !usuario.esAdmin && !avisoPermisoMostrado) {
+        avisoPermisoMostrado = true;
+        Alert.alert(
+          'Notificaciones desactivadas',
+          'Sin este permiso no podemos avisarte cuando se acerque un turno. Podés habilitarlo desde los ajustes del teléfono.',
+          [
+            { text: 'Ahora no', style: 'cancel' },
+            { text: 'Abrir ajustes', onPress: () => {
+              void Linking.openSettings().catch(() => Alert.alert('No se pudieron abrir los ajustes', 'Abrí los ajustes del teléfono y revisá los permisos de notificaciones.'));
+            } },
+          ]
+        );
+      }
+      return;
+    }
+    avisoPermisoMostrado = false;
 
     let turnos: TurnoRecordatorio[] = [];
     if (!usuario.esAdmin) {
@@ -67,7 +95,7 @@ export function sincronizarRecordatorios(pedirPermiso = false): Promise<void> {
 
     const deseados = new Map<string, { fecha: Date; huella: string; turno: TurnoRecordatorio }>();
     for (const turno of turnos) {
-      if (turno.atendidoEn || turno.llegadaEn || turno.esDemo || turno.ocultoEnAgenda) continue;
+      if (turno.atendidoEn || turno.llegadaEn || turno.ocultoEnAgenda) continue;
       const inicio = new Date(`${turno.fecha}T${turno.hora}:00`);
       const fecha = new Date(inicio.getTime() - UNA_HORA);
       if (!Number.isFinite(fecha.getTime()) || fecha.getTime() <= Date.now()) continue;

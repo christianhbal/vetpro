@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -13,7 +13,7 @@ import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL, apiUnreachableMessage } from '../lib/api';
 import { estilos } from '../lib/estilos';
-import { obtenerUsuarioActual } from '../lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Campo = {
@@ -30,36 +30,24 @@ type Campo = {
 };
 
 export default function Registro() {
+  const { usuario: usuarioSesion } = useSesion();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [sesionAdmin, setSesionAdmin] = useState<{ accessToken: string } | null>(null);
-  const [sesionVerificada, setSesionVerificada] = useState(false);
+  const sesionAdmin = usuarioSesion?.esAdmin ? usuarioSesion : null;
   const [mostrarConfirmacionAdmin, setMostrarConfirmacionAdmin] = useState(false);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState<{ titulo: string; mensaje: string } | null>(null);
   const { top } = useSafeAreaInsets();
 
-  const contenedor = useMemo(() => [styles.container, { paddingTop: top }], [top]);
-
-  useEffect(() => {
-    let activo = true;
-    void obtenerUsuarioActual().then((usuario) => {
-      if (activo && usuario?.esAdmin) {
-        setSesionAdmin({ accessToken: usuario.accessToken });
-      }
-      if (activo) setSesionVerificada(true);
-    });
-    return () => {
-      activo = false;
-    };
-  }, []);
+  const margenSeguro = useMemo(() => StyleSheet.create({ contenedor: { paddingTop: top } }), [top]);
+  const contenedor = [styles.container, margenSeguro.contenedor];
 
   const handleRegister = async () => {
-    if (isSubmitting || !sesionVerificada) return;
+    if (isSubmitting) return;
     setError('');
 
     if (!nombre.trim() || !email.trim() || !telefono.trim() || !password || !confirmPassword) {
@@ -252,17 +240,15 @@ export default function Registro() {
               style={({ pressed }) => [
                 styles.registerButton,
                 pressed && styles.buttonPressed,
-                (isSubmitting || !sesionVerificada) && styles.registerButtonDisabled,
+                isSubmitting && styles.registerButtonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={isSubmitting || !sesionVerificada}
+              disabled={isSubmitting}
               accessibilityRole="button"
               accessibilityLabel={sesionAdmin ? 'Crear veterinario' : 'Crear cuenta'}
             >
               <Text style={styles.registerButtonText}>
-                {!sesionVerificada
-                  ? 'Verificando sesión...'
-                  : isSubmitting
+                {isSubmitting
                     ? 'Creando cuenta...'
                     : sesionAdmin
                       ? 'Crear veterinario'

@@ -96,6 +96,10 @@ export default function TurnoDateTimeField({
     onMonthChange?.(siguiente.getFullYear(), siguiente.getMonth() + 1);
   };
 
+  const estilosAdaptados = StyleSheet.create({
+    anchoHorario: { width: Math.floor(((anchoHorarios - 16) / 3) * 100) / 100 },
+  });
+
   return (
     <View>
       <Pressable
@@ -290,7 +294,7 @@ export default function TurnoDateTimeField({
                             }}
                             style={[
                               styles.slot,
-                              anchoHorarios > 0 && { width: Math.floor(((anchoHorarios - 16) / 3) * 100) / 100 },
+                              anchoHorarios > 0 && estilosAdaptados.anchoHorario,
                               seleccionado && styles.selectedDay,
                               deshabilitado && styles.disabledSlot,
                             ]}
@@ -370,13 +374,4 @@ const styles = StyleSheet.create({
   slotText: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
-  timeColumns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 },
-  timeColumn: { width: 90, alignItems: 'center' },
-  columnLabel: { marginBottom: 8, color: '#69746a', fontSize: 14, fontWeight: '600' },
-  timeScroll: { height: 230, width: '100%' },
-  timeChoices: { alignItems: 'center', gap: 4 },
-  timeChoice: { width: 64, paddingVertical: 10, borderRadius: 9 },
-  colon: { marginTop: 16, color: '#0f3e17', fontSize: 24, fontWeight: 'bold' },
-  confirm: { alignItems: 'center', marginTop: 16, padding: 14, borderRadius: 10, backgroundColor: '#0f3e17' },
-  confirmText: { color: '#fffefc', fontSize: 16, fontWeight: 'bold' },
 });

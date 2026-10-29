@@ -1,15 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
-import {
-  obtenerUsuarioActual,
-  guardarUsuarioActual,
-  type UsuarioActual,
-} from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
+import type { UsuarioActual } from '@/lib/session';
 
 type Campo = {
   id: 'nombre' | 'email' | 'telefono';
@@ -32,6 +29,7 @@ function mensajeApi(resultado: unknown): string | null {
 }
 
 export default function EditarPerfil() {
+  const { usuario: usuarioSesion, guardarUsuarioActual } = useSesion();
   const router = useRouter();
   const { top } = useSafeAreaInsets();
 
@@ -42,7 +40,8 @@ export default function EditarPerfil() {
   const [guardando, setGuardando] = useState(false);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
-  const contenedor = useMemo(() => [estilos.formContent, { paddingTop: top }], [top]);
+  const margenSeguro = useMemo(() => StyleSheet.create({ contenedor: { paddingTop: top } }), [top]);
+  const contenedor = [estilos.formContent, margenSeguro.contenedor];
 
   useFocusEffect(
     useCallback(() => {
@@ -50,7 +49,7 @@ export default function EditarPerfil() {
       setCargando(true);
       void (async () => {
         try {
-          const sesion = await obtenerUsuarioActual();
+          const sesion = usuarioSesion;
           if (!sesion) {
             router.replace('/');
             return;
@@ -103,7 +102,7 @@ export default function EditarPerfil() {
       return () => {
         activo = false;
       };
-    }, [router])
+    }, [router, usuarioSesion])
   );
 
   const handleSubmit = async () => {
@@ -248,7 +247,7 @@ export default function EditarPerfil() {
               style={({ pressed }) => [
                 estilos.submitButton,
                 pressed && estilos.buttonPressed,
-                (cargando || guardando) && { opacity: 0.65 },
+                (cargando || guardando) && styles.guardando,
               ]}
               onPress={() => void handleSubmit()}
               disabled={cargando || guardando}
@@ -277,7 +276,7 @@ export default function EditarPerfil() {
             accessibilityLabel="Cerrar mensaje"
           />
           <View
-            style={[estilos.modalCard, { width: '85%', maxWidth: 340, alignSelf: 'center' }]}
+            style={[estilos.modalCard, styles.confirmacion]}
             accessibilityRole="alert"
           >
             <Text style={estilos.modalTitle}>Modificación exitosa</Text>
@@ -301,3 +300,8 @@ export default function EditarPerfil() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  guardando: { opacity: 0.65 },
+  confirmacion: { width: '85%', maxWidth: 340, alignSelf: 'center' },
+});

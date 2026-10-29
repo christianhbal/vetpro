@@ -1,4 +1,4 @@
-import { ScrollView, useWindowDimensions } from 'react-native';
+import { StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDrawer } from '@/components/app-drawer';
@@ -60,11 +60,11 @@ export default function AgendarTurnoScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   contenido: {
     flexGrow: 1,
     paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 6,
   },
-};
+});

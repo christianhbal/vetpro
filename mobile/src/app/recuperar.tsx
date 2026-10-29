@@ -31,16 +31,20 @@ export default function Recuperar() {
     setEnviando(true);
     try {
       setAviso({
-        titulo: 'Correo enviado',
-        mensaje: `Si ${email.trim()} está registrado, te llega un código para crear una contraseña nueva.`,
+        titulo: 'Función no disponible',
+        mensaje: 'La recuperación de contraseña todavía no está disponible. No se envió ningún correo. Contactá a la veterinaria para recibir ayuda.',
       });
     } finally {
       setEnviando(false);
     }
   };
 
+  const estilosAdaptados = StyleSheet.create({
+    margenSeguro: { paddingTop: top },
+  });
+
   return (
-    <View style={[styles.container, { paddingTop: top }]}>
+    <View style={[styles.container, estilosAdaptados.margenSeguro]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.content}>
@@ -53,7 +57,7 @@ export default function Recuperar() {
           />
           <Text style={styles.title}>Recuperar contraseña</Text>
           <Text style={styles.subtitle}>
-            Escribí tu correo y te enviamos un código para crear una contraseña nueva.
+            La recuperación por correo todavía no está disponible. Consultá el aviso para más información.
           </Text>
         </View>
 
@@ -88,9 +92,9 @@ export default function Recuperar() {
           onPress={enviarRecuperacion}
           disabled={enviando}
           accessibilityRole="button"
-          accessibilityLabel="Enviar el código por correo"
+          accessibilityLabel="Consultar disponibilidad de recuperación"
         >
-          <Text style={styles.enviarButtonText}>{enviando ? 'Enviando...' : 'Enviar'}</Text>
+          <Text style={styles.enviarButtonText}>Consultar</Text>
         </Pressable>
 
         <View style={styles.loginRow}>

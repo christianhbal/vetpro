@@ -1,15 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { estilos } from '@/lib/estilos';
-import {
-  cerrarSesion,
-  guardarUsuarioActual,
-  obtenerUsuarioActual,
-  type UsuarioActual,
-} from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
+import type { UsuarioActual } from '@/lib/session';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { cancelarRecordatorios } from '@/lib/recordatorios';
 
@@ -30,6 +26,7 @@ const opciones: Opcion[] = [
 ];
 
 export default function PerfilScreen() {
+  const { usuario, cerrarSesion, guardarUsuarioActual } = useSesion();
   const [modalCerrarSesion, setModalCerrarSesion] = useState(false);
   const [modalAyuda, setModalAyuda] = useState(false);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
@@ -38,27 +35,11 @@ export default function PerfilScreen() {
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [guardandoPassword, setGuardandoPassword] = useState(false);
   const [errorPassword, setErrorPassword] = useState('');
-  const [usuario, setUsuario] = useState<UsuarioActual | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      let activo = true;
-      obtenerUsuarioActual()
-        .then((usuarioActual) => {
-          if (!activo) return;
-          if (!usuarioActual) {
-            router.replace('/');
-            return;
-          }
-          setUsuario(usuarioActual);
-        })
-        .catch((error: unknown) => {
-          console.error('No se pudo cargar el usuario actual:', error);
-        });
-      return () => {
-        activo = false;
-      };
-    }, [])
+      if (!usuario) router.replace('/');
+    }, [usuario])
   );
 
   const handleOpcion = (id: string) => {
@@ -138,7 +119,6 @@ export default function PerfilScreen() {
         accessToken: result.accessToken,
       };
       await guardarUsuarioActual(sesionActualizada);
-      setUsuario(sesionActualizada);
       setModalCambiarPassword(false);
       setPasswordActual('');
       setPasswordNueva('');
@@ -354,8 +334,8 @@ export default function PerfilScreen() {
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitle}>Soporte: Ayuda</Text>
             <Text style={estilos.modalText}>
-              Atendemos de lunes a viernes de 9 a 18 hs. Podés llamarnos al 1234-5678 o escribirnos
-              a soporte@vetpro.com
+              Para recibir ayuda, contactá a la sede donde reservaste tu turno.
+              Podés consultar su dirección en el detalle del turno.
             </Text>
             <View style={estilos.modalActions}>
               <Pressable
@@ -380,7 +360,7 @@ export default function PerfilScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   passwordInput: {
     marginBottom: 12,
   },
@@ -390,4 +370,4 @@ const styles = {
     lineHeight: 20,
     marginTop: 4,
   },
-};
+});

@@ -1,15 +1,15 @@
 import { useCallback, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Image, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { descripcionEspecieMascota, edadDesdeNacimiento } from '@/lib/datos';
 import { estilos } from '@/lib/estilos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import type { TurnoGuardado } from '@/lib/datos';
 
-type TurnoHistorial = TurnoGuardado & { atendidoEn: string | null; esDemo?: boolean; ocultoEnAgenda?: boolean };
+type TurnoHistorial = TurnoGuardado & { atendidoEn: string | null; ocultoEnAgenda?: boolean };
 
 type Mascota = {
   id: number;
@@ -42,6 +42,7 @@ function descripcionMascota(mascota: Mascota): string {
  * aca.
  */
 export default function MascotaHistorialScreen() {
+  const { usuario: usuarioSesion } = useSesion();
   const params = useLocalSearchParams<{
     id?: string;
     nombre?: string;
@@ -84,7 +85,7 @@ export default function MascotaHistorialScreen() {
       setErrorHistorial('');
       void (async () => {
         try {
-          const usuario = await obtenerUsuarioActual();
+          const usuario = usuarioSesion;
           if (!usuario) { router.replace('/'); return; }
           const response = await fetch(
             `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
@@ -109,7 +110,7 @@ export default function MascotaHistorialScreen() {
           const turnos: unknown = await respuestaTurnos.json();
           if (!Array.isArray(turnos)) throw new Error('La API devolvió un historial inválido.');
           if (vigente) setHistorial((turnos as TurnoHistorial[])
-            .filter((turno) => turno.mascotaId === id && turno.atendidoEn !== null && !turno.esDemo && !turno.ocultoEnAgenda)
+            .filter((turno) => turno.mascotaId === id && turno.atendidoEn !== null && !turno.ocultoEnAgenda)
             .sort((a, b) => a.fecha === b.fecha ? b.hora.localeCompare(a.hora) : b.fecha.localeCompare(a.fecha)));
 
         } catch (error) {
@@ -121,7 +122,7 @@ export default function MascotaHistorialScreen() {
       return () => {
         vigente = false;
       };
-    }, [id])
+    }, [id, usuarioSesion])
   );
 
   const mascota = datos ?? desdeParams;
@@ -133,6 +134,10 @@ export default function MascotaHistorialScreen() {
     }
     router.replace('/mascotas');
   };
+
+  const estilosAdaptados = StyleSheet.create({
+    fotoAmpliada: { width: anchoFotoModal, height: altoFotoModal, backgroundColor: 'transparent' },
+  });
 
   return (
     <AppDrawer title={mascota.nombre} onVolver={volver} etiquetaVolver="Volver a Mascotas">
@@ -273,7 +278,7 @@ export default function MascotaHistorialScreen() {
                   estilos.petPhoto,
                   // Se pisa el fondo verde de estilos.petPhoto: con contain la
                   // foto no llena el cuadro y el sobrante se veria como marco.
-                  { width: anchoFotoModal, height: altoFotoModal, backgroundColor: 'transparent' },
+                  estilosAdaptados.fotoAmpliada,
                 ]}
                 resizeMode="contain"
                 accessibilityLabel={`Foto de ${mascota.nombre}`}
@@ -287,9 +292,9 @@ export default function MascotaHistorialScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   contenido: { paddingBottom: 32 },
-  encabezado: { alignItems: 'center' as const, marginBottom: 8 },
+  encabezado: { alignItems: 'center', marginBottom: 8 },
   // SIN backgroundColor: la foto va con resizeMode="contain" y no siempre
   // llena el cuadrado. Con fondo, las fotos apaisadas dejaban barras verdes a
   // los lados y el cuadro se leia como un marco suelto. Sin fondo, el sobrante
@@ -298,19 +303,19 @@ const styles = {
   // El estado sin foto si lleva fondo: no hay imagen que ocupe el cuadro.
   fotoVaciaFondo: {
    backgroundColor: '#e4f1e0',
-   alignItems: 'center' as const,
-   justifyContent: 'center' as const,
+   alignItems: 'center',
+   justifyContent: 'center',
   },
   nombre: {
     color: '#0f3e17',
     fontSize: 24,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
     marginTop: 14,
   },
-  datos: { color: '#4a6152', fontSize: 15, marginTop: 4, textAlign: 'center' as const },
+  datos: { color: '#4a6152', fontSize: 15, marginTop: 4, textAlign: 'center' },
   editar: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     marginTop: 16,
     paddingHorizontal: 18,
@@ -320,18 +325,18 @@ const styles = {
     borderRadius: 12,
     backgroundColor: '#fffefc',
   },
-  editarTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  editarTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   tarjeta: {
     backgroundColor: '#e1f4df',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#efeeeb',
     marginBottom: 12,
-    overflow: 'hidden' as const,
+    overflow: 'hidden',
   },
   tarjetaCabecera: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     padding: 14,
   },
@@ -343,12 +348,12 @@ const styles = {
     borderTopWidth: 1,
     borderTopColor: '#d8e3d5',
   },
-  vacio: { alignItems: 'center' as const, paddingVertical: 32, gap: 10 },
+  vacio: { alignItems: 'center', paddingVertical: 32, gap: 10 },
   // Contenedor del modal: centra la foto y le da fondo propio para que se
   // distinga del fondo oscurecido del backdrop.
   modalFotoContenedor: {
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fffefc',
     borderRadius: 20,
     paddingVertical: 20,
@@ -357,15 +362,15 @@ const styles = {
     gap: 12,
   },
   modalFotoCerrar: {
-    position: 'absolute' as const,
+    position: 'absolute',
     top: 8,
     right: 8,
     zIndex: 1,
     width: 40,
     height: 40,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 20,
     backgroundColor: '#f2f9f1',
   },
-};
+});

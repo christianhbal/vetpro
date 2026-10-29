@@ -1,6 +1,6 @@
 import { fechaNacimientoValida } from '@/lib/datos';
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,10 +13,12 @@ import {
   esSexoMascota,
   type SexoMascota,
 } from '@/lib/datos';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 
 export default function EditarMascota() {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
   const params = useLocalSearchParams<{
     id?: string;
     nombre?: string;
@@ -58,7 +60,7 @@ export default function EditarMascota() {
     let vigente = true;
     void (async () => {
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) return;
         const response = await fetch(
           `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
@@ -85,7 +87,7 @@ export default function EditarMascota() {
     return () => {
       vigente = false;
     };
-  }, [id]);
+  }, [id, usuarioSesion]);
 
   const volver = () => {
     if (router.canGoBack()) {
@@ -139,7 +141,7 @@ export default function EditarMascota() {
 
     setIsSubmitting(true);
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -181,7 +183,7 @@ export default function EditarMascota() {
 
     setBorrando(true);
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -406,7 +408,7 @@ export default function EditarMascota() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   contenido: {
     flexGrow: 1,
     paddingHorizontal: 12,
@@ -424,19 +426,19 @@ const styles = {
     backgroundColor: '#f3f7f1',
   },
   fijoFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
     paddingVertical: 3,
   },
   fijoEtiqueta: { color: '#69746a', fontSize: 14 },
-  fijoValor: { flex: 1, color: '#0f3e17', fontSize: 14, fontWeight: '600' as const, textAlign: 'right' as const },
+  fijoValor: { flex: 1, color: '#0f3e17', fontSize: 14, fontWeight: '600', textAlign: 'right' },
   label: {
     marginBottom: 6,
     color: '#4d6154',
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   input: {
     minHeight: 52,
@@ -449,23 +451,23 @@ const styles = {
     fontSize: 15,
     color: '#1e3326',
   },
-  filaFoto: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  filaFoto: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   fotoMarco: {
     width: 76,
     height: 76,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: '#cfdcc9',
     borderRadius: 12,
     backgroundColor: '#f3f7f1',
-    overflow: 'hidden' as const,
+    overflow: 'hidden',
   },
   foto: { width: 76, height: 76 },
-  quitarFoto: { position: 'absolute' as const, top: 2, right: 2 },
+  quitarFoto: { position: 'absolute', top: 2, right: 2 },
   fotoBoton: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -474,7 +476,7 @@ const styles = {
     borderRadius: 12,
     backgroundColor: '#fffefc',
   },
-  fotoBotonTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  fotoBotonTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   mensajeError: {
     marginTop: 12,
     color: '#a32828',
@@ -482,16 +484,16 @@ const styles = {
     lineHeight: 19,
   },
   guardar: {
-    alignItems: 'center' as const,
+    alignItems: 'center',
     marginTop: 12,
     paddingVertical: 15,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
+  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
   // Mismos valores que "Eliminar sede": es la misma accion, borrar algo.
   eliminar: {
-    alignItems: 'center' as const,
+    alignItems: 'center',
     marginTop: 10,
     paddingVertical: 13,
     borderWidth: 1.5,
@@ -499,6 +501,6 @@ const styles = {
     borderRadius: 12,
     backgroundColor: '#f7ede6',
   },
-  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' as const },
+  eliminarTexto: { color: '#8a5324', fontSize: 15, fontWeight: '600' },
   eliminarConfirmar: { backgroundColor: '#a32828' },
-};
+});

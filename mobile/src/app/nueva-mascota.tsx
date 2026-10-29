@@ -1,6 +1,6 @@
 import { fechaNacimientoValida } from '@/lib/datos';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -9,9 +9,10 @@ import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { ESPECIES_MASCOTA, ESPECIE_OTRO, SEXOS_MASCOTA, type SexoMascota } from '@/lib/datos';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 
 export default function NuevaMascota() {
+  const { usuario: usuarioSesion } = useSesion();
   const [nombre, setNombre] = useState('');
   const [especie, setEspecie] = useState('');
   const [otraEspecie, setOtraEspecie] = useState('');
@@ -79,7 +80,7 @@ export default function NuevaMascota() {
 
     setIsSubmitting(true);
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -326,7 +327,7 @@ export default function NuevaMascota() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   contenido: {
     flexGrow: 1,
     paddingHorizontal: 12,
@@ -338,7 +339,7 @@ const styles = {
     marginBottom: 6,
     color: '#4d6154',
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   input: {
     minHeight: 52,
@@ -351,15 +352,12 @@ const styles = {
     fontSize: 15,
     color: '#1e3326',
   },
-  filaCampos: { flexDirection: 'row' as const, gap: 8 },
-  columnaAncha: { flex: 1.5, marginBottom: 10 },
-  columnaAngosta: { flex: 1, marginBottom: 10 },
-  filaEspecies: { flexDirection: 'row' as const, gap: 6 },
+  filaEspecies: { flexDirection: 'row', gap: 6 },
   especieOpcion: {
     flex: 1,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 7,
     paddingVertical: 13,
     borderWidth: 1.5,
@@ -368,25 +366,25 @@ const styles = {
     backgroundColor: '#fffefc',
   },
   especieOpcionSeleccionada: { borderColor: '#0f3e17', backgroundColor: '#e8f3e4' },
-  especieTexto: { color: '#1e3326', fontSize: 14, fontWeight: '500' as const },
-  especieTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' as const },
-  filaFoto: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  especieTexto: { color: '#1e3326', fontSize: 14, fontWeight: '500' },
+  especieTextoSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
+  filaFoto: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   fotoMarco: {
     width: 76,
     height: 76,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: '#cfdcc9',
     borderRadius: 12,
     backgroundColor: '#f3f7f1',
-    overflow: 'hidden' as const,
+    overflow: 'hidden',
   },
   foto: { width: 76, height: 76 },
-  quitarFoto: { position: 'absolute' as const, top: 2, right: 2 },
+  quitarFoto: { position: 'absolute', top: 2, right: 2 },
   fotoBoton: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -395,7 +393,7 @@ const styles = {
     borderRadius: 12,
     backgroundColor: '#fffefc',
   },
-  fotoBotonTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  fotoBotonTexto: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   mensajeError: {
     marginTop: 12,
     color: '#a32828',
@@ -403,11 +401,11 @@ const styles = {
     lineHeight: 19,
   },
   guardar: {
-    alignItems: 'center' as const,
+    alignItems: 'center',
     marginTop: 12,
     paddingVertical: 15,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
   },
-  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' as const },
-};
+  guardarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
+});

@@ -26,26 +26,20 @@ import {
   atiendeDia,
   type SedeVeterinaria,
 } from '@/lib/datos';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 import { useSedes } from '@/lib/sede';
 import { estilos } from '@/lib/estilos';
 import { SelectorCampo, type OpcionSelector } from '@/components/selector-campo';
 
 const tiposTurno = ['Control', 'Vacunas', 'Estética'] as const;
 
-// El encabezado de dias vive en lib/datos para que los tres calendarios
-// muestren las mismas letras. Antes cada uno tenia su copia y al cambiar el
-// miércoles se olvidó uno.
 
 type TipoTurno = (typeof tiposTurno)[number];
 
 const colorOcupadoFondo = '#f2ddcd';
 const colorOcupadoBorde = '#d3a179';
 const colorOcupadoTexto = '#7d4322';
-// Dia de la semana (getDay) que la veterinaria tiene completo: no se atiende
-// ningun turno. El domingo (0) ya venia bloqueado; este es aparte porque el
-// miercoles se puede ABRIR para ver que esta lleno, solo que no se puede agendar.
 
 type HorarioOcupado = { fecha: string; hora: string };
 
@@ -186,6 +180,8 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     },
     ref
   ) {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
     const [mesVisible, setMesVisible] = useState(() => {
       const hoy = new Date();
       return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -227,7 +223,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       setError('');
       setHorariosOcupados([]);
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) {
           throw new Error('Inicia sesión para consultar la disponibilidad.');
         }
@@ -264,7 +260,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       } finally {
         if (idSolicitud === solicitud.current) setCargando(false);
       }
-    }, [fechaSeleccionada, mesVisible, sede]);
+    }, [fechaSeleccionada, mesVisible, sede, usuarioSesion]);
 
     useFocusEffect(
       useCallback(() => {
@@ -283,7 +279,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       setCargandoMascotas(true);
       setErrorMascotas('');
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) {
           throw new Error('Inicia sesión para elegir una mascota.');
         }
@@ -318,7 +314,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       } finally {
         setCargandoMascotas(false);
       }
-    }, [mascotaIdFija]);
+    }, [mascotaIdFija, usuarioSesion]);
 
     useFocusEffect(
       useCallback(() => {
@@ -402,9 +398,6 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     );
     const hayHorasLibres = horariosVisibles.some((hora) => !ocupadosDia.has(hora));
 
-    // El dia bloqueado se puede abrir pero no tiene ningun horario bookeable.
-    // Sin esto, abrir el miercoles dejaba los slots habilitados y el boton de
-    // guardar activo: el error saltaria recien al confirmar, en el servidor.
     const seleccionBloqueada =
       fechaSeleccionada !== '' &&
       !atiendeDia(configuracionSede, new Date(`${fechaSeleccionada}T12:00:00`));
@@ -450,7 +443,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
 
       setGuardando(true);
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) {
           throw new Error('Inicia sesión para guardar el turno.');
         }
@@ -519,26 +512,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
       } finally {
         setGuardando(false);
       }
-    }, [
-      ahoraMinutos,
-      cargando, cargandoSedes, error, errorSedes, configuracionSede, horariosDisponibles,
-      cargarDisponibilidad,
-      comoAdmin,
-      fechaSeleccionada,
-      guardando,
-      horaSeleccionada,
-      seleccionBloqueada,
-      hoyValor,
-      mascotas,
-      mascotaId,
-      mascotaIdFija,
-      mascotaSeleccionada,
-      ocultarAviso,
-      onTurnoGuardado,
-      ocupadosDia,
-      sede,
-      tipo,
-    ]);
+    }, [guardando, mascotaIdFija, mascotaId, cargando, cargandoSedes, error, errorSedes, configuracionSede, horariosDisponibles, horaSeleccionada, seleccionBloqueada, mascotaSeleccionada, tipo, fechaSeleccionada, ocupadosDia, hoyValor, ahoraMinutos, usuarioSesion, comoAdmin, sede, mascotas, ocultarAviso, sincronizarRecordatorios, cargarDisponibilidad, onTurnoGuardado]);
 
     const cerrarAviso = () => {
       setTurnoCreado(null);
@@ -597,7 +571,29 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
     // las muestra en el encabezado, asi que repetirlas aca es al pedo.
     const ocultarFilaCampos = compacta && sedeFija !== null && mascotaIdFija !== null;
 
-    const cuerpoAgenda: ReactNode = (
+    const estilosAdaptados = StyleSheet.create({
+    direccion: { marginTop: hueco(7), marginBottom: hueco(10) },
+    tipos: { marginBottom: hueco(10) },
+    mes: { marginTop: hueco(10), marginBottom: hueco(8) },
+    dia: { height: altoDia },
+    diaConPunto: { paddingBottom: franjaPuntito },
+    textoDia: { fontSize: diaText },
+    punto: { width: altoPuntito, height: altoPuntito, bottom: margenPuntito },
+    leyenda: { marginTop: hueco(12) },
+    horarios: { marginTop: hueco(12), paddingTop: hueco(12) },
+    grillaHorarios: { gap: gapSlot },
+    horario: {
+                          minHeight: altoSlot,
+                          ...(anchoHorarios > 0
+                            ? { width: Math.floor(((anchoHorarios - gapSlot * 3) / 4) * 100) / 100 }
+                            : {}),
+                        },
+    textoHorario: { fontSize: slotText },
+    confirmar: { marginTop: hueco(12), paddingVertical: Math.max(11, hueco(15)) },
+    tarjeta: { paddingBottom: hueco(12) },
+  });
+
+  const cuerpoAgenda: ReactNode = (
       <>
         {ocultarFilaCampos ? null : (
           <View style={styles.filaCampos}>
@@ -689,7 +685,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             para no desarmar la fila de dos columnas: dentro de la columna de Sede
             los dos selectores quedaban desalineados. */}
         {compacta || sedeFija || !configuracionSede ? null : (
-          <View style={[styles.direccionSede, { marginTop: hueco(7), marginBottom: hueco(10) }]}>
+          <View style={[styles.direccionSede, estilosAdaptados.direccion]}>
             <Ionicons name="location-outline" size={12} color="#0f3e17" />
             <Text style={styles.direccionTexto} numberOfLines={1} ellipsizeMode="tail">
               <Text style={styles.direccionEtiqueta}>Dirección: </Text>
@@ -703,7 +699,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           style={[
             styles.tiposFila,
             compacta && styles.tiposFilaCompacto,
-            !compacta && { marginBottom: hueco(10) },
+            !compacta && estilosAdaptados.tipos,
           ]}
         >
           {tiposTurno.map((opcion) => {
@@ -737,7 +733,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           style={[
             styles.monthRow,
             compacta && styles.monthRowCompacto,
-            !compacta && { marginTop: hueco(10), marginBottom: hueco(8) },
+            !compacta && estilosAdaptados.mes,
           ]}
         >
           <Pressable
@@ -776,21 +772,10 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             const value = fechaComoValor(date);
             const ocupados = ocupadosPorDia.get(value) ?? 0;
             const esPasado = value < hoyValor;
-            const esDomingo = Boolean(configuracionSede) && !atiendeDia(configuracionSede, date);
-            // Los miercoles la veterinaria esta completa: no se atienden turnos.
-            // NO va en `deshabilitado`: el dia se puede abrir para ver que esta
-            // lleno, pero adentro no hay ningun horario bookeable.
             const esDiaBloqueado = Boolean(configuracionSede) && !atiendeDia(configuracionSede, date);
             const completos = horariosDisponibles.length > 0 && ocupados >= horariosDisponibles.length;
-            // Un dia sin horarios igual se puede abrir para ver que esta lleno,
-            // asi que no cuenta como deshabilitado: solo se ve distinto.
-            const deshabilitado = !configuracionSede || esPasado || esDomingo || cargando || Boolean(error);
+            const deshabilitado = !configuracionSede || esPasado || esDiaBloqueado || cargando || Boolean(error);
             const seleccionado = Boolean(configuracionSede) && fechaSeleccionada === value;
-            // La celda reserva la franja de abajo para el puntito, asi el numero
-            // sube y no queda pegado a el. Solo lo llevan los dias bloqueados
-            // (los miercoles): el puntito verde de "este dia ya tiene horarios
-            // tomados" quedo pegado arriba del numero y competia con el rojo de
-            // "dia completo", que es el unico que avisa que no se puede agendar.
             const llevaPuntito = !esPasado && !seleccionado && esDiaBloqueado;
             const nombreMes = mesVisible.toLocaleDateString('es-AR', { month: 'long' });
             return (
@@ -798,9 +783,9 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 key={`day-${dia}`}
                 style={[
                   styles.day,
-                  { height: altoDia },
+                  estilosAdaptados.dia,
                   seleccionado && styles.selectedDay,
-                  llevaPuntito && { paddingBottom: franjaPuntito },
+                  llevaPuntito && estilosAdaptados.diaConPunto,
                 ]}
                 onPress={() => {
                   setFechaSeleccionada(value);
@@ -815,21 +800,19 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 <Text
                   style={[
                     styles.dayText,
-                    { fontSize: diaText },
+                    estilosAdaptados.textoDia,
                     seleccionado && styles.selectedText,
                     deshabilitado && !seleccionado && styles.disabledText,
                   ]}
                 >
                   {dia}
                 </Text>
-                {/* Puntito rojo de "dia completo, no se puede agendar" (los
-                    miercoles). No va en los pasados ni en el que esta elegido
-                    porque en los dos el fondo ya lo dice. */}
+                {/* Marca los días sin atención según la configuración de la sede. */}
                 {esDiaBloqueado && !esPasado && !seleccionado ? (
                   <View
                     style={[
                       styles.bloqueoDot,
-                      { width: altoPuntito, height: altoPuntito, bottom: margenPuntito },
+                      estilosAdaptados.punto,
                     ]}
                   />
                 ) : null}
@@ -839,7 +822,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
         </View>
 
         {compacta ? null : (
-          <View style={[styles.legend, !compacta && { marginTop: hueco(12) }]}>
+          <View style={[styles.legend, !compacta && estilosAdaptados.leyenda]}>
             <View style={styles.legendLibre} />
             <Text style={styles.legendText}>Libre</Text>
             <View style={styles.legendOcupado} />
@@ -853,7 +836,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           style={[
             styles.timesSection,
             compacta && styles.timesSectionCompacto,
-            !compacta && { marginTop: hueco(12), paddingTop: hueco(12) },
+            !compacta && estilosAdaptados.horarios,
           ]}
         >
           {/* En compacto el dia ya se ve marcado en el calendario, asi que el
@@ -889,7 +872,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                 </Text>
               ) : null}
               <View
-                style={[styles.slotsGrid, { gap: gapSlot }]}
+                style={[styles.slotsGrid, estilosAdaptados.grillaHorarios]}
                 onLayout={(event) => setAnchoHorarios(event.nativeEvent.layout.width)}
               >
                 {horariosVisibles.map((hora) => {
@@ -906,12 +889,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                       }}
                       style={({ pressed }) => [
                         styles.slot,
-                        {
-                          minHeight: altoSlot,
-                          ...(anchoHorarios > 0
-                            ? { width: Math.floor(((anchoHorarios - gapSlot * 3) / 4) * 100) / 100 }
-                            : {}),
-                        },
+                        estilosAdaptados.horario,
                         seleccionado && styles.slotSeleccionado,
                         ocupado && styles.slotOcupado,
                         pressed && !deshabilitado && estilos.buttonPressed,
@@ -923,7 +901,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
                       <Text
                         style={[
                           styles.slotText,
-                          { fontSize: slotText },
+                          estilosAdaptados.textoHorario,
                           seleccionado && styles.slotTextSeleccionado,
                           ocupado && styles.slotTextOcupado,
                         ]}
@@ -955,7 +933,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
             style={({ pressed }) => [
               styles.confirmar,
               compacta && styles.confirmarCompacto,
-              !compacta && { marginTop: hueco(12), paddingVertical: Math.max(11, hueco(15)) },
+              !compacta && estilosAdaptados.confirmar,
               !puedeConfirmar && estilos.buttonPressed,
               pressed && puedeConfirmar && estilos.buttonPressed,
             ]}
@@ -979,7 +957,7 @@ export const AvailabilityCalendar = forwardRef<AgendaHandle, Props>(
           style={[
             styles.card,
             compacta && styles.cardCompacto,
-            !compacta && { paddingBottom: hueco(12) },
+            !compacta && estilosAdaptados.tarjeta,
           ]}
         >
           {cuerpoAgenda}
@@ -1168,18 +1146,11 @@ const styles = StyleSheet.create({
   selectedDay: { backgroundColor: '#0f3e17' },
   selectedText: { color: '#fffefc', fontWeight: 'bold' },
   disabledText: { color: '#a0a69f' },
-  // Puntito de "dia completo, no se puede agendar". Rojo a proposito: los
-  // miercoles no tienen lugar de ningun tipo y el verde de los horarios libres
-  // los haria ver como un dia en el que se puede reservar.
   bloqueoDot: {
     position: 'absolute',
     borderRadius: 3,
     backgroundColor: '#c0392b',
   },
-  // Casilla de la leyenda para el dia completo (miercoles). Mismo rojo que el
-  // puntito del calendario, asi se leen como la misma señal.
-  // Relleno solido, no un rosa mas: asi se lee de un vistazo contra el
-  // cuadrado del horario ocupado, que es crema.
   legendCompleto: {
     width: 15,
     height: 15,
@@ -1235,10 +1206,6 @@ const styles = StyleSheet.create({
   slotIcono: { position: 'absolute', top: 2, right: 2 },
   slotSeleccionado: { borderColor: '#0f3e17', borderWidth: 2.5, backgroundColor: '#e8f3e4' },
   slotOcupado: { backgroundColor: colorOcupadoFondo, borderColor: colorOcupadoBorde },
-  // Horario que ya paso: se ve igual que uno libre y no se puede apretar. Sin
-  // fondo propio, porque un color que solo aparece en un estado que no hace
-  // falta explicar es solo ruido.
-  slotVencido: {},
   slotText: { color: '#1e3326', fontSize: 12, fontWeight: '600' },
   slotTextSeleccionado: { color: '#0f3e17', fontWeight: 'bold' },
   slotTextOcupado: { color: colorOcupadoTexto },

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
-import { obtenerUsuarioActual } from '@/lib/session';
+import { useSesion } from '@/lib/sesion-context';
 import type { Sede, SedeVeterinaria } from '@/lib/datos';
 
 const CLAVE = 'vetpro.sedeSeleccionada';
@@ -40,6 +40,7 @@ export function useFiltroTurnos(sedes: Sede[], cargando: boolean, error: string)
 }
 
 export function useSedes() {
+  const { usuario: usuarioSesion } = useSesion();
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [errorSedes, setErrorSedes] = useState('');
   const [cargandoSedes, setCargandoSedes] = useState(true);
@@ -48,7 +49,7 @@ export function useSedes() {
     setCargandoSedes(true);
     void (async () => {
       try {
-        const usuario = await obtenerUsuarioActual();
+        const usuario = usuarioSesion;
         if (!usuario) throw new Error('Inicia sesión para consultar las sedes.');
         const response = await fetch(`${API_BASE_URL}/api/sedes`, { headers: { Authorization: `Bearer ${usuario.accessToken}` } });
         const resultado: unknown = await response.json();
@@ -59,7 +60,7 @@ export function useSedes() {
       } finally { if (vigente) setCargandoSedes(false); }
     })();
     return () => { vigente = false; };
-  }, []));
+  }, [usuarioSesion]));
   return { sedes, errorSedes, cargandoSedes };
 }
 

@@ -1,10 +1,23 @@
 import { useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { AppState, Platform, StyleSheet } from 'react-native';
+import { useRecordatorios } from '@/lib/recordatorios';
+import { SesionProvider } from '@/lib/sesion-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, useRouter } from 'expo-router';
 
 export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={styles.raiz}>
+      <SesionProvider>
+        <Navegacion />
+      </SesionProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+function Navegacion() {
   const router = useRouter();
+  const sincronizarRecordatorios = useRecordatorios();
 
   useEffect(() => {
     let subscription: { remove: () => void } | undefined;
@@ -37,7 +50,7 @@ export default function RootLayout() {
     }
 
     return () => { activo = false; subscription?.remove(); estado.remove(); };
-  }, [router]);
+  }, [router, sincronizarRecordatorios]);
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
@@ -60,3 +73,5 @@ export default function RootLayout() {
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({ raiz: { flex: 1 } });

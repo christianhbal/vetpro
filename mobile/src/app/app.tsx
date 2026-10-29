@@ -7,7 +7,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -29,8 +28,8 @@ import {
   type SedeVeterinaria,
   type TurnoGuardado,
 } from '@/lib/datos';
-import { obtenerUsuarioActual } from '@/lib/session';
-import { sincronizarRecordatorios } from '@/lib/recordatorios';
+import { useSesion } from '@/lib/sesion-context';
+import { useRecordatorios } from '@/lib/recordatorios';
 import QRCode from 'react-native-qrcode-svg';
 import { checkInDeSede } from '@/lib/check-in';
 import { guardarFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
@@ -48,9 +47,7 @@ type Mascota = {
 // turnos del propio usuario vienen mas pelados.
 type TurnoAgenda = TurnoGuardado & {
   atendidoEn?: string | null;
-  user?: { nombre: string } | null;
-  esDemo?: boolean;
-};
+  user?: { nombre: string } | null;};
 
 type CitaLista = {
   id: number;
@@ -98,6 +95,8 @@ const accesosRapidos = [
 ] as const;
 
 export default function InicioScreen() {
+  const sincronizarRecordatorios = useRecordatorios();
+  const { usuario: usuarioSesion } = useSesion();
   const { sedes, errorSedes } = useSedes();
   const sedesVeterinaria = sedes.map((sede) => sede.nombre);
   const direccionesSedes = Object.fromEntries(sedes.map((sede) => [sede.nombre, sede.direccion]));
@@ -112,9 +111,9 @@ export default function InicioScreen() {
   const [ahora, setAhora] = useState(() => new Date());
   const [cargandoTurnos, setCargandoTurnos] = useState(true);
   const [errorTurnos, setErrorTurnos] = useState('');
-  const [esAdmin, setEsAdmin] = useState(false);
-  const [nombreUsuario, setNombreUsuario] = useState('');
-  const [nombreCompleto, setNombreCompleto] = useState('');
+  const esAdmin = usuarioSesion?.esAdmin === true;
+  const nombreCompleto = usuarioSesion?.nombre ?? '';
+  const nombreUsuario = nombreCompleto.split(' ')[0];
   const [modalQr, setModalQr] = useState(false);
   const [imprimiendoQr, setImprimiendoQr] = useState(false);
   const [qrAviso, setQrAviso] = useState('');
@@ -149,21 +148,17 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
   // Las tarjetas se miden como las de la pantalla de Turnos: alto del contenido
   // y foto cuadrada de 56. Antes el alto salia de una cuenta sobre el alto de la
   // pantalla y las tarjetas quedaban enormes en telefonos altos.
-  const LADO_FOTO_CITA = 56;
 
   const cargarMascotas = useCallback(async () => {
     setCargandoMascotas(true);
     setMascotas([]);
     setErrorMascotas('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
       }
-      setEsAdmin(usuario.esAdmin);
-      setNombreUsuario(usuario.nombre.split(' ')[0]);
-      setNombreCompleto(usuario.nombre);
 
       const response = await fetch(
         `${API_BASE_URL}/api/mascotas?userId=${encodeURIComponent(String(usuario.id))}`,
@@ -180,7 +175,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     } finally {
       setCargandoMascotas(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,7 +187,7 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     setCargandoTurnos(true);
     setErrorTurnos('');
     try {
-      const usuario = await obtenerUsuarioActual();
+      const usuario = usuarioSesion;
       if (!usuario) {
         router.replace('/');
         return;
@@ -218,24 +213,22 @@ const [sedeSeleccionada, setSedeSeleccionada] = useSedeSeleccionada();
     } finally {
       setCargandoTurnos(false);
     }
-  }, []);
+  }, [usuarioSesion]);
 
   useFocusEffect(
     useCallback(() => {
       void cargarTurnos();
       void sincronizarRecordatorios(true);
-    }, [cargarTurnos])
+    }, [cargarTurnos, sincronizarRecordatorios])
   );
 
 
   const turnosPendientes = useMemo(() => turnosGuardados
-    .filter((turno) => !turno.atendidoEn && !turno.esDemo && turnoSiguePendiente(turno, ahora))
+    .filter((turno) => !turno.atendidoEn && turnoSiguePendiente(turno, ahora))
     .sort((a, b) => a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha)),
     [turnosGuardados, ahora]);
 
-  // El admin ve los turnos de verdad de la sede que esta mirando, y un cliente
-  // los suyos. Antes el admin veia nombres de ejemplo fijos (Lola, Mora, Tito,
-  // Nube) que no tenian nada que ver con la sede elegida.
+  // El administrador ve los turnos de la sede seleccionada; el cliente, los propios.
   const citasVisibles: CitaLista[] = esAdmin
     ? turnosPendientes
         .filter((turno) => turno.sede === sedeSeleccionada)
@@ -283,7 +276,7 @@ style={({ pressed }) => [
         {foto ? (
           <Image
             source={foto}
-style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
+style={[styles.citaFoto, styles.tamanoFotoCita]}
    resizeMode="contain"
    accessibilityLabel={`Foto de ${item.mascota}`}
    />
@@ -291,14 +284,14 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
    <View
    style={[
    styles.citaFotoVacia,
-   { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA },
+   styles.tamanoFotoCita,
    ]}
    >
    {/* La huella se escala con el lado de la foto: fijo en 26 llenaba
    todo el cuadro de 56 y se veía desproporcionado al achicarlo. */}
    <Ionicons
    name="paw-outline"
-   size={Math.round(LADO_FOTO_CITA * 0.42)}
+   size={24}
    color="#0f3e17"
    />
    </View>
@@ -433,6 +426,10 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
     </Pressable>
   );
 
+  const estilosAdaptados = StyleSheet.create({
+    fotoAmpliada: { width: fotoModalSize, height: fotoModalSize },
+  });
+
   return (
     <AppDrawer title="VetPro">
       <View style={styles.portada}>
@@ -553,12 +550,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
 
           </View>
 
-        {/* Un View y no un FlatList: son 3 citas fijas sin scroll. El FlatList
-            sin flex media mal el alto y dejaba un hueco al final.
-            La lista se ancla al fondo con justifyContent para que las 3
-            tarjetas ocupen siempre la ultima franja de la pantalla y el aire
-            sobrante quede entre el encabezado y el titulo, no repartido entre
-            las tarjetas. */}
+        {/* La lista ocupa el espacio disponible bajo el encabezado. */}
         <View style={styles.portadaLista}>
           {/* Absorbe el aire sobrante con tope: sin maxHeight, en pantallas
               muy altas el hueco entre el encabezado y el titulo crecia sin
@@ -567,9 +559,9 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
           <View style={styles.huecoLista} />
           <Text style={styles.tituloSeccion}>Próximos turnos</Text>
           {cargandoTurnos ? (
-            <ActivityIndicator color="#0f3e17" style={{ marginBottom: 12 }} />
+            <ActivityIndicator color="#0f3e17" style={styles.separacionEstado} />
           ) : errorTurnos ? (
-            <Text style={[estilos.cardSubtitle, { marginBottom: 12 }]}>{errorTurnos}</Text>
+            <Text style={[estilos.cardSubtitle, styles.separacionEstado]}>{errorTurnos}</Text>
           ) : null}
           {citasVisibles.length === 0 && !cargandoTurnos && !errorTurnos ? (
             <View style={styles.sinCitas}>
@@ -581,18 +573,14 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
    </Text>
             </View>
           ) : (
-            /* Scrollea SOLO esta franja. Con un View comun las tarjetas se
-               desbordaban y en web se movia la pantalla entera, con lo que el
-               saludo, los accesos y el boton de QR se iban al scroll. Con el
-               ScrollView la zona de arriba queda siempre fija y solo bajan las
-               tarjetas. */
-            <ScrollView
+            <FlatList
+              data={citasVisibles}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => renderCita(item)}
               style={styles.tarjetasCitas}
               contentContainerStyle={styles.tarjetasCitasContenido}
               showsVerticalScrollIndicator={false}
-            >
-              {citasVisibles.map(renderCita)}
-            </ScrollView>
+            />
           )}
         </View>
       </View>
@@ -625,7 +613,7 @@ style={[styles.citaFoto, { width: LADO_FOTO_CITA, height: LADO_FOTO_CITA }]}
               {mascotaSeleccionada.foto ? (
                 <Image
                   source={{ uri: mascotaSeleccionada.foto }}
-                  style={[estilos.petPhoto, { width: fotoModalSize, height: fotoModalSize }]}
+                  style={[estilos.petPhoto, estilosAdaptados.fotoAmpliada]}
                   resizeMode="contain"
                   accessibilityLabel={`Foto de ${mascotaSeleccionada.nombre}`}
                 />
@@ -808,7 +796,7 @@ const styles = StyleSheet.create({
   // porcentaje: la barra de arriba de la app queda fuera del reparto y con
   // flexBasis el titulo se corria.
   portadaEncabezado: {
-    justifyContent: 'flex-start' as const,
+    justifyContent: 'flex-start',
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
@@ -841,9 +829,9 @@ const styles = StyleSheet.create({
   // pegadas al encabezado. 34 es una banda de respiracion razonable.
   huecoLista: { flex: 1, maxHeight: 34 },
 sinCitas: {
-   flexDirection: 'row' as const,
-   alignItems: 'center' as const,
-   alignSelf: 'stretch' as const,
+   flexDirection: 'row',
+   alignItems: 'center',
+   alignSelf: 'stretch',
    gap: 10,
    paddingVertical: 12,
    paddingHorizontal: 14,
@@ -855,21 +843,21 @@ sinCitas: {
   sinCitasIcono: {
    width: 34,
    height: 34,
-   alignItems: 'center' as const,
-   justifyContent: 'center' as const,
+   alignItems: 'center',
+   justifyContent: 'center',
    borderRadius: 17,
    backgroundColor: '#e4f1e0',
    },
-  sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' as const },
+  sinCitasTitulo: { flex: 1, color: '#0f3e17', fontSize: 15, fontWeight: '600' },
   // La altura la pone altoCita en el JSX (1/3 de la franja), no flex: 1: con
   // flex la tarjeta se estira hasta llenar la franja y deforma el reparto.
   citaTarjeta: {
-    justifyContent: 'center' as const,
+    justifyContent: 'center',
     marginBottom: 0,
   },
   citaFila: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 13,
   },
   // Sin backgroundColor: la foto va con resizeMode="contain", asi que no
@@ -882,13 +870,13 @@ sinCitas: {
   // cuadro el icono queda flotando sobre la tarjeta.
   citaFotoVacia: {
     borderRadius: 14,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#cfe7d3',
   },
   citaTexto: { flex: 1 },
   citaTitulo: { flexShrink: 1 },
-  citaDetalle: { color: '#0f3e17', fontSize: 14, fontWeight: '600' as const },
+  citaDetalle: { color: '#0f3e17', fontSize: 14, fontWeight: '600' },
   modalSede: {
     marginTop: 12,
     paddingTop: 12,
@@ -897,50 +885,44 @@ sinCitas: {
   },
   // "Sede:" y "Direccion:" en negrita, el dato despues. Antes la sede
   // venia toda en negrita y la direccion suelta, sin etiqueta.
-  modalEtiqueta: { fontWeight: '700' as const, color: '#0f3e17' },
+  modalEtiqueta: { fontWeight: '700', color: '#0f3e17' },
   // El fondo, el radio y el alto salen de estilos.qrBoton: el mismo verde que
   // "Escanear QR de llegada".
   irBoton: { marginTop: 20, marginBottom: 0 },
-  qrAdminBotonFila: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
   tituloSeccion: {
     marginBottom: 10,
     color: '#0f3e17',
     fontSize: 22,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
   },
   qrBotonCompacto: {
     backgroundColor: '#0f3e17',
     paddingVertical: 12,
     borderRadius: 14,
-    alignItems: 'center' as const,
+    alignItems: 'center',
   },
 saludo: {
     width: '100%' as DimensionValue,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     marginVertical: 30,
   },
   saludoTexto: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     color: '#0f3e17',
     fontSize: 24,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
     marginBottom: 2,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   saludoSubtexto: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     color: '#556b58',
     fontSize: 13,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   accesos: {
     width: '100%' as DimensionValue,
-    flexDirection: 'row' as const,
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
   },
@@ -948,7 +930,7 @@ saludo: {
   acceso: {
     flex: 1,
     minWidth: 0,
-    alignItems: 'center' as const,
+    alignItems: 'center',
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 4,
@@ -960,8 +942,8 @@ saludo: {
   accesoIcono: {
     width: 42,
     height: 42,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 14,
     backgroundColor: '#e4f1e0',
   },
@@ -970,8 +952,8 @@ saludo: {
     // 11 y no 12: con 12 "Notificaciones" no entra en el ancho de la caja y se
     // partia a mitad de palabra ("Notificacion / es").
     fontSize: 11,
-    fontWeight: '600' as const,
-    textAlign: 'center' as const,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   bloqueSede: { marginTop: 4 },
   // El alto va en la lista y no en la card: con el alto fijo y el overflow
@@ -985,36 +967,36 @@ saludo: {
    backgroundColor: '#e1f4df',
    borderColor: '#efeeeb',
    borderWidth: 1,
-   alignItems: 'center' as const,
+   alignItems: 'center',
   },
   // flex: 1 para que la foto tome lo que sobra y los dos textos de abajo
   // siempre entren: con el alto fijo la foto se comia el espacio del nombre.
   mascotaFotoArea: {
    flex: 1,
    width: '100%',
-   alignItems: 'center' as const,
-   justifyContent: 'center' as const,
+   alignItems: 'center',
+   justifyContent: 'center',
    borderRadius: 10,
-   overflow: 'hidden' as const,
+   overflow: 'hidden',
    // Mismo color que mascotaCard: la foto va con contain y no llena el marco,
    // asi que con otro color se veia el contraste alrededor de la imagen.
    backgroundColor: '#e1f4df',
   },
   mascotaFoto: { width: '100%', height: '100%' },
   mascotaNombre: {
-   alignSelf: 'stretch' as const,
+   alignSelf: 'stretch',
    marginTop: 8,
    color: '#0f3e17',
    fontSize: 15,
-   fontWeight: 'bold' as const,
-   textAlign: 'center' as const,
+   fontWeight: 'bold',
+   textAlign: 'center',
   },
   mascotaRaza: {
-   alignSelf: 'stretch' as const,
+   alignSelf: 'stretch',
    marginTop: 1,
    color: '#4a6152',
    fontSize: 12,
-   textAlign: 'center' as const,
+   textAlign: 'center',
   },
   mascotasVacias: {
     paddingVertical: 16,
@@ -1032,17 +1014,17 @@ saludo: {
   // estilos.modalTitle no tiene textAlign, asi que el titulo se pegaba a la
   // izquierda mientras el subtitizado de abajo si iba centrado.
   qrAdminTitulo: {
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   qrAdminTexto: {
-    textAlign: 'center' as const,
+    textAlign: 'center',
     marginBottom: 16,
   },
   qrAdminMarco: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     width: '100%' as DimensionValue,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
     backgroundColor: '#ffffff',
@@ -1050,19 +1032,19 @@ saludo: {
   qrAdminSvg: {
     width: 220,
     height: 220,
-    alignSelf: 'center' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   qrAdminSede: {
     marginTop: 12,
     color: '#0f3e17',
     fontSize: 18,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
   },
   // El boton de imprimir va debajo del marco del QR, con aire de la sede.
   qrAdminBotonImprimir: {
-    alignSelf: 'stretch' as const,
+    alignSelf: 'stretch',
     marginTop: 20,
   },
   qrAdminBotonOcupado: {
@@ -1073,14 +1055,8 @@ saludo: {
     color: '#6b6b6b',
     fontSize: 13,
     lineHeight: 18,
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
-  turnPhotoPlaceholder: {
-    width: 56,
-    height: 56,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: 10,
-    backgroundColor: '#cfe7d3',
-  },
+  tamanoFotoCita: { width: 56, height: 56 },
+  separacionEstado: { marginBottom: 12 },
 });
