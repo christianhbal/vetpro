@@ -382,7 +382,10 @@ app.post('/api/mascotas', async (request, response) => {
       return response.status(404).json({ message: 'No se encontro el usuario dueño de la mascota.' });
     }
 
-    const mascota = await prisma.mascota.create({
+    const mascota = await prisma.$transaction(async (tx) => {
+      const cantidad = await tx.mascota.count({ where: { userId } });
+      if (cantidad >= 5) return null;
+      return tx.mascota.create({
       data: {
         nombre: nombre.trim(),
         especie: especie.trim(),
@@ -392,7 +395,9 @@ app.post('/api/mascotas', async (request, response) => {
         foto: foto ?? null,
         user: { connect: { id: userId } },
       },
+      });
     });
+    if (!mascota) return response.status(409).json({ message: 'Tu plan permite un máximo de 5 mascotas.' });
     return response.status(201).json(mascota);
   } catch (error) {
     console.error('No se pudo crear la mascota:', error);
@@ -1125,6 +1130,32 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
   }
 });
 
+
+// Elimina un registro atendido, conservando los datos de sus notificaciones.
+app.delete('/api/admin/turnos/:id/registro', async (request, response) => {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id del turno no es válido.' });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const turno = await tx.turno.findUnique({ where: { id }, include: { mascota: { select: { nombre: true, foto: true } } } });
+      if (!turno) return 'no-existe';
+      if (!turno.atendidoEn) return 'no-atendido';
+      await tx.notification.updateMany({ where: { turnoId: id, mascotaNombre: null }, data: { mascotaNombre: turno.mascota.nombre, mascotaFoto: turno.mascota.foto } });
+      await tx.notification.updateMany({ where: { turnoId: id, sede: null }, data: { sede: turno.sede } });
+      await tx.notification.updateMany({ where: { turnoId: id, hora: null }, data: { hora: turno.hora } });
+      const eliminado = await tx.turno.deleteMany({ where: { id, atendidoEn: { not: null } } });
+      if (eliminado.count === 0) throw new Error('El turno cambió mientras se eliminaba.');
+      return 'eliminado';
+    });
+    if (resultado === 'no-existe') return response.status(404).json({ message: 'No se encontró el turno.' });
+    if (resultado === 'no-atendido') return response.status(409).json({ message: 'Solo se pueden eliminar registros de turnos atendidos.' });
+    return response.json({ eliminado: true });
+  } catch (error) {
+    console.error('No se pudo eliminar el registro:', error);
+    return response.status(500).json({ message: 'No se pudo eliminar el registro.' });
+  }
+});
 
 // Cancela un turno. No se permite si el paciente ya fue atendido
 app.delete('/api/admin/turnos/:id', async (request, response) => {

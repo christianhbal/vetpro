@@ -112,6 +112,9 @@ export default function TurnosScreen() {
   const [cancelando, setCancelando] = useState(false);
   const [registrandoLlegada, setRegistrandoLlegada] = useState(false);
   const [confirmarLlegada, setConfirmarLlegada] = useState(false);
+  const [confirmarEliminarRegistro, setConfirmarEliminarRegistro] = useState(false);
+  const [eliminandoRegistro, setEliminandoRegistro] = useState(false);
+  const [errorEliminarRegistro, setErrorEliminarRegistro] = useState('');
   const [errorCancelar, setErrorCancelar] = useState('');
   // Datos del turno recien guardado o cancelado, para los avisos de exito.
   const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
@@ -272,6 +275,27 @@ const puedeCancelar =
    selloDe(citaSeleccionada.guardado) === null;
 
   const puedeMarcarLlegada = puedeEditar && citaSeleccionada?.guardado.fecha === fechaComoValor(new Date());
+  const puedeEliminarRegistro = esAdmin && citaSeleccionada?.atendido === true;
+
+  const eliminarRegistro = async () => {
+    if (!citaSeleccionada || eliminandoRegistro || !token) return;
+    setEliminandoRegistro(true);
+    setErrorEliminarRegistro('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.id}/registro`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) throw new Error(mensajeApi(result) ?? 'No se pudo eliminar el registro.');
+      setConfirmarEliminarRegistro(false);
+      setCitaSeleccionada(null);
+      await cargarTurnos();
+    } catch (error) {
+      setErrorEliminarRegistro(error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'No se pudo eliminar el registro.');
+    } finally {
+      setEliminandoRegistro(false);
+    }
+  };
 
   const marcarLlegada = async () => {
     if (!citaSeleccionada || registrandoLlegada || !token) return;
@@ -789,7 +813,7 @@ const puedeCancelar =
                 </>
               )}
 
-              {puedeMarcarLlegada || puedeEditar || puedeCancelar ? (
+              {puedeMarcarLlegada || puedeEditar || puedeCancelar || puedeEliminarRegistro ? (
               <View style={styles.accionesTurno}>
               {puedeMarcarLlegada ? (
                 <Pressable
@@ -833,10 +857,48 @@ const puedeCancelar =
                   </View>
                 </Pressable>
               ) : null}
+              {puedeEliminarRegistro ? (
+                <Pressable
+                  style={({ pressed }) => [styles.eliminar, pressed && estilos.buttonPressed]}
+                  onPress={() => { setErrorEliminarRegistro(''); setConfirmarEliminarRegistro(true); }}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.eliminarFila}>
+                    <Ionicons name="trash-outline" size={19} color="#8a5324" />
+                    <Text style={styles.eliminarTexto}>Eliminar registro</Text>
+                  </View>
+                </Pressable>
+              ) : null}
               </View>
               ) : null}
             </View>
           )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={confirmarEliminarRegistro}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => { if (!eliminandoRegistro) setConfirmarEliminarRegistro(false); }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable style={estilos.petModalBackdrop} onPress={() => { if (!eliminandoRegistro) setConfirmarEliminarRegistro(false); }} accessibilityRole="button" accessibilityLabel="Cerrar confirmación" />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>¿Eliminar registro?</Text>
+            <Text style={estilos.modalText}>El turno y la descripción de la atención se eliminarán permanentemente del historial de {citaSeleccionada?.mascota ?? 'la mascota'}. Esta acción no se puede deshacer.</Text>
+            {errorEliminarRegistro ? <Text style={styles.errorCancelar} accessibilityRole="alert">{errorEliminarRegistro}</Text> : null}
+            <View style={[estilos.modalActions, styles.accionesCentradas]}>
+              <Pressable style={({ pressed }) => [estilos.modalButton, estilos.modalButtonNeutral, pressed && estilos.buttonPressed]} onPress={() => setConfirmarEliminarRegistro(false)} disabled={eliminandoRegistro} accessibilityRole="button">
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [estilos.modalButton, styles.confirmarCancelacion, pressed && estilos.buttonPressed]} onPress={() => void eliminarRegistro()} disabled={eliminandoRegistro} accessibilityRole="button" accessibilityState={{ busy: eliminandoRegistro }}>
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>{eliminandoRegistro ? 'Eliminando...' : 'Eliminar'}</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
 
