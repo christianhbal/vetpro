@@ -11,11 +11,12 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { SelectorCampo } from '@/components/selector-campo';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
 import { estilos } from '@/lib/estilos';
 import { esSedeVeterinaria, formatearFechaTurno, type SedeVeterinaria } from '@/lib/datos';
 import { useSesion } from '@/lib/sesion-context';
-import { useSedeSeleccionada } from '@/lib/sede';
+import { useSedeSeleccionada, useSedes } from '@/lib/sede';
 
 type TurnoActivo = {
   id: number;
@@ -68,11 +69,11 @@ export default function AdminTurnosActivosScreen() {
   const { usuario: usuarioSesion } = useSesion();
   const router = useRouter();
 
-  // La sede se elige en la pantalla de Turnos y llega por parametro. Acá no
-  // se modifica: si el usuario cambia de sede, tiene que volver a Turnos.
   const params = useLocalSearchParams<{ sede?: string }>();
-  const [sedeCompartida] = useSedeSeleccionada();
-  const sedeSeleccionada = esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida;
+  const [sedeCompartida, guardarSede] = useSedeSeleccionada();
+  const { sedes, cargandoSedes, errorSedes } = useSedes();
+  const [sedeElegida, setSedeElegida] = useState<string | null>(null);
+  const sedeSeleccionada = sedeElegida ?? (esSedeVeterinaria(params.sede) ? params.sede : sedeCompartida);
 
   // Esta pantalla se entra desde Turnos o desde la portada, asi que la
   // cabecera muestra la flecha de volver en lugar del menu.
@@ -168,31 +169,21 @@ const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || 
         refreshing={cargando}
         ListHeaderComponent={
           <View>
-            <View style={styles.cabecera}>
-              <View style={styles.cabeceraIcono}>
-                <Ionicons name="location" size={20} color="#0f3e17" />
-              </View>
-              <View style={styles.cabeceraTexto}>
-                <Text style={styles.cabeceraLabel}>Sede</Text>
-                <Text style={styles.cabeceraSede} numberOfLines={1}>
-                  {sedeSeleccionada}
-                </Text>
-              </View>
-              <View style={styles.contador}>
-                <Text style={styles.contadorNumero}>
-                  {turnosDeLaSede.length === 1 ? '1' : turnosDeLaSede.length}
-                </Text>
-                <Text style={styles.contadorLabel}>
-                  {turnosDeLaSede.length === 1 ? 'esperando' : 'esperando'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.intro}>
-              <Text style={styles.introTexto}>
-                Para cambiar de sede, volvé a la pantalla de Turnos.
-              </Text>
-            </View>
+            <SelectorCampo
+              label="Sede"
+              icono="location-outline"
+              placeholder="Elegí una sede"
+              opciones={[{ valor: 'Todas', titulo: 'Todas' }, ...sedes.map((sede) => ({ valor: sede.nombre, titulo: sede.nombre }))]}
+              seleccion={sedeSeleccionada ? { valor: sedeSeleccionada, titulo: sedeSeleccionada } : null}
+              cargando={cargandoSedes}
+              vacio={errorSedes || 'No hay sedes disponibles.'}
+              accessibilityLabel="Cambiar sede"
+              onSelect={(opcion) => {
+                setSedeElegida(opcion.valor);
+                if (opcion.valor !== 'Todas') guardarSede(opcion.valor);
+              }}
+            />
+            {errorSedes ? <Text accessibilityRole="alert" style={estilos.formError}>{errorSedes}</Text> : null}
           </View>
         }
         ListEmptyComponent={
@@ -268,51 +259,6 @@ const turnosDeLaSede = turnos.filter((turno) => sedeSeleccionada === 'Todas' || 
 }
 
 const styles = StyleSheet.create({
-  cabecera: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#cfdcc9',
-    backgroundColor: '#eef5ea',
-  },
-  cabeceraIcono: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 13,
-    backgroundColor: '#d9f0da',
-  },
-  cabeceraTexto: { flex: 1 },
-  cabeceraLabel: {
-    color: '#6b7d6d',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  cabeceraSede: { color: '#0f3e17', fontSize: 18, fontWeight: '700', marginTop: 2 },
-  contador: { alignItems: 'center', minWidth: 52 },
-  contadorNumero: { color: '#0f3e17', fontSize: 24, fontWeight: 'bold', lineHeight: 28 },
-  contadorLabel: { color: '#6b7d6d', fontSize: 11 },
-  intro: {
-    alignItems: 'center',
-    padding: 13,
-    marginBottom: 14,
-    borderRadius: 14,
-    backgroundColor: '#f2f9f1',
-  },
-  introTexto: {
-    alignSelf: 'stretch',
-    color: '#3d5546',
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-  },
   vacio: { alignItems: 'center', paddingVertical: 34, paddingHorizontal: 20 },
   vacioIcono: {
     width: 62,

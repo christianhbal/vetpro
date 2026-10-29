@@ -288,12 +288,12 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
         animationType="fade"
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={() => router.replace(esperaDeLaSede)}
+        onRequestClose={volver}
       >
         <View style={styles.avisoRaiz}>
           <Pressable
             style={styles.avisoFondo}
-            onPress={() => router.replace(esperaDeLaSede)}
+            onPress={volver}
             accessibilityRole="button"
             accessibilityLabel="Cerrar aviso"
           />
@@ -326,7 +326,7 @@ const sedeDeOrigen = esSedeVeterinaria(params.filtroOrigen) ? params.filtroOrige
 
               <Pressable
                 style={({ pressed }) => [styles.avisoBoton, pressed && estilos.buttonPressed]}
-                onPress={() => router.replace(esperaDeLaSede)}
+                onPress={volver}
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar y volver a los pacientes que esperan"
               >

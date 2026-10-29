@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
-import { StyleSheet, Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppDrawer } from '@/components/app-drawer';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
 import type { UsuarioActual } from '@/lib/session';
@@ -30,6 +31,7 @@ export default function PerfilScreen() {
   const [modalCerrarSesion, setModalCerrarSesion] = useState(false);
   const [modalAyuda, setModalAyuda] = useState(false);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
+  const [passwordActualizada, setPasswordActualizada] = useState(false);
   const [passwordActual, setPasswordActual] = useState('');
   const [passwordNueva, setPasswordNueva] = useState('');
   const [confirmarPassword, setConfirmarPassword] = useState('');
@@ -123,7 +125,7 @@ export default function PerfilScreen() {
       setPasswordActual('');
       setPasswordNueva('');
       setConfirmarPassword('');
-      Alert.alert('Contraseña actualizada', 'Ya puedes ingresar con tu nueva contraseña.');
+      setPasswordActualizada(true);
     } catch (error) {
       setErrorPassword(
         error instanceof TypeError
@@ -193,27 +195,32 @@ export default function PerfilScreen() {
           />
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitle}>Cambiar contraseña</Text>
+            <Text style={estilos.formLabel}>Contraseña actual</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Contraseña actual"
+              accessibilityLabel="Contraseña actual"
               value={passwordActual}
               onChangeText={setPasswordActual}
               secureTextEntry
               autoComplete="current-password"
               editable={!guardandoPassword}
             />
+            <Text style={estilos.formLabel}>Nueva contraseña</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Nueva contraseña (mínimo 8 caracteres)"
+              placeholder="Mínimo 8 caracteres"
+              placeholderTextColor="#7a8378"
+              accessibilityLabel="Nueva contraseña"
               value={passwordNueva}
               onChangeText={setPasswordNueva}
               secureTextEntry
               autoComplete="new-password"
               editable={!guardandoPassword}
             />
+            <Text style={estilos.formLabel}>Confirmar contraseña nueva</Text>
             <TextInput
               style={[estilos.formInput, styles.passwordInput]}
-              placeholder="Confirmar contraseña nueva"
+              accessibilityLabel="Confirmar contraseña nueva"
               value={confirmarPassword}
               onChangeText={setConfirmarPassword}
               secureTextEntry
@@ -253,6 +260,14 @@ export default function PerfilScreen() {
         </View>
       </Modal>
 
+      <AvisoExito
+        visible={passwordActualizada}
+        titulo="¡Contraseña actualizada!"
+        subtitulo="Ya podés ingresar con tu nueva contraseña."
+        etiquetaBoton="Cerrar aviso"
+        onCerrar={() => setPasswordActualizada(false)}
+      />
+
       <Modal
         visible={modalCerrarSesion}
         transparent
@@ -269,9 +284,9 @@ export default function PerfilScreen() {
             accessibilityLabel="Cerrar"
           />
           <View style={estilos.modalCard}>
-            <Text style={estilos.modalTitle}>¿Cerrar sesión?</Text>
+            <Text style={estilos.modalTitle}>Cerrar sesión</Text>
             <Text style={estilos.modalText}>
-              Vas a salir de tu cuenta. Vas a necesitar iniciar sesión nuevamente para entrar.
+              ¿Estás seguro de que querés salir de tu cuenta?
             </Text>
             <View style={estilos.modalActions}>
               <Pressable
@@ -334,8 +349,8 @@ export default function PerfilScreen() {
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitle}>Soporte: Ayuda</Text>
             <Text style={estilos.modalText}>
-              Para recibir ayuda, contactá a la sede donde reservaste tu turno.
-              Podés consultar su dirección en el detalle del turno.
+              Para recibir ayuda con un turno, contactá a la sede donde lo reservaste.
+              Para consultas generales, contactá a soporte@vetpro.com
             </Text>
             <View style={estilos.modalActions}>
               <Pressable

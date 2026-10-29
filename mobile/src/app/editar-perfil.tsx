@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Alert, FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { API_BASE_URL, apiUnreachableMessage } from '@/lib/api';
+import { AvisoExito } from '@/components/aviso-exito';
 import { estilos } from '@/lib/estilos';
 import { useSesion } from '@/lib/sesion-context';
 import type { UsuarioActual } from '@/lib/session';
@@ -262,46 +263,20 @@ export default function EditarPerfil() {
         }
       />
 
-      <Modal
+      <AvisoExito
         visible={mostrarConfirmacion}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMostrarConfirmacion(false)}
-      >
-        <View style={estilos.petModalRoot}>
-          <Pressable
-            style={estilos.petModalBackdrop}
-            onPress={() => setMostrarConfirmacion(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar mensaje"
-          />
-          <View
-            style={[estilos.modalCard, styles.confirmacion]}
-            accessibilityRole="alert"
-          >
-            <Text style={estilos.modalTitle}>Modificación exitosa</Text>
-            <View style={estilos.modalActions}>
-              <Pressable
-                style={[estilos.modalButton, estilos.modalButtonPrimary]}
-                onPress={() => {
-                  setMostrarConfirmacion(false);
-                  router.replace('/perfil');
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
-                  Aceptar
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        titulo="¡Perfil actualizado!"
+        subtitulo="Tus datos se guardaron correctamente."
+        etiquetaBoton="Volver al perfil"
+        onCerrar={() => {
+          setMostrarConfirmacion(false);
+          router.replace('/perfil');
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   guardando: { opacity: 0.65 },
-  confirmacion: { width: '85%', maxWidth: 340, alignSelf: 'center' },
 });

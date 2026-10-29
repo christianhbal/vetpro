@@ -36,7 +36,8 @@ import { useFiltroTurnos, useSedeSeleccionada, useSedes } from '@/lib/sede';
 // normal solo ve los suyos.
 type TurnoLista = TurnoGuardado & {
   atendidoEn?: string | null;
-  descripcion?: string | null;  /** Ocupa la agenda pero no se muestra en las listas de esta pantalla. */
+  descripcion?: string | null;
+  /** Ocupa la agenda pero no se muestra en las listas de esta pantalla. */
   ocultoEnAgenda?: boolean;
   user?: { nombre: string } | null;
 };
@@ -110,6 +111,7 @@ export default function TurnosScreen() {
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [cancelando, setCancelando] = useState(false);
   const [registrandoLlegada, setRegistrandoLlegada] = useState(false);
+  const [confirmarLlegada, setConfirmarLlegada] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState('');
   // Datos del turno recien guardado o cancelado, para los avisos de exito.
   const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
@@ -281,6 +283,7 @@ const puedeCancelar =
       });
       const result: unknown = await response.json();
       if (!response.ok) throw new Error(mensajeApi(result) ?? 'No se pudo registrar la llegada.');
+      setConfirmarLlegada(false);
       setCitaSeleccionada(null);
       await cargarTurnos();
       Alert.alert('Llegada registrada', 'El turno ya puede ser atendido.');
@@ -791,10 +794,11 @@ const puedeCancelar =
               {puedeMarcarLlegada ? (
                 <Pressable
                   style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
-                  onPress={() => void marcarLlegada()}
+                  onPress={() => setConfirmarLlegada(true)}
                   disabled={registrandoLlegada}
                   accessibilityRole="button"
                 >
+                  <Ionicons name="checkmark-circle-outline" size={19} color="#ffffff" />
                   <Text style={styles.modificarTexto}>{registrandoLlegada ? 'Registrando...' : 'Marcar que llegó'}</Text>
                 </Pressable>
               ) : null}
@@ -833,6 +837,51 @@ const puedeCancelar =
               ) : null}
             </View>
           )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={confirmarLlegada}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => { if (!registrandoLlegada) setConfirmarLlegada(false); }}
+      >
+        <View style={estilos.petModalRoot}>
+          <Pressable
+            style={estilos.petModalBackdrop}
+            onPress={() => { if (!registrandoLlegada) setConfirmarLlegada(false); }}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar confirmación"
+          />
+          <View style={estilos.modalCard}>
+            <Text style={estilos.modalTitle}>¿Marcar que llegó?</Text>
+            <Text style={estilos.modalText}>
+              Se registrará la llegada de {citaSeleccionada?.mascota ?? 'la mascota'} a la veterinaria y podrá ser atendido.
+            </Text>
+            <View style={[estilos.modalActions, styles.accionesCentradas]}>
+              <Pressable
+                style={({ pressed }) => [estilos.modalButton, estilos.modalButtonNeutral, pressed && estilos.buttonPressed]}
+                onPress={() => setConfirmarLlegada(false)}
+                disabled={registrandoLlegada}
+                accessibilityRole="button"
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextDark]}>Volver</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [estilos.modalButton, estilos.modalButtonPrimary, pressed && estilos.buttonPressed]}
+                onPress={() => void marcarLlegada()}
+                disabled={registrandoLlegada}
+                accessibilityRole="button"
+                accessibilityState={{ busy: registrandoLlegada }}
+              >
+                <Text style={[estilos.modalButtonText, estilos.modalButtonTextLight]}>
+                  {registrandoLlegada ? 'Registrando...' : 'Confirmar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
 
