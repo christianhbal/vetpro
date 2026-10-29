@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { estilos } from '@/lib/estilos';
 
 export type OpcionSelector = {
@@ -49,6 +50,13 @@ export function SelectorCampo({
   const [abierto, setAbierto] = useState(false);
 
   const activo = seleccion !== null;
+  const gestoCerrar = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetY(12)
+    .failOffsetX([-20, 20])
+    .onEnd((evento) => {
+      if (evento.translationY > 60) setAbierto(false);
+    });
 
   return (
     <View style={[styles.campoBloque, ocultarLabel && styles.campoBloqueSinLabel]}>
@@ -123,7 +131,7 @@ export function SelectorCampo({
         navigationBarTranslucent
         onRequestClose={() => setAbierto(false)}
       >
-        <View style={styles.hojaRaiz}>
+        <GestureHandlerRootView style={styles.hojaRaiz}>
           <Pressable
             style={styles.hojaFondo}
             onPress={() => setAbierto(false)}
@@ -131,18 +139,22 @@ export function SelectorCampo({
             accessibilityLabel="Cerrar selección"
           />
           <View style={styles.hoja}>
-            <View style={styles.hojaPestana} />
-            <View style={styles.hojaEncabezado}>
-              <Text style={styles.hojaTitulo}>{label}</Text>
-              <Pressable
-                onPress={() => setAbierto(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar"
-                style={({ pressed }) => [styles.hojaCerrar, pressed && estilos.buttonPressed]}
-              >
-                <Ionicons name="close" size={22} color="#263b32" />
-              </Pressable>
-            </View>
+            <GestureDetector gesture={gestoCerrar}>
+              <View>
+                <View style={styles.hojaPestana} />
+                <View style={styles.hojaEncabezado}>
+                  <Text style={styles.hojaTitulo}>{label}</Text>
+                  <Pressable
+                    onPress={() => setAbierto(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cerrar"
+                    style={({ pressed }) => [styles.hojaCerrar, pressed && estilos.buttonPressed]}
+                  >
+                    <Ionicons name="close" size={22} color="#263b32" />
+                  </Pressable>
+                </View>
+              </View>
+            </GestureDetector>
 
             <ScrollView style={styles.hojaLista} contentContainerStyle={styles.hojaOpciones}>
               {opciones.map((opcion) => {
@@ -203,7 +215,7 @@ export function SelectorCampo({
               })}
             </ScrollView>
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
     </View>
   );

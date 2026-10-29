@@ -125,7 +125,7 @@ function textoDelAviso(aviso: Aviso): string {
   }
   if (aviso.title !== TITULO_TURNO) return aviso.message;
   if (turno === null) return 'Tocá para ver los detalles de tu turno.';
-  return `Turno para ${aviso.mascota?.nombre ?? 'tu mascota'}. Tocá para ver los detalles.`;
+  return `El turno de ${aviso.mascota?.nombre ?? 'tu mascota'} se acerca. Tocá para ver los detalles.`;
 }
 
 const TITULO_TURNO = 'Tu turno se acerca';

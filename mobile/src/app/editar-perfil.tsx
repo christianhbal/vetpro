@@ -11,14 +11,13 @@ import type { UsuarioActual } from '@/lib/session';
 import { cancelarRecordatorios } from '@/lib/recordatorios';
 
 type Campo = {
-  id: 'nombre' | 'email' | 'telefono';
+  id: 'nombre' | 'telefono';
   label: string;
   placeholder: string;
   value: string;
   onChangeText?: (texto: string) => void;
-  keyboardType?: 'email-address' | 'phone-pad';
-  autoComplete?: 'name' | 'email' | 'tel';
-  editable?: boolean;
+  keyboardType?: 'phone-pad';
+  autoComplete?: 'name' | 'tel';
   returnKeyType?: 'next' | 'done';
   onSubmitEditing?: () => void;
 };
@@ -214,16 +213,6 @@ export default function EditarPerfil() {
       returnKeyType: 'next',
     },
     {
-      id: 'email',
-      label: 'Correo electrónico',
-      placeholder: 'Ej. ana@correo.com',
-      value: usuario?.email ?? '',
-      keyboardType: 'email-address',
-      autoComplete: 'email',
-      editable: false,
-      returnKeyType: 'next',
-    },
-    {
       id: 'telefono',
       label: 'Teléfono',
       placeholder: 'Ej. 5551234567',
@@ -231,7 +220,7 @@ export default function EditarPerfil() {
       onChangeText: setTelefono,
       keyboardType: 'phone-pad',
       autoComplete: 'tel',
-      returnKeyType: 'next',
+      returnKeyType: 'done',
     },
   ];
 
@@ -255,8 +244,8 @@ export default function EditarPerfil() {
               onChangeText={item.onChangeText}
               keyboardType={item.keyboardType}
               autoComplete={item.autoComplete}
-              autoCapitalize={item.id === 'email' ? 'none' : 'words'}
-              editable={item.editable ?? (!cargando && !guardando)}
+              autoCapitalize="words"
+              editable={!cargando && !guardando}
               returnKeyType={item.returnKeyType}
               onSubmitEditing={item.onSubmitEditing}
             />
