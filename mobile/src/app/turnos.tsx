@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet,
+  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -108,6 +109,7 @@ export default function TurnosScreen() {
   const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [cancelando, setCancelando] = useState(false);
+  const [registrandoLlegada, setRegistrandoLlegada] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState('');
   // Datos del turno recien guardado o cancelado, para los avisos de exito.
   const [turnoGuardado, setTurnoGuardado] = useState<{ mascota: string; texto: string } | null>(
@@ -267,6 +269,28 @@ const puedeCancelar =
    citaSeleccionada.guardado.id > 0 &&
    selloDe(citaSeleccionada.guardado) === null;
 
+  const puedeMarcarLlegada = puedeEditar && citaSeleccionada?.guardado.fecha === fechaComoValor(new Date());
+
+  const marcarLlegada = async () => {
+    if (!citaSeleccionada || registrandoLlegada || !token) return;
+    setRegistrandoLlegada(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/turnos/${citaSeleccionada.id}/llegada`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) throw new Error(mensajeApi(result) ?? 'No se pudo registrar la llegada.');
+      setCitaSeleccionada(null);
+      await cargarTurnos();
+      Alert.alert('Llegada registrada', 'El turno ya puede ser atendido.');
+    } catch (error) {
+      Alert.alert('No se pudo registrar la llegada', error instanceof TypeError ? apiUnreachableMessage(error) : error instanceof Error ? error.message : 'Intentá nuevamente.');
+    } finally {
+      setRegistrandoLlegada(false);
+    }
+  };
+
 
   // Los horarios tomados del mes, para que el campo de hora no ofrezca uno que
   // ya esta ocupado.
@@ -330,18 +354,6 @@ const puedeCancelar =
   const guardarCambios = async () => {
     if (!citaSeleccionada || guardando) return;
     setErrorGuardado('');
-
-    // El backend tambien lo rechaza, pero avisar aca evita el viaje y deja el
-    // error al lado del campo.
-    if (
-      `${fechaForm.trim()}T${horaForm.trim()}` <
-      `${citaSeleccionada.guardado.fecha}T${citaSeleccionada.guardado.hora}`
-    ) {
-      setErrorGuardado(
-        'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.'
-      );
-      return;
-    }
 
     setGuardando(true);
     try {
@@ -774,6 +786,19 @@ const puedeCancelar =
                 </>
               )}
 
+              {puedeMarcarLlegada || puedeEditar || puedeCancelar ? (
+              <View style={styles.accionesTurno}>
+              {puedeMarcarLlegada ? (
+                <Pressable
+                  style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
+                  onPress={() => void marcarLlegada()}
+                  disabled={registrandoLlegada}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.modificarTexto}>{registrandoLlegada ? 'Registrando...' : 'Marcar que llegó'}</Text>
+                </Pressable>
+              ) : null}
+
               {puedeEditar ? (
                 <Pressable
                   style={({ pressed }) => [styles.modificar, pressed && estilos.buttonPressed]}
@@ -803,6 +828,8 @@ const puedeCancelar =
                     <Text style={styles.eliminarTexto}>Cancelar turno</Text>
                   </View>
                 </Pressable>
+              ) : null}
+              </View>
               ) : null}
             </View>
           )}
@@ -1105,12 +1132,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3e17',
   },
   confirmarTexto: { color: '#fffefc', fontSize: 15, fontWeight: 'bold' },
+  accionesTurno: { marginTop: 18, gap: 10 },
   modificar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 18,
     paddingVertical: 13,
     borderRadius: 12,
     backgroundColor: '#0f3e17',
@@ -1137,7 +1164,6 @@ const styles = StyleSheet.create({
   motivoAyuda: { marginTop: 6, color: '#69746a', fontSize: 12, lineHeight: 18 },
   eliminar: {
     alignItems: 'center',
-    marginTop: 10,
     paddingVertical: 13,
     borderWidth: 1.5,
     borderColor: '#d3a179',

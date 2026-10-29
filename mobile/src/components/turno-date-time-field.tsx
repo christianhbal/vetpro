@@ -195,7 +195,7 @@ export default function TurnoDateTimeField({
                         )
                         .map((slot) => slot.hora)
                     );
-                    const completo = horariosDelDia.size >= horariosDisponibles.length;
+                    const completo = horariosDisponibles.length > 0 && horariosDelDia.size >= horariosDisponibles.length;
                     const deshabilitado =
                       esPasado ||
                       esDomingo ||
@@ -232,7 +232,7 @@ export default function TurnoDateTimeField({
                         >
                           {dia}
                         </Text>
-                        {horariosDelDia.size > 0 && !seleccionado ? (
+                        {completo && !seleccionado && !cargandoDisponibilidad && !errorDisponibilidad ? (
                           <View style={styles.occupiedDot} />
                         ) : null}
                       </Pressable>
@@ -241,7 +241,7 @@ export default function TurnoDateTimeField({
                 </View>
                 <View style={styles.legend}>
                   <View style={styles.legendDot} />
-                  <Text style={styles.legendText}>Fecha con horarios ocupados</Text>
+                  <Text style={styles.legendText}>Fecha sin horarios disponibles</Text>
                 </View>
                 {cargandoDisponibilidad ? (
                   <Text style={styles.availabilityMessage}>Cargando disponibilidad...</Text>

@@ -890,8 +890,28 @@ app.get('/api/admin/turnos', async (request, response) => {
   }
 });
 
+// Registra manualmente la llegada de un turno de hoy.
+app.patch('/api/admin/turnos/:id/llegada', async (request, response) => {
+  if ((await requireAdmin(request, response)) === null) return;
+  const id = parseId(request.params.id);
+  if (id === null) return response.status(400).json({ message: 'El id del turno no es válido.' });
+  const ahora = new Date();
+  const fecha = [ahora.getFullYear(), String(ahora.getMonth() + 1).padStart(2, '0'), String(ahora.getDate()).padStart(2, '0')].join('-');
+  try {
+    const resultado = await prisma.turno.updateMany({
+      where: { id, fecha, llegadaEn: null, atendidoEn: null, ocultoEnAgenda: false },
+      data: { llegadaEn: ahora.toISOString() },
+    });
+    if (resultado.count === 0) return response.status(409).json({ message: 'El turno no está disponible para registrar la llegada.' });
+    return response.json({ message: 'Llegada registrada.' });
+  } catch (error) {
+    console.error('No se pudo registrar la llegada:', error);
+    return response.status(500).json({ message: 'No se pudo registrar la llegada.' });
+  }
+});
+
 // GET /api/admin/turnos-activos
-// Lista los turnos de hoy que ya registraron su llegada por QR y que todavia
+// Lista los turnos de hoy que ya registraron su llegada y que todavia
 // no fueron atendidos.
 app.get('/api/admin/turnos-activos', async (request, response) => {
   const adminId = await requireAdmin(request, response);
@@ -1034,22 +1054,6 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
         cambiaHorario || (sede !== undefined && sede !== anterior.sede);
       const fechaDestino = fecha ?? anterior.fecha;
       const horaDestino = hora ?? anterior.hora;
-      if (cambiaHorario) {
-        const configuracion = await transaction.sede.findUnique({ where: { nombre: sede ?? anterior.sede } });
-        if (!configuracion || !isValidAppointmentSlot(fechaDestino, horaDestino, configuracion)) {
-          return { validationError: 'invalid' as const };
-        }
-        // Un turno no se mueve hacia atras. Se puede estirar el horario o
-        // pizarlo para otro dia, pero devolverlo a una hora anterior deja
-        // clientes con avisos del tipo "hora: 19:00 -> 18:00" sobre un turno
-        // que ya estaba despues, que no se puede atender. El aviso va al dueño
-        // y no hay forma de explicar eso.
-        // La comparacion es de texto: "AAAA-MM-DDTHH:mm" ordena igual que el
-        // reloj porque los numeros van con dos digitos y en orden fijo.
-        if (`${fechaDestino}T${horaDestino}` < `${anterior.fecha}T${anterior.hora}`) {
-          return { validationError: 'atras' as const };
-        }
-      }
       if (cambiaDisponibilidad) {
         const sedeDestino = sede ?? anterior.sede;
         const configuracion = await transaction.sede.findUnique({ where: { nombre: sedeDestino } });
@@ -1102,13 +1106,8 @@ app.patch('/api/admin/turnos/:id', async (request, response) => {
       if (resultado.validationError === 'occupied') {
         return response.status(409).json({ message: 'Ese horario ya está ocupado. Elige otro.' });
       }
-      if (resultado.validationError === 'atras') {
-        return response.status(400).json({
-          message: 'No se puede mover un turno a un horario anterior. Solo se puede estirar o pizarlo para otro día.',
-        });
-      }
       return response.status(400).json({
-        message: 'El turno debe ser de lunes a sábado, entre las 10:00 y las 18:30, cada media hora y en el futuro.',
+        message: 'Elegí una fecha y un horario futuros dentro de la atención de la sede.',
       });
     }
 
